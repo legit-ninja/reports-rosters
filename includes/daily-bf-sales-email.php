@@ -16,6 +16,10 @@
  * the Europe/Zurich window. On-hold orders are reported beside those totals
  * and are not added in. Orders with no paid date are omitted.
  *
+ * Low and zero booking lists cover published Winter, Spring, and Easter 2027
+ * programmes that have not started. The low threshold is an admin setting
+ * and defaults to 3. Zero bookings are a separate list.
+ *
  * @package InterSoccer\ReportsRosters\Services
  */
 
@@ -49,6 +53,8 @@ class DailyBfSalesEmail {
     const COMPOSITE_SEASON_TYPE_FILTER = 'intersoccer_rr_daily_bf_composite_season_type_labels';
     const ATTENTION_ORDER_STATUSES = ['wc-failed', 'wc-pending'];
     const ATTENTION_ORDER_STATUSES_FILTER = 'intersoccer_rr_daily_bf_attention_order_statuses';
+    const DEFAULT_LOW_BOOKING_THRESHOLD = 3;
+    const LOW_BOOKING_YEAR = '2027';
 
     /**
      * @var self|null
@@ -463,6 +469,10 @@ class DailyBfSalesEmail {
         echo '<input type="text" name="bf_coupon_code" id="bf_coupon_code" value="' . esc_attr($settings['coupon_code']) . '" class="regular-text" />';
         echo '<p class="description">Schedule start is the coupon <code>_date_starts</code> value (Unix timestamp or YYYY-MM-DD). Schedule end is the WooCommerce coupon expiry. Both are required. Dates are read in Europe/Zurich.</p>';
         echo '</td></tr>';
+        echo '<tr><th scope="row"><label for="bf_low_booking_threshold">Low booking threshold</label></th><td>';
+        echo '<input type="number" name="bf_low_booking_threshold" id="bf_low_booking_threshold" min="0" max="999" value="' . esc_attr((string) (int) $settings['low_booking_threshold']) . '" />';
+        echo '<p class="description">Published Winter, Spring, and Easter 2027 programmes that have not started. Paid bookings from 1 through this number are listed as low. Zero bookings are a separate list. On-hold orders are not counted.</p>';
+        echo '</td></tr>';
         echo '<tr><th scope="row">Last sent</th><td><p>' . esc_html($state['last_sent_at'] !== '' ? $state['last_sent_at'] . ' Europe/Zurich' : 'Never') . '</p></td></tr>';
         echo '<tr><th scope="row">Last result</th><td><p>' . esc_html($this->resultLabel($state['last_result'])) . '</p></td></tr>';
         echo '</tbody></table>';
@@ -513,6 +523,7 @@ class DailyBfSalesEmail {
                 $campaign = $this->emptySummary();
             }
         }
+        $coverage = $this->programmeBookingLists($now->format('Y-m-d'), $campaignStart, $reportDate, $campaignStarted);
         return [
             'report_date' => $reportDate,
             'campaign_start' => $campaignStart,
@@ -523,6 +534,8 @@ class DailyBfSalesEmail {
             'daily_on_hold' => $dailyOnHold,
             'campaign_on_hold' => $campaignOnHold,
             'attention_orders' => $this->attentionOrders($reportDate),
+            'low_bookings' => $coverage['low'],
+            'zero_bookings' => $coverage['zero'],
             'used_created_fallback' => false,
             'final_campaign' => $finalCampaign,
             'booking_report_url' => $this->bookingReportUrl($reportDate),
@@ -560,6 +573,12 @@ class DailyBfSalesEmail {
         $html .= '<h3>Failed and pending orders</h3>';
         $attention = (isset($digest['attention_orders']) && is_array($digest['attention_orders'])) ? $digest['attention_orders'] : [];
         $html .= $this->renderAttentionOrders($attention);
+        $html .= '<h3>Low bookings</h3>';
+        $lowBookings = (isset($digest['low_bookings']) && is_array($digest['low_bookings'])) ? $digest['low_bookings'] : [];
+        $html .= $this->renderBookingList($lowBookings, 'No programmes in this scope have a low booking count.');
+        $html .= '<h3>Zero bookings</h3>';
+        $zeroBookings = (isset($digest['zero_bookings']) && is_array($digest['zero_bookings'])) ? $digest['zero_bookings'] : [];
+        $html .= $this->renderBookingList($zeroBookings, 'No programmes in this scope have zero bookings.');
         if (!empty($digest['final_campaign'])) {
             $html .= '<p>' . esc_html(self::FINAL_CAMPAIGN_LINE) . '</p>';
         }
@@ -820,7 +839,7 @@ class DailyBfSalesEmail {
     }
 
     /**
-     * @return array{enabled:bool,recipients:string,send_time:string,coupon_code:string}
+     * @return array{enabled:bool,recipients:string,send_time:string,coupon_code:string,low_booking_threshold:int}
      */
     public function settings() {
         $stored = get_option(self::OPTION_SETTINGS, []);
@@ -836,6 +855,9 @@ class DailyBfSalesEmail {
             'recipients' => isset($stored['recipients']) ? (string) $stored['recipients'] : '',
             'send_time' => $sendTime,
             'coupon_code' => isset($stored['coupon_code']) ? (string) $stored['coupon_code'] : '',
+            'low_booking_threshold' => array_key_exists('low_booking_threshold', $stored)
+                ? self::normalizeLowBookingThreshold($stored['low_booking_threshold'])
+                : self::DEFAULT_LOW_BOOKING_THRESHOLD,
         ];
     }
 
@@ -895,8 +917,12 @@ class DailyBfSalesEmail {
         if (strlen($code) > 64) {
             $code = substr($code, 0, 64);
         }
+        $threshold = self::normalizeLowBookingThreshold(
+            array_key_exists('bf_low_booking_threshold', $post) ? $post['bf_low_booking_threshold'] : null
+        );
         $settings = [
             'enabled' => !empty($post['bf_enabled']),
+            'low_booking_threshold' => $threshold,
             'recipients' => $recipients,
             'send_time' => $sendTime,
             'coupon_code' => $code,
@@ -1028,6 +1054,397 @@ class DailyBfSalesEmail {
                 $html .= '<a href="' . esc_url($url) . '">Edit order</a>';
             }
             $html .= '</td></tr>';
+        }
+        $html .= '</tbody></table>';
+        return $html;
+    }
+
+    /**
+     * @param mixed $value
+     * @return int
+     */
+    private static function normalizeLowBookingThreshold($value) {
+        if ($value === null) {
+            return self::DEFAULT_LOW_BOOKING_THRESHOLD;
+        }
+        $text = trim((string) $value);
+        if (!preg_match('/^\d{1,3}$/', $text)) {
+            return self::DEFAULT_LOW_BOOKING_THRESHOLD;
+        }
+        $number = (int) $text;
+        if ($number > 999) {
+            return self::DEFAULT_LOW_BOOKING_THRESHOLD;
+        }
+        return $number;
+    }
+
+    /**
+     * Published Winter, Spring, and Easter programmes for the scoped year that
+     * have not started. Counts use the strict paid campaign window.
+     *
+     * @param string $asOfYmd
+     * @param string $campaignStart
+     * @param string $reportDate
+     * @param bool   $campaignStarted
+     * @return array{low:array<int,array<string,mixed>>,zero:array<int,array<string,mixed>>}
+     */
+    private function programmeBookingLists($asOfYmd, $campaignStart, $reportDate, $campaignStarted) {
+        $threshold = (int) $this->settings()['low_booking_threshold'];
+        $events = $this->catalogueEvents($asOfYmd);
+        $counts = [];
+        if ($campaignStarted && $campaignStart !== '' && strcmp($campaignStart, $reportDate) <= 0) {
+            $report = $this->loadReport($campaignStart, $reportDate, self::paidOrderStatuses());
+            $counts = $this->paidCountsByProduct(is_array($report) ? $report : []);
+        }
+        $low = [];
+        $zero = [];
+        foreach ($events as $event) {
+            $productId = (int) $event['product_id'];
+            $count = isset($counts[$productId]) ? (int) $counts[$productId] : 0;
+            $row = [
+                'label' => (string) $event['label'],
+                'season' => (string) $event['season'],
+                'type' => (string) $event['type'],
+                'region' => (string) $event['region'],
+                'count' => $count,
+            ];
+            if ($count === 0) {
+                $zero[] = $row;
+            } elseif ($count >= 1 && $count <= $threshold) {
+                $low[] = $row;
+            }
+        }
+        $sort = static function ($left, $right) {
+            return strcmp((string) $left['label'], (string) $right['label']);
+        };
+        usort($low, $sort);
+        usort($zero, $sort);
+        return ['low' => $low, 'zero' => $zero];
+    }
+
+    /**
+     * @param string $asOfYmd
+     * @return array<int,array<string,mixed>>
+     */
+    private function catalogueEvents($asOfYmd) {
+        $published = $this->publishedProductIds();
+        $events = [];
+        $seen = [];
+        foreach ($published as $id) {
+            $defaultId = $this->defaultLanguageProductId($id);
+            if (!isset($published[$defaultId]) || isset($seen[$defaultId])) {
+                continue;
+            }
+            $seen[$defaultId] = true;
+            $event = $this->catalogueEvent($defaultId, $asOfYmd);
+            if ($event !== null) {
+                $events[$defaultId] = $event;
+            }
+        }
+        return $events;
+    }
+
+    /**
+     * @return array<int,int>
+     */
+    private function publishedProductIds() {
+        if (!function_exists('get_posts')) {
+            return [];
+        }
+        $ids = get_posts([
+            'post_type' => 'product',
+            'post_status' => 'publish',
+            'posts_per_page' => -1,
+            'fields' => 'ids',
+            'orderby' => 'ID',
+            'order' => 'ASC',
+        ]);
+        if (!is_array($ids)) {
+            return [];
+        }
+        $clean = [];
+        foreach ($ids as $id) {
+            $id = (int) $id;
+            if ($id > 0) {
+                $clean[$id] = $id;
+            }
+        }
+        return $clean;
+    }
+
+    /**
+     * @param int    $productId
+     * @param string $asOfYmd
+     * @return array<string,mixed>|null
+     */
+    private function catalogueEvent($productId, $asOfYmd) {
+        $productId = (int) $productId;
+        $type = $this->catalogueTypeLabel($this->productMeta($productId, ['_intersoccer_product_type']));
+        if ($type === '') {
+            return null;
+        }
+        $seasonKeys = FacetNormalizer::season_meta_keys();
+        $termKeys = FacetNormalizer::camp_term_meta_keys();
+        $yearKeys = ['pa_program-year', 'attribute_pa_program-year', 'Program Year', 'Année', 'Jahr'];
+        $regionKeys = [
+            '_intersoccer_canonical_canton',
+            'Canton / Region',
+            'Canton / Région',
+            'Kanton / Region',
+            'pa_canton-region',
+            'attribute_pa_canton-region',
+        ];
+        $seasonRaw = $this->productMeta($productId, $seasonKeys);
+        $terms = $this->productMeta($productId, $termKeys);
+        $yearRaw = $this->productMeta($productId, $yearKeys);
+        $regionRaw = $this->productMeta($productId, $regionKeys);
+        $start = $this->productMeta($productId, ['_camp_start_date']);
+        foreach ($this->variationIds($productId) as $variationId) {
+            if ($seasonRaw === '') {
+                $seasonRaw = $this->productMeta($variationId, $seasonKeys);
+            }
+            if ($terms === '') {
+                $terms = $this->productMeta($variationId, $termKeys);
+            }
+            if ($yearRaw === '') {
+                $yearRaw = $this->productMeta($variationId, $yearKeys);
+            }
+            if ($regionRaw === '') {
+                $regionRaw = $this->productMeta($variationId, $regionKeys);
+            }
+            $candidate = $this->productMeta($variationId, ['_camp_start_date']);
+            if ($candidate !== '' && ($start === '' || strcmp($candidate, $start) < 0)) {
+                $start = $candidate;
+            }
+        }
+        $name = function_exists('get_the_title') ? trim((string) get_the_title($productId)) : '';
+        if ($this->programmeYear($yearRaw, $seasonRaw, $terms, $name) !== self::LOW_BOOKING_YEAR) {
+            return null;
+        }
+        $season = $this->catalogueSeason($seasonRaw, $terms, $name, $type);
+        if ($season === '') {
+            return null;
+        }
+        if ($this->eventHasStarted($start, $asOfYmd)) {
+            return null;
+        }
+        $region = 'Unknown';
+        if ($regionRaw !== '') {
+            $normalized = $this->facetNormalizer()->normalize_region($regionRaw);
+            if ($normalized !== '' && $normalized !== 'not_recorded') {
+                $region = $normalized;
+            }
+        }
+        return [
+            'product_id' => $productId,
+            'label' => $name !== '' ? $name : ('Product ' . $productId),
+            'season' => $season,
+            'type' => $type,
+            'region' => $region,
+        ];
+    }
+
+    /**
+     * @param string $slug
+     * @return string
+     */
+    private function catalogueTypeLabel($slug) {
+        $slug = strtolower(trim((string) $slug));
+        $map = [
+            'camp' => ProductTypeClassifierService::TYPE_CAMP,
+            'course' => ProductTypeClassifierService::TYPE_COURSE,
+            'birthday' => ProductTypeClassifierService::TYPE_BIRTHDAY,
+            'tournament' => ProductTypeClassifierService::TYPE_TOURNAMENT,
+        ];
+        return isset($map[$slug]) ? $map[$slug] : '';
+    }
+
+    /**
+     * @param string $yearRaw
+     * @param string $seasonRaw
+     * @param string $terms
+     * @param string $name
+     * @return string
+     */
+    private function programmeYear($yearRaw, $seasonRaw, $terms, $name) {
+        foreach ([$yearRaw, $seasonRaw, $terms, $name] as $value) {
+            if (preg_match('/\b(20\d{2})\b/', (string) $value, $matches)) {
+                return $matches[1];
+            }
+        }
+        return '';
+    }
+
+    /**
+     * Winter, Spring, or Easter. A Spring camp is promoted when Easter is named.
+     *
+     * @param string $seasonRaw
+     * @param string $terms
+     * @param string $name
+     * @param string $type
+     * @return string
+     */
+    private function catalogueSeason($seasonRaw, $terms, $name, $type) {
+        $bucket = $this->normalizeSeasonValue($seasonRaw);
+        if ($bucket === '') {
+            $bucket = $this->normalizeSeasonValue($terms);
+        }
+        if ($bucket === '') {
+            $bucket = $this->normalizeSeasonValue($name);
+        }
+        if ($type === ProductTypeClassifierService::TYPE_CAMP
+            && $bucket === 'Spring'
+            && ($this->mentionsEaster($seasonRaw) || $this->mentionsEaster($terms) || $this->mentionsEaster($name))
+        ) {
+            $bucket = 'Easter';
+        }
+        if ($bucket === 'Winter' || $bucket === 'Spring' || $bucket === 'Easter') {
+            return $bucket;
+        }
+        return '';
+    }
+
+    /**
+     * @param string $start
+     * @param string $asOfYmd
+     * @return bool
+     */
+    private function eventHasStarted($start, $asOfYmd) {
+        if (!preg_match('/^(\d{4}-\d{2}-\d{2})/', (string) $start, $matches)) {
+            return false;
+        }
+        return strcmp($matches[1], (string) $asOfYmd) < 0;
+    }
+
+    /**
+     * @param int $productId
+     * @return array<int,int>
+     */
+    private function variationIds($productId) {
+        if (!function_exists('get_posts')) {
+            return [];
+        }
+        $ids = get_posts([
+            'post_type' => 'product_variation',
+            'post_status' => 'publish',
+            'post_parent' => (int) $productId,
+            'posts_per_page' => -1,
+            'fields' => 'ids',
+            'orderby' => 'ID',
+            'order' => 'ASC',
+        ]);
+        if (!is_array($ids)) {
+            return [];
+        }
+        $clean = [];
+        foreach ($ids as $id) {
+            $id = (int) $id;
+            if ($id > 0) {
+                $clean[] = $id;
+            }
+        }
+        return $clean;
+    }
+
+    /**
+     * @param int                $postId
+     * @param array<int,string>  $keys
+     * @return string
+     */
+    private function productMeta($postId, array $keys) {
+        if (!function_exists('get_post_meta')) {
+            return '';
+        }
+        foreach ($keys as $key) {
+            $value = get_post_meta((int) $postId, $key, true);
+            if (is_string($value) || is_numeric($value)) {
+                $text = trim((string) $value);
+                if ($text !== '') {
+                    return $text;
+                }
+            }
+        }
+        return '';
+    }
+
+    /**
+     * @param int $productId
+     * @return int
+     */
+    private function defaultLanguageProductId($productId) {
+        $productId = (int) $productId;
+        if ($productId <= 0) {
+            return 0;
+        }
+        if (function_exists('wp_get_post_parent_id')) {
+            $parent = (int) wp_get_post_parent_id($productId);
+            if ($parent > 0) {
+                $productId = $parent;
+            }
+        }
+        if (!function_exists('apply_filters')) {
+            return $productId;
+        }
+        $language = 'en';
+        if (function_exists('wpml_get_default_language')) {
+            $detected = wpml_get_default_language();
+            if (is_string($detected) && $detected !== '') {
+                $language = $detected;
+            }
+        }
+        $mapped = apply_filters('wpml_object_id', $productId, 'product', true, $language);
+        $mapped = (int) $mapped;
+        return $mapped > 0 ? $mapped : $productId;
+    }
+
+    /**
+     * @param array<string,mixed> $report
+     * @return array<int,int>
+     */
+    private function paidCountsByProduct(array $report) {
+        $counts = [];
+        $rows = isset($report['data']) && is_array($report['data']) ? $report['data'] : [];
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $productId = $this->defaultLanguageProductId(isset($row['product_id']) ? (int) $row['product_id'] : 0);
+            if ($productId <= 0) {
+                continue;
+            }
+            $quantity = isset($row['line_quantity']) ? (int) $row['line_quantity'] : 0;
+            if ($quantity < 1) {
+                $quantity = 1;
+            }
+            if (!isset($counts[$productId])) {
+                $counts[$productId] = 0;
+            }
+            $counts[$productId] += $quantity;
+        }
+        return $counts;
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $rows
+     * @param string                         $emptyMessage
+     * @return string
+     */
+    private function renderBookingList(array $rows, $emptyMessage) {
+        if ($rows === []) {
+            return '<p>' . esc_html($emptyMessage) . '</p>';
+        }
+        $html = '<table><thead><tr><th>Event</th><th>Season</th><th>Type</th><th>Region</th><th>Count</th></tr></thead><tbody>';
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $html .= '<tr>';
+            $html .= '<td>' . esc_html((string) ($row['label'] ?? '')) . '</td>';
+            $html .= '<td>' . esc_html((string) ($row['season'] ?? '')) . '</td>';
+            $html .= '<td>' . esc_html((string) ($row['type'] ?? '')) . '</td>';
+            $html .= '<td>' . esc_html((string) ($row['region'] ?? '')) . '</td>';
+            $html .= '<td>' . esc_html((string) (int) ($row['count'] ?? 0)) . '</td>';
+            $html .= '</tr>';
         }
         $html .= '</tbody></table>';
         return $html;

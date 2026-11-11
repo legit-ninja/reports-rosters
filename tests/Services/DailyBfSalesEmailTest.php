@@ -283,7 +283,13 @@ class DailyBfSalesEmailTest extends TestCase {
         $GLOBALS['intersoccer_test_wp_schedule_event_log'] = [];
         $GLOBALS['intersoccer_test_wp_next_scheduled'] = [];
         $GLOBALS['intersoccer_test_wp_clear_scheduled_hook_log'] = [];
-        unset($GLOBALS['intersoccer_test_current_user_caps'], $GLOBALS['intersoccer_test_current_user']);
+        unset(
+            $GLOBALS['intersoccer_test_current_user_caps'],
+            $GLOBALS['intersoccer_test_current_user'],
+            $GLOBALS['intersoccer_test_get_posts_callback'],
+            $GLOBALS['intersoccer_test_post_titles'],
+            $GLOBALS['intersoccer_test_post_parents']
+        );
         \InterSoccerRRTestMeta::reset();
         parent::tearDown();
     }
@@ -1322,6 +1328,318 @@ class DailyBfSalesEmailTest extends TestCase {
         $this->assertSame('', $settings['recipients']);
         $this->assertSame('08:00', $settings['send_time']);
         $this->assertSame('', $settings['coupon_code']);
+        $this->assertSame(3, $settings['low_booking_threshold']);
+        $this->assertSame(3, DailyBfSalesEmail::DEFAULT_LOW_BOOKING_THRESHOLD);
+    }
+
+    public function test_low_and_zero_bookings_use_the_threshold_and_the_2027_scope(): void {
+        $service = $this->enabledService($this->novemberCoupon(), 'ops@example.com');
+        ob_start();
+        $service->renderPage();
+        $page = (string) ob_get_clean();
+        $this->assertStringContainsString('name="bf_low_booking_threshold"', $page);
+        $this->assertStringContainsString('value="3"', $page);
+        $this->assertSame(3, $service->settings()['low_booking_threshold']);
+
+        $products = [8301, 8302, 8303, 8304, 8305, 8306, 8307, 8308, 8401, 8402];
+        $GLOBALS['intersoccer_test_get_posts_callback'] = static function ($args) use ($products) {
+            $type = isset($args['post_type']) ? (string) $args['post_type'] : '';
+            if ($type === 'product_variation') {
+                $parent = isset($args['post_parent']) ? (int) $args['post_parent'] : 0;
+                return $parent === 8306 ? [83061] : [];
+            }
+            if ($type === 'product') {
+                return $products;
+            }
+            return [];
+        };
+        $GLOBALS['intersoccer_test_post_titles'] = [
+            8301 => 'Busy Winter Camp',
+            8302 => 'Quiet Winter Camp',
+            8303 => 'Empty Winter Camp',
+            8304 => 'Summer Future Camp',
+            8305 => 'Year 2026 Camp',
+            8306 => 'Past Winter Camp',
+            8307 => 'Lakeside Spring Camp',
+            8308 => 'City Spring Course',
+            8399 => 'Draft Winter Camp',
+            8401 => 'Shared Winter Camp',
+            8402 => 'Camp Hiver Traduction',
+        ];
+        $meta = [
+            8301 => [
+                '_intersoccer_product_type' => 'camp',
+                'attribute_pa_program-season' => 'Winter',
+                'attribute_pa_program-year' => '2027',
+                '_camp_start_date' => '2027-01-04',
+                'attribute_pa_canton-region' => 'Geneva',
+            ],
+            8302 => [
+                '_intersoccer_product_type' => 'camp',
+                'pa_program-season' => 'Winter',
+                'pa_program-year' => '2027',
+                '_camp_start_date' => '2027-01-11',
+                'pa_canton-region' => 'Zurich',
+            ],
+            8303 => [
+                '_intersoccer_product_type' => 'camp',
+                'Season' => 'Winter',
+                'Program Year' => '2027',
+                '_camp_start_date' => '2026-11-29',
+                'Canton / Region' => 'Vaud',
+            ],
+            8304 => [
+                '_intersoccer_product_type' => 'camp',
+                'Jahreszeit' => 'Sommer',
+                'Jahr' => '2027',
+                '_camp_start_date' => '2027-07-01',
+            ],
+            8305 => [
+                '_intersoccer_product_type' => 'camp',
+                'Saison' => 'Hiver',
+                'Année' => '2026',
+                '_camp_start_date' => '2027-12-01',
+            ],
+            8306 => [
+                '_intersoccer_product_type' => 'camp',
+                'attribute_pa_program-season' => 'Winter',
+                'attribute_pa_program-year' => '2027',
+            ],
+            83061 => [
+                'attribute_pa_program-year' => '2027',
+                '_camp_start_date' => '2026-01-04',
+            ],
+            8307 => [
+                '_intersoccer_product_type' => 'camp',
+                'Saison' => 'Printemps',
+                'Semaine de camp' => 'Pâques',
+                'attribute_pa_program-year' => '2027',
+                '_camp_start_date' => '2027-04-06',
+                'Canton / Région' => 'Bâle',
+            ],
+            8308 => [
+                '_intersoccer_product_type' => 'course',
+                'Jahreszeit' => 'Frühling',
+                'pa_program-year' => '2027',
+                '_camp_start_date' => '2027-03-02',
+            ],
+            8399 => [
+                '_intersoccer_product_type' => 'camp',
+                'attribute_pa_program-season' => 'Winter',
+                'attribute_pa_program-year' => '2027',
+                '_camp_start_date' => '2027-02-01',
+            ],
+            8401 => [
+                '_intersoccer_product_type' => 'camp',
+                'attribute_pa_program-season' => 'Winter',
+                'attribute_pa_program-year' => '2027',
+                '_camp_start_date' => '2027-02-02',
+                'attribute_pa_canton-region' => 'Zug',
+            ],
+            8402 => [
+                '_intersoccer_product_type' => 'camp',
+                'Saison' => 'Hiver',
+                'attribute_pa_program-year' => '2027',
+                '_camp_start_date' => '2027-02-02',
+            ],
+        ];
+        foreach ($meta as $postId => $pairs) {
+            foreach ($pairs as $key => $value) {
+                \InterSoccerRRTestMeta::$data[$postId][$key] = $value;
+            }
+        }
+
+        $paid = (string) $this->unix('2026-11-28 10:00:00');
+        $this->wpdb->orders = [
+            [
+                'id' => 901,
+                'status' => 'wc-completed',
+                'post_date' => '2026-11-28 10:00:00',
+                'date_paid' => $paid,
+                'items' => [
+                    $this->item(9011, 'Busy Winter Camp', 8301, 0, 4, '40.00', '40.00', '3.08'),
+                ],
+            ],
+            [
+                'id' => 902,
+                'status' => 'wc-processing',
+                'post_date' => '2026-11-28 11:00:00',
+                'date_paid' => $paid,
+                'items' => [
+                    $this->item(9021, 'Quiet Winter Camp', 8302, 0, 3, '30.00', '30.00', '2.31'),
+                ],
+            ],
+            [
+                'id' => 903,
+                'status' => 'wc-on-hold',
+                'post_date' => '2026-11-28 12:00:00',
+                'date_paid' => $paid,
+                'items' => [
+                    $this->item(9031, 'Held Empty Camp', 8303, 0, 2, '20.00', '20.00', '1.54'),
+                ],
+            ],
+            [
+                'id' => 904,
+                'status' => 'wc-completed',
+                'post_date' => '2026-11-28 13:00:00',
+                'date_paid' => '',
+                'items' => [
+                    $this->item(9041, 'Unpaid Empty Camp', 8303, 0, 5, '50.00', '50.00', '3.85'),
+                ],
+            ],
+            [
+                'id' => 905,
+                'status' => 'wc-completed',
+                'post_date' => '2026-11-28 14:00:00',
+                'date_paid' => $paid,
+                'items' => [
+                    $this->item(9051, 'Shared Winter Camp', 8401, 0, 2, '20.00', '20.00', '1.54'),
+                ],
+            ],
+            [
+                'id' => 906,
+                'status' => 'wc-completed',
+                'post_date' => '2026-11-28 15:00:00',
+                'date_paid' => $paid,
+                'items' => [
+                    $this->item(9061, 'Shared Winter Camp', 8402, 0, 2, '20.00', '20.00', '1.54'),
+                ],
+            ],
+        ];
+        $this->wpdb->itemMeta = [
+            9011 => [
+                'Attendee Name' => 'Hidden Player',
+                'Parent Phone' => '555 010 0199',
+            ],
+            9021 => ['_intersoccer_canonical_activity_type' => 'camp'],
+            9031 => ['Emergency Phone' => '+1 555 010 2000'],
+            9041 => ['Attendee Name' => 'Hidden Player'],
+            9051 => ['_intersoccer_canonical_activity_type' => 'camp'],
+            9061 => ['_intersoccer_canonical_activity_type' => 'camp'],
+        ];
+        \InterSoccerRRTestMeta::$data[901]['_billing_email'] = 'booker@example.com';
+        \InterSoccerRRTestMeta::$data[901]['_billing_phone'] = '555 010 0199';
+        \InterSoccerRRTestMeta::$data[901]['_billing_first_name'] = 'Hidden Booker';
+        \InterSoccerRRTestMeta::$data[904]['_billing_email'] = 'player@example.test';
+
+        $hook = 'wpml_object_id';
+        $GLOBALS['intersoccer_test_emit_wp_hooks'] = true;
+        add_filter($hook, static function ($id) {
+            return (int) $id === 8402 ? 8401 : $id;
+        });
+        try {
+            $now = $this->zurich('2026-11-29 08:00:00');
+            $digest = $service->buildDigest($now);
+            $this->assertSame(['Quiet Winter Camp'], $this->bookingLabels($digest['low_bookings']));
+            $quiet = $digest['low_bookings'][0];
+            $this->assertSame(['label', 'season', 'type', 'region', 'count'], array_keys($quiet));
+            $this->assertSame('Winter', $quiet['season']);
+            $this->assertSame('Camp', $quiet['type']);
+            $this->assertSame('Zurich', $quiet['region']);
+            $this->assertSame(3, $quiet['count']);
+            $this->assertSame(
+                ['City Spring Course', 'Empty Winter Camp', 'Lakeside Spring Camp'],
+                $this->bookingLabels($digest['zero_bookings'])
+            );
+            $zero = [];
+            foreach ($digest['zero_bookings'] as $row) {
+                $this->assertSame(['label', 'season', 'type', 'region', 'count'], array_keys($row));
+                $this->assertSame(0, $row['count']);
+                $zero[$row['label']] = $row;
+            }
+            $this->assertSame('Winter', $zero['Empty Winter Camp']['season']);
+            $this->assertSame('Vaud', $zero['Empty Winter Camp']['region']);
+            $this->assertSame('Easter', $zero['Lakeside Spring Camp']['season']);
+            $this->assertSame('Camp', $zero['Lakeside Spring Camp']['type']);
+            $this->assertSame('Basel-Stadt', $zero['Lakeside Spring Camp']['region']);
+            $this->assertSame('Spring', $zero['City Spring Course']['season']);
+            $this->assertSame('Course', $zero['City Spring Course']['type']);
+
+            $html = $service->renderHtml($digest);
+            $lowHtml = $this->htmlSection($html, '<h3>Low bookings</h3>', '<h3>Zero bookings</h3>');
+            $zeroHtml = $this->htmlSection($html, '<h3>Zero bookings</h3>', '<h2>Running total since campaign start</h2>');
+            $this->assertStringContainsString('Quiet Winter Camp', $lowHtml);
+            $this->assertStringContainsString('<th>Event</th><th>Season</th><th>Type</th><th>Region</th><th>Count</th>', $lowHtml);
+            $this->assertStringNotContainsString('Busy Winter Camp', $lowHtml);
+            $this->assertStringNotContainsString('Shared Winter Camp', $lowHtml);
+            $this->assertStringContainsString('Empty Winter Camp', $zeroHtml);
+            $this->assertStringContainsString('Lakeside Spring Camp', $zeroHtml);
+            $this->assertStringContainsString('>Easter<', $zeroHtml);
+            $this->assertStringContainsString('City Spring Course', $zeroHtml);
+            foreach (['Summer Future Camp', 'Year 2026 Camp', 'Past Winter Camp', 'Draft Winter Camp', 'Camp Hiver Traduction', 'Held Empty Camp', 'Unpaid Empty Camp'] as $absent) {
+                $this->assertStringNotContainsString($absent, $lowHtml . $zeroHtml);
+            }
+            foreach (['Hidden Booker', 'Hidden Player', 'booker@example.com', 'player@example.test', 'mailto:', '555 010 0199', '+1 555 010 2000'] as $private) {
+                $this->assertStringNotContainsString($private, $html);
+            }
+            $this->assertDoesNotMatchRegularExpression('/\b\d{3}[-. ]\d{3}[-. ]\d{4}\b/', $html);
+
+            $saved = $service->handleAdminPost([
+                'bf_save' => '1',
+                '_wpnonce' => 'test',
+                'bf_recipients' => 'ops@example.com',
+                'bf_send_time' => '08:00',
+                'bf_coupon_code' => 'BF',
+                'bf_low_booking_threshold' => '4',
+                'bf_enabled' => '1',
+            ]);
+            $this->assertTrue($saved['ok']);
+            $this->assertSame(4, $service->settings()['low_booking_threshold']);
+            $raised = $service->buildDigest($now);
+            $this->assertSame(
+                ['Busy Winter Camp', 'Quiet Winter Camp', 'Shared Winter Camp'],
+                $this->bookingLabels($raised['low_bookings'])
+            );
+            $byLabel = [];
+            foreach ($raised['low_bookings'] as $row) {
+                $byLabel[$row['label']] = $row;
+            }
+            $this->assertSame(4, $byLabel['Busy Winter Camp']['count']);
+            $this->assertSame('Geneva', $byLabel['Busy Winter Camp']['region']);
+            $this->assertSame(4, $byLabel['Shared Winter Camp']['count']);
+            $this->assertSame('Zug', $byLabel['Shared Winter Camp']['region']);
+            $this->assertSame(1, count(array_filter($raised['low_bookings'], static function ($row) {
+                return $row['label'] === 'Shared Winter Camp';
+            })));
+            $this->assertSame(
+                ['City Spring Course', 'Empty Winter Camp', 'Lakeside Spring Camp'],
+                $this->bookingLabels($raised['zero_bookings'])
+            );
+
+            $reset = $service->handleAdminPost([
+                'bf_save' => '1',
+                '_wpnonce' => 'test',
+                'bf_recipients' => 'ops@example.com',
+                'bf_send_time' => '08:00',
+                'bf_coupon_code' => 'BF',
+                'bf_low_booking_threshold' => 'nope',
+                'bf_enabled' => '1',
+            ]);
+            $this->assertTrue($reset['ok']);
+            $this->assertSame(3, $service->settings()['low_booking_threshold']);
+        } finally {
+            unset($GLOBALS['intersoccer_test_wp_hooks']['filters'][$hook]);
+            $GLOBALS['intersoccer_test_emit_wp_hooks'] = false;
+            unset($GLOBALS['intersoccer_test_get_posts_callback'], $GLOBALS['intersoccer_test_post_titles']);
+        }
+    }
+
+    private function bookingLabels(array $rows): array {
+        $labels = [];
+        foreach ($rows as $row) {
+            $labels[] = (string) ($row['label'] ?? '');
+        }
+        sort($labels);
+        return $labels;
+    }
+
+    private function htmlSection(string $html, string $start, string $end): string {
+        $from = strpos($html, $start);
+        $to = strpos($html, $end);
+        $this->assertNotFalse($from, $start);
+        $this->assertNotFalse($to, $end);
+        $this->assertGreaterThan($from, $to);
+        return substr($html, $from, $to - $from);
     }
 
     private function assertWindow(string $nowLocal, string $expected, bool $sends): void {
