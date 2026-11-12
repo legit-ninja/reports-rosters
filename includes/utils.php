@@ -615,7 +615,99 @@ function intersoccer_parse_date_unified($date_string, $context = '') {
         // Match whole word to avoid partial replacements
         $english_date_string = preg_replace('/\b' . preg_quote($french, '/') . '\b/i', $english, $english_date_string);
     }
-    
+
+    // German day-with-trailing-dot (e.g. "5. Januar 2027") before month/day name translation.
+    $german_day_dot_stripped = preg_replace('/(?<=\d)\.(?=\s)/u', '', $english_date_string);
+    if (is_string($german_day_dot_stripped) && $german_day_dot_stripped !== $english_date_string) {
+        $english_date_string = $german_day_dot_stripped;
+    }
+
+    // German month and day names (whole-word, case-insensitive) — RR #164.
+    $german_month_patterns = [
+        'Januar' => 'January',
+        'Jänner' => 'January',
+        'Februar' => 'February',
+        'März' => 'March',
+        'Maerz' => 'March',
+        'Marz' => 'March',
+        'April' => 'April',
+        'Mai' => 'May',
+        'Juni' => 'June',
+        'Juli' => 'July',
+        'August' => 'August',
+        'September' => 'September',
+        'Oktober' => 'October',
+        'November' => 'November',
+        'Dezember' => 'December',
+        'Jan\.?' => 'January',
+        'Feb\.?' => 'February',
+        'Mär\.?' => 'March',
+        'Mae\.?' => 'March',
+        'Apr\.?' => 'April',
+        'Jun\.?' => 'June',
+        'Jul\.?' => 'July',
+        'Aug\.?' => 'August',
+        'Sept\.?' => 'September',
+        'Sep\.?' => 'September',
+        'Okt\.?' => 'October',
+        'Nov\.?' => 'November',
+        'Dez\.?' => 'December',
+    ];
+    uksort(
+        $german_month_patterns,
+        static function ($a, $b) {
+            return strlen($b) <=> strlen($a);
+        }
+    );
+    foreach ($german_month_patterns as $pattern => $english) {
+        // (?![\w]) allows abbreviated months with a trailing dot (e.g. "Okt.") — \b fails after the dot.
+        $english_date_string = preg_replace('/(?<![\w])' . $pattern . '(?![\w])/iu', $english, $english_date_string);
+    }
+
+    $strip_leading_weekday_comma = static function (string $s): string {
+        $full_weekdays = 'Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|'
+            . 'lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche|'
+            . 'Montag|Dienstag|Mittwoch|Donnerstag|Freitag|Samstag|Sonntag';
+        $abbr_weekdays = 'Mon|Tue|Wed|Thu|Fri|Sat|Sun|lun|mar|mer|jeu|ven|sam|dim|Mo|Di|Mi|Do|Fr|Sa|So';
+        $pattern = '/^(?:' . $full_weekdays . '|' . $abbr_weekdays . ')\.?(?:\s*,\s*|\s+)(?=\d)/iu';
+
+        $match_subject = $s;
+        if (function_exists('remove_accents')) {
+            $match_subject = remove_accents($s);
+        }
+        if (!preg_match($pattern, $match_subject)) {
+            return $s;
+        }
+
+        $stripped = preg_replace($pattern, '', $s, 1);
+        if (!is_string($stripped) || $stripped === $s) {
+            $stripped = preg_replace($pattern, '', $match_subject, 1);
+            if (!is_string($stripped) || $stripped === $match_subject) {
+                return $s;
+            }
+        }
+
+        $remainder_has_month = static function (string $remainder): bool {
+            if (preg_match(
+                '/\b(?:January|February|March|April|May|June|July|August|September|October|November|December'
+                . '|Jan|Feb|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\b/i',
+                $remainder
+            )) {
+                return true;
+            }
+
+            return (bool) preg_match('#\d{1,2}[/\-]\d{1,2}[/\-]\d{2,4}#', $remainder);
+        };
+
+        if (!$remainder_has_month($stripped)) {
+            return $s;
+        }
+
+        return $stripped;
+    };
+
+    $english_date_string = $strip_leading_weekday_comma($english_date_string);
+
     // If we replaced a French month, try parsing the English version
     if ($english_date_string !== $date_string) {
         // Try common formats with the English month name
@@ -692,6 +784,7 @@ function intersoccer_parse_date_unified($date_string, $context = '') {
     // Fallback to strtotime() for formats we don't explicitly handle
     // First try with English month names if we translated them
     $strtotime_string = $english_date_string !== $date_string ? $english_date_string : $date_string;
+    $strtotime_string = $strip_leading_weekday_comma($strtotime_string);
     $timestamp = strtotime($strtotime_string);
     if ($timestamp !== false) {
         $parsed_date = date('Y-m-d', $timestamp);
