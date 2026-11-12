@@ -64,6 +64,7 @@
             <file>tests/Legacy/MovePlayersAdminTargetTest.php</file>
             <file>tests/Legacy/MovePlayersConfirmFlowTest.php</file>
             <file>tests/Legacy/MovePlayersMigrationMetaTest.php</file>
+            <file>tests/Unit/GirlsOnlyMigrationHelperDefinitionsTest.php</file>
             <file>tests/Legacy/MovePlayersMoveAuditTest.php</file>
             <file>tests/Legacy/MovePlayersRosterMoveUiTest.php</file>
             <file>tests/Legacy/MovePlayersAjaxAcceptanceTest.php</file>
