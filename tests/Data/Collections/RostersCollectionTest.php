@@ -7,6 +7,7 @@ namespace InterSoccer\ReportsRosters\Tests\Data\Collections;
 
 use InterSoccer\ReportsRosters\Tests\TestCase;
 use InterSoccer\ReportsRosters\Data\Collections\RostersCollection;
+use InterSoccer\ReportsRosters\Data\Models\Roster;
 use Mockery;
 
 class RostersCollectionTest extends TestCase {
@@ -16,12 +17,12 @@ class RostersCollectionTest extends TestCase {
     }
     
     public function test_group_by_venue() {
-        $roster1 = Mockery::mock();
-        $roster1->venue = 'Zurich';
-        $roster2 = Mockery::mock();
-        $roster2->venue = 'Zurich';
-        $roster3 = Mockery::mock();
-        $roster3->venue = 'Geneva';
+        $roster1 = Mockery::mock(Roster::class);
+        $roster1->shouldReceive('getAttribute')->with('venue')->andReturn('Zurich');
+        $roster2 = Mockery::mock(Roster::class);
+        $roster2->shouldReceive('getAttribute')->with('venue')->andReturn('Zurich');
+        $roster3 = Mockery::mock(Roster::class);
+        $roster3->shouldReceive('getAttribute')->with('venue')->andReturn('Geneva');
         
         $collection = new RostersCollection([$roster1, $roster2, $roster3]);
         $grouped = $collection->groupBy('venue');

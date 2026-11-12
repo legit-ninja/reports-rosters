@@ -31,7 +31,23 @@ class OrderFinancialAttributionServiceTest extends TestCase {
 
     protected function setUp(): void {
         parent::setUp();
-        $GLOBALS['intersoccer_test_item_meta'] = [];
+        $GLOBALS['intersoccer_test_wc_order_item_meta'] = [];
+        if (class_exists(\InterSoccer\ReportsRosters\Tests\ReportAccuracy\ReportAccuracyStore::class, false)) {
+            \InterSoccer\ReportsRosters\Tests\ReportAccuracy\ReportAccuracyStore::$item_meta = [];
+        }
+    }
+
+    /**
+     * Report-accuracy fixtures define Services\wc_*_order_item_meta(), and the
+     * attribution service resolves those unqualified calls. Read that store when
+     * it is already loaded so the assertions see the write the service made.
+     */
+    private function itemMeta(int $item_id, string $key) {
+        $namespaced = 'InterSoccer\\ReportsRosters\\Services\\wc_get_order_item_meta';
+        if (function_exists($namespaced)) {
+            return $namespaced($item_id, $key, true);
+        }
+        return wc_get_order_item_meta($item_id, $key, true);
     }
 
     public function test_referral_discount_is_allocated_proportionally(): void {
@@ -45,10 +61,10 @@ class OrderFinancialAttributionServiceTest extends TestCase {
         $service = new OrderFinancialAttributionService();
         $service->attributeOrderDiscounts($order, true);
 
-        $this->assertEquals(10.0, (float) wc_get_order_item_meta(101, OrderFinancialAttributionService::META_ITEM_DISCOUNT_TOTAL));
-        $this->assertEquals(30.0, (float) wc_get_order_item_meta(102, OrderFinancialAttributionService::META_ITEM_DISCOUNT_TOTAL));
+        $this->assertEquals(10.0, (float) $this->itemMeta(101, OrderFinancialAttributionService::META_ITEM_DISCOUNT_TOTAL));
+        $this->assertEquals(30.0, (float) $this->itemMeta(102, OrderFinancialAttributionService::META_ITEM_DISCOUNT_TOTAL));
 
-        $breakdown = wc_get_order_item_meta(102, OrderFinancialAttributionService::META_ITEM_DISCOUNTS);
+        $breakdown = $this->itemMeta(102, OrderFinancialAttributionService::META_ITEM_DISCOUNTS);
         $this->assertIsArray($breakdown);
         $this->assertSame('referral_first_order', $breakdown[0]['type']);
     }
@@ -61,9 +77,9 @@ class OrderFinancialAttributionServiceTest extends TestCase {
         $service = new OrderFinancialAttributionService();
         $service->attributeOrderDiscounts($order, true);
 
-        $breakdown = wc_get_order_item_meta(201, OrderFinancialAttributionService::META_ITEM_DISCOUNTS);
+        $breakdown = $this->itemMeta(201, OrderFinancialAttributionService::META_ITEM_DISCOUNTS);
         $this->assertSame('referral_points', $breakdown[0]['type']);
-        $this->assertEquals(25.0, (float) wc_get_order_item_meta(201, OrderFinancialAttributionService::META_ITEM_DISCOUNT_TOTAL));
+        $this->assertEquals(25.0, (float) $this->itemMeta(201, OrderFinancialAttributionService::META_ITEM_DISCOUNT_TOTAL));
     }
 
     public function test_coupon_discount_is_allocated_per_line(): void {
@@ -75,10 +91,10 @@ class OrderFinancialAttributionServiceTest extends TestCase {
         $service = new OrderFinancialAttributionService();
         $service->attributeOrderDiscounts($order, true);
 
-        $this->assertEquals(10.0, (float) wc_get_order_item_meta(301, OrderFinancialAttributionService::META_ITEM_DISCOUNT_TOTAL));
-        $this->assertEquals(10.0, (float) wc_get_order_item_meta(302, OrderFinancialAttributionService::META_ITEM_DISCOUNT_TOTAL));
+        $this->assertEquals(10.0, (float) $this->itemMeta(301, OrderFinancialAttributionService::META_ITEM_DISCOUNT_TOTAL));
+        $this->assertEquals(10.0, (float) $this->itemMeta(302, OrderFinancialAttributionService::META_ITEM_DISCOUNT_TOTAL));
 
-        $breakdown = wc_get_order_item_meta(301, OrderFinancialAttributionService::META_ITEM_DISCOUNTS);
+        $breakdown = $this->itemMeta(301, OrderFinancialAttributionService::META_ITEM_DISCOUNTS);
         $this->assertSame('coupon', $breakdown[0]['type']);
         $this->assertSame('SAVE10', $breakdown[0]['name']);
     }
@@ -92,8 +108,8 @@ class OrderFinancialAttributionServiceTest extends TestCase {
         $service = new OrderFinancialAttributionService();
         $service->attributeOrderRefunds($order, $refund);
 
-        $this->assertEquals(40.0, (float) wc_get_order_item_meta(401, OrderFinancialAttributionService::META_ITEM_REFUND));
-        $this->assertSame('', wc_get_order_item_meta(402, OrderFinancialAttributionService::META_ITEM_REFUND));
+        $this->assertEquals(40.0, (float) $this->itemMeta(401, OrderFinancialAttributionService::META_ITEM_REFUND));
+        $this->assertSame('', $this->itemMeta(402, OrderFinancialAttributionService::META_ITEM_REFUND));
     }
 
     public function test_order_level_refund_is_split_across_lines_not_multiplied(): void {
@@ -107,9 +123,9 @@ class OrderFinancialAttributionServiceTest extends TestCase {
         $service = new OrderFinancialAttributionService();
         $service->attributeOrderRefunds($order, $refund);
 
-        $total_refund = (float) wc_get_order_item_meta(501, OrderFinancialAttributionService::META_ITEM_REFUND)
-            + (float) wc_get_order_item_meta(502, OrderFinancialAttributionService::META_ITEM_REFUND)
-            + (float) wc_get_order_item_meta(503, OrderFinancialAttributionService::META_ITEM_REFUND);
+        $total_refund = (float) $this->itemMeta(501, OrderFinancialAttributionService::META_ITEM_REFUND)
+            + (float) $this->itemMeta(502, OrderFinancialAttributionService::META_ITEM_REFUND)
+            + (float) $this->itemMeta(503, OrderFinancialAttributionService::META_ITEM_REFUND);
 
         $this->assertEquals(90.0, $total_refund);
     }
@@ -119,16 +135,16 @@ class OrderFinancialAttributionServiceTest extends TestCase {
             ['name' => '20% Sibling Camp Discount', 'total' => -40.0],
         ]);
 
-        $GLOBALS['intersoccer_test_item_meta'][601]['Discount'] = '20% Sibling Discount';
-        $GLOBALS['intersoccer_test_item_meta'][601]['Discount Amount'] = '20.00';
+        $GLOBALS['intersoccer_test_wc_order_item_meta'][601]['Discount'] = '20% Sibling Discount';
+        $GLOBALS['intersoccer_test_wc_order_item_meta'][601]['Discount Amount'] = '20.00';
 
         $service = new OrderFinancialAttributionService();
         $service->attributeOrderDiscounts($order, true);
 
-        $total_discount = (float) wc_get_order_item_meta(601, OrderFinancialAttributionService::META_ITEM_DISCOUNT_TOTAL);
+        $total_discount = (float) $this->itemMeta(601, OrderFinancialAttributionService::META_ITEM_DISCOUNT_TOTAL);
         $this->assertEquals(60.0, $total_discount);
 
-        $breakdown = wc_get_order_item_meta(601, OrderFinancialAttributionService::META_ITEM_DISCOUNTS);
+        $breakdown = $this->itemMeta(601, OrderFinancialAttributionService::META_ITEM_DISCOUNTS);
         $this->assertCount(2, $breakdown);
     }
 
@@ -165,7 +181,7 @@ class OrderFinancialAttributionServiceTest extends TestCase {
             $items['refund_' . $index] = new TestRefundLineItem($line['refunded_item_id'], $line['total']);
         }
 
-        return new WC_Order_Refund($items, $order_total);
+        return new TestOrderRefund($items, $order_total);
     }
 }
 
@@ -256,13 +272,14 @@ class TestRefundLineItem {
     }
 }
 
-class TestWCOrder {
+class TestWCOrder extends \WC_Order {
     private $line_items;
     private $fee_items;
     private $coupons;
     private $meta = [];
 
     public function __construct(array $line_items, array $fee_items = [], array $coupons = []) {
+        parent::__construct(9001);
         $this->line_items = $line_items;
         $this->fee_items = $fee_items;
         $this->coupons = $coupons;
@@ -306,6 +323,10 @@ class TestWCOrder {
         return true;
     }
 
+    public function save_meta_data() {
+        return true;
+    }
+
     public function get_refunds() {
         return [];
     }
@@ -315,17 +336,21 @@ class TestWCOrder {
     }
 }
 
-if (!class_exists('WC_Order_Refund')) {
-    class WC_Order_Refund extends TestWCOrder {
-        private $refund_total;
+class TestOrderRefund extends \WC_Order_Refund {
+    private $refund_items;
+    private $refund_total;
 
-        public function __construct(array $line_items, float $refund_total = 0.0) {
-            parent::__construct($line_items);
-            $this->refund_total = $refund_total;
-        }
+    public function __construct(array $line_items, float $refund_total = 0.0) {
+        parent::__construct(0);
+        $this->refund_items = $line_items;
+        $this->refund_total = $refund_total;
+    }
 
-        public function get_total() {
-            return $this->refund_total;
-        }
+    public function get_items($type = 'line_item') {
+        return $this->refund_items;
+    }
+
+    public function get_total() {
+        return $this->refund_total;
     }
 }

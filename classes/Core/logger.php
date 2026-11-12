@@ -553,6 +553,13 @@ class Logger {
      * 
      * @return string Current log level
      */
+    /**
+     * Whether log entries are also written to the database (off by default).
+     */
+    public function is_db_logging_enabled(): bool {
+        return (bool) $this->log_to_db;
+    }
+
     public function get_log_level() {
         return $this->log_level;
     }

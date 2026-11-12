@@ -286,4 +286,150 @@ class PlayerCampStatusTest extends TestCase {
 		$this->assertSame('Yes', $exported[5]);
 		$this->assertStringContainsString('Camp A', $exported[6]);
 	}
+
+	public function test_fully_refunded_line_is_not_booked(): void {
+		$players = [$this->campPlayer()];
+		$rows = [$this->campRow([
+			'line_fully_refunded' => true,
+		])];
+
+		$joined = intersoccer_player_camp_status_join(
+			$players,
+			intersoccer_player_camp_status_build_roster_index($rows)
+		);
+
+		$this->assertFalse($joined[0]['booked']);
+		$this->assertSame('', $joined[0]['bookings_display']);
+	}
+
+	public function test_partial_refund_reduces_booked_quantity(): void {
+		$players = [$this->campPlayer()];
+		$rows = [$this->campRow([
+			'quantity' => 3,
+			'qty_refunded' => 1,
+		])];
+
+		$joined = intersoccer_player_camp_status_join(
+			$players,
+			intersoccer_player_camp_status_build_roster_index($rows)
+		);
+
+		$this->assertTrue($joined[0]['booked']);
+		$this->assertSame(2.0, $joined[0]['bookings'][0]['quantity']);
+	}
+
+	public function test_refunded_quantity_covering_the_line_is_not_booked(): void {
+		$players = [$this->campPlayer()];
+		$rows = [$this->campRow([
+			'quantity' => 2,
+			'qty_refunded' => 2,
+		])];
+
+		$joined = intersoccer_player_camp_status_join(
+			$players,
+			intersoccer_player_camp_status_build_roster_index($rows)
+		);
+
+		$this->assertFalse($joined[0]['booked']);
+	}
+
+	public function test_order_partial_refund_reduces_quantity_and_full_line_refund_does_not_book(): void {
+		if (function_exists('intersoccer_roster_report_reset_line_refund_check_state')) {
+			intersoccer_roster_report_reset_line_refund_check_state();
+		}
+
+		$line = new class {
+			public function get_quantity() { return 4.0; }
+			public function get_total() { return 400.0; }
+			public function get_subtotal() { return 400.0; }
+		};
+		$order = new class($line) {
+			private $line;
+			public function __construct($line) { $this->line = $line; }
+			public function get_id() { return 701; }
+			public function get_status() { return 'completed'; }
+			public function get_item($id) { return (int) $id === 801 ? $this->line : null; }
+			public function get_qty_refunded_for_item($id) { return (int) $id === 801 ? -1.0 : 0.0; }
+			public function get_refunds() { return []; }
+		};
+
+		$GLOBALS['intersoccer_test_orders_with_refunds'] = [701 => true];
+		$GLOBALS['intersoccer_test_wc_get_orders_callback'] = static function () use ($order) {
+			return [$order];
+		};
+		$GLOBALS['intersoccer_test_wc_get_order_callback'] = static function () use ($order) {
+			return $order;
+		};
+
+		try {
+			$partial = $this->campRow([
+				'order_id' => 701,
+				'order_item_id' => 801,
+			]);
+			intersoccer_roster_report_prime_line_refund_item_results_from_rows([$partial]);
+			$joined = intersoccer_player_camp_status_join(
+				[$this->campPlayer()],
+				intersoccer_player_camp_status_build_roster_index([$partial])
+			);
+			$this->assertTrue($joined[0]['booked']);
+			$this->assertSame(3.0, $joined[0]['bookings'][0]['quantity']);
+
+			$full = $this->campRow([
+				'order_item_id' => 802,
+				'line_fully_refunded' => true,
+			]);
+			$not_booked = intersoccer_player_camp_status_join(
+				[$this->campPlayer()],
+				intersoccer_player_camp_status_build_roster_index([$full])
+			);
+			$this->assertFalse($not_booked[0]['booked']);
+		} finally {
+			unset(
+				$GLOBALS['intersoccer_test_orders_with_refunds'],
+				$GLOBALS['intersoccer_test_wc_get_orders_callback'],
+				$GLOBALS['intersoccer_test_wc_get_order_callback']
+			);
+			if (function_exists('intersoccer_roster_report_reset_line_refund_check_state')) {
+				intersoccer_roster_report_reset_line_refund_check_state();
+			}
+		}
+	}
+
+	/**
+	 * @param array<string,mixed> $overrides
+	 * @return array<string,mixed>
+	 */
+	private function campPlayer(): array {
+		return [
+			'user_id' => 10,
+			'user_email' => 'ada@example.com',
+			'player_id' => 'uuid-a',
+			'player_index' => 0,
+			'first_name' => 'Ada',
+			'last_name' => 'Example',
+			'dob' => '2015-01-01',
+			'age' => 11,
+		];
+	}
+
+	/**
+	 * @param array<string,mixed> $overrides
+	 * @return array<string,mixed>
+	 */
+	private function campRow(array $overrides = []): array {
+		return array_merge([
+			'customer_id' => 10,
+			'player_index' => 0,
+			'order_id' => 501,
+			'order_item_id' => 901,
+			'order_status' => 'completed',
+			'first_name' => 'Ada',
+			'last_name' => 'Example',
+			'product_name' => 'Summer Camp',
+			'venue' => 'Example Venue',
+			'camp_terms' => 'Week 1',
+			'season' => 'Summer 2026',
+			'start_date' => '2026-07-06',
+		], $overrides);
+	}
 }

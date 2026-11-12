@@ -48,7 +48,8 @@ class PlayerCourseStatusLegacyEquivalenceTest extends TestCase {
 			$GLOBALS['intersoccer_test_player_course_status_roster_rows'],
 			$GLOBALS['intersoccer_test_live_order_status_map'],
 			$GLOBALS['intersoccer_test_order_customer_id_map'],
-			$GLOBALS['intersoccer_test_current_user_caps']
+			$GLOBALS['intersoccer_test_current_user_caps'],
+			$GLOBALS['intersoccer_test_pcs_cache_force_enabled']
 		);
 	}
 

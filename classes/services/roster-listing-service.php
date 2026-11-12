@@ -1463,7 +1463,9 @@ class RosterListingService {
         }
 
         $camp_terms = $row['camp_terms'] ?? '';
-        if (!empty($camp_terms) && $camp_terms !== 'N/A') {
+        $seasonless_week = function_exists('intersoccer_reports_camp_term_is_seasonless_week')
+            && intersoccer_reports_camp_term_is_seasonless_week($camp_terms);
+        if (!$seasonless_week && !empty($camp_terms) && $camp_terms !== 'N/A') {
             $parts = explode('-', $camp_terms);
             $derived = !empty($parts[0]) ? ucfirst(trim($parts[0])) : '';
 
@@ -1472,7 +1474,8 @@ class RosterListingService {
                 return $base . ' Camps' . ($year ? ' ' . $year : '');
             }
 
-            if (!empty($derived)) {
+            // A seasonless "Week 1: March 22-25" label must not become the season.
+            if (!empty($derived) && !preg_match('/^week\b/i', $derived)) {
                 return $derived;
             }
         }

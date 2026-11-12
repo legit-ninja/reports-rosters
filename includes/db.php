@@ -786,6 +786,15 @@ function intersoccer_rebuild_rosters_and_reports() {
                 ];
             }
 
+            if (!empty($result['rebuild_failed'])) {
+                return [
+                    'status' => 'error',
+                    'inserted' => 0,
+                    'message' => __('Rebuild failed; no roster rows were changed.', 'intersoccer-reports-rosters'),
+                    'stats' => $result,
+                ];
+            }
+
             $errors = array_filter($result['errors'] ?? []);
             $inserted = intval(($result['rosters_created'] ?? 0) + ($result['rosters_updated'] ?? 0));
             $orders = intval($result['orders_processed'] ?? 0);
@@ -1031,9 +1040,22 @@ if (defined('INTERSOCCER_OOP_ACTIVE') && INTERSOCCER_OOP_ACTIVE && function_exis
                 $result = intersoccer_rebuild_rosters_and_reports();
                 ob_clean();
                 if ($result['status'] === 'success') {
+                    $stats = is_array($result['stats'] ?? null) ? $result['stats'] : [];
+                    $mismatch_count = is_array($stats['age_mismatches'] ?? null) ? count($stats['age_mismatches']) : 0;
+                    $not_checked_count = (int) ($stats['not_checked']['count'] ?? 0);
+                    $detail = $mismatch_count || $not_checked_count
+                        ? sprintf(
+                            ' Age outside group: %d. Age not checked: %d.',
+                            $mismatch_count,
+                            $not_checked_count
+                        )
+                        : '';
                     wp_send_json_success([
                         'inserted' => $result['inserted'],
-                        'message' => __('Rebuild completed. Inserted ' . $result['inserted'] . ' rosters.', 'intersoccer-reports-rosters')
+                        'message' => ($result['message'] ?? '') . $detail,
+                        'results' => $stats,
+                        'age_mismatches' => $stats['age_mismatches'] ?? [],
+                        'not_checked' => $stats['not_checked'] ?? ['count' => 0, 'order_item_ids' => []],
                     ]);
                 } else {
                     wp_send_json_error(['message' => __('Rebuild failed: ' . $result['message'], 'intersoccer-reports-rosters')]);
@@ -1319,7 +1341,21 @@ function intersoccer_prepare_roster_entry($order, $item, $order_item_id, $order_
         $start_date = null;
         $end_date = null;
         $event_dates = 'N/A';
-        $season = $raw_order_item_meta['Season'][0] ?? 'N/A';
+        $season = 'N/A';
+        foreach (['Season', 'pa_program-season', 'attribute_pa_program-season'] as $season_key) {
+            if (!isset($order_item_meta[$season_key])) {
+                continue;
+            }
+            $season_candidate = $order_item_meta[$season_key];
+            if (is_array($season_candidate)) {
+                $season_candidate = $season_candidate[0] ?? '';
+            }
+            $season_candidate = trim((string) $season_candidate);
+            if ($season_candidate !== '' && $season_candidate !== 'N/A') {
+                $season = $season_candidate;
+                break;
+            }
+        }
         $season_year = null;
         if ($season !== 'N/A') {
             $season_year = function_exists('intersoccer_extract_year_from_season')
@@ -1327,38 +1363,95 @@ function intersoccer_prepare_roster_entry($order, $item, $order_item_id, $order_
                 : (preg_match('/(\d{4})/', $season, $sy_matches) ? intval($sy_matches[1]) : null);
         }
 
-        if ($activity_type === 'Camp' && $camp_terms !== 'N/A') {
-            if (preg_match('/(\w+)-week-\d+-(\w+)-(\d{1,2})-(\w+)-(\d{1,2})-\d+-days/', $camp_terms, $matches)) {
-                $start_month = $matches[2];
-                $start_day = $matches[3];
-                $end_month = $matches[4];
-                $end_day = $matches[5];
-                $year = $season_year ?: (date('Y', strtotime($order_date)) ?: date('Y'));
-                $start_date_obj = DateTime::createFromFormat('F j Y', "$start_month $start_day $year");
-                $end_date_obj = DateTime::createFromFormat('F j Y', "$end_month $end_day $year");
-                if ($start_date_obj && $end_date_obj) {
-                    $start_date = $start_date_obj->format('Y-m-d');
-                    $end_date = $end_date_obj->format('Y-m-d');
-                    $event_dates = "$start_date to $end_date";
-                } else {
-                    error_log("InterSoccer: Date parsing failed for camp_terms $camp_terms (start_month: $start_month, start_day: $start_day, end_month: $end_month, end_day: $end_day, year: $year)");
+        if ($activity_type === 'Camp') {
+            $filled_from_meta = false;
+            $season_for_parse = ($season !== 'N/A') ? (string) $season : '';
+            $terms_for_parse = ($camp_terms !== 'N/A') ? (string) $camp_terms : '';
+            if (function_exists('intersoccer_reports_resolve_camp_schedule')) {
+                list($resolved_start, $resolved_end, $resolved_label, $schedule_source) = intersoccer_reports_resolve_camp_schedule(
+                    (int) $variation_id,
+                    (int) $order_item_id,
+                    $terms_for_parse,
+                    $season_for_parse
+                );
+                if (($schedule_source === 'variation_meta' || $schedule_source === 'order_item_meta')
+                    && !empty($resolved_start)
+                    && $resolved_start !== '1970-01-01'
+                ) {
+                    $start_date = $resolved_start;
+                    $end_date = !empty($resolved_end) ? $resolved_end : $resolved_start;
+                    $event_dates = !empty($resolved_label) ? $resolved_label : $start_date;
+                    $filled_from_meta = true;
                 }
-            } elseif (preg_match('/(\w+)-week-\d+-(\w+)-(\d{1,2})-(\d{1,2})-\d+-days/', $camp_terms, $matches)) {
-                $month = $matches[2];
-                $start_day = $matches[3];
-                $end_day = $matches[4];
-                $year = $season_year ?: (date('Y', strtotime($order_date)) ?: date('Y'));
-                $start_date_obj = DateTime::createFromFormat('F j Y', "$month $start_day $year");
-                $end_date_obj = DateTime::createFromFormat('F j Y', "$month $end_day $year");
-                if ($start_date_obj && $end_date_obj) {
-                    $start_date = $start_date_obj->format('Y-m-d');
-                    $end_date = $end_date_obj->format('Y-m-d');
-                    $event_dates = "$start_date to $end_date";
-                } else {
-                    error_log("InterSoccer: Date parsing failed for camp_terms $camp_terms (month: $month, start_day: $start_day, end_day: $end_day, year: $year)");
+            }
+            if (!$filled_from_meta && $camp_terms !== 'N/A') {
+                $parsed_start = null;
+                $parsed_end = null;
+                $parsed_label = 'N/A';
+                $used_shared_parser = function_exists('intersoccer_parse_camp_dates_fixed');
+                $regex_matched = false;
+                if ($used_shared_parser) {
+                    $year = $season_year ?: (int) (date('Y', strtotime((string) $order_date)) ?: date('Y'));
+                    list($parsed_start, $parsed_end, $parsed_label) = intersoccer_parse_camp_dates_fixed(
+                        $camp_terms,
+                        $season_for_parse,
+                        $year
+                    );
+                } elseif (preg_match('/(\w+)-week-\d+-(\w+)-(\d{1,2})-(\w+)-(\d{1,2})-\d+-days/i', $camp_terms, $matches)) {
+                    $regex_matched = true;
+                    $start_month = $matches[2];
+                    $start_day = $matches[3];
+                    $end_month = $matches[4];
+                    $end_day = $matches[5];
+                    $year = $season_year ?: (date('Y', strtotime($order_date)) ?: date('Y'));
+                    $start_date_obj = DateTime::createFromFormat('F j Y', "$start_month $start_day $year");
+                    $end_date_obj = DateTime::createFromFormat('F j Y', "$end_month $end_day $year");
+                    if ($start_date_obj && $end_date_obj) {
+                        $parsed_start = $start_date_obj->format('Y-m-d');
+                        $parsed_end = $end_date_obj->format('Y-m-d');
+                        $parsed_label = "$parsed_start to $parsed_end";
+                    } else {
+                        error_log("InterSoccer: Date parsing failed for camp_terms $camp_terms (start_month: $start_month, start_day: $start_day, end_month: $end_month, end_day: $end_day, year: $year)");
+                    }
+                } elseif (preg_match('/(\w+)-week-\d+-(\w+)-(\d{1,2})-(\d{1,2})-\d+-days/i', $camp_terms, $matches)) {
+                    $regex_matched = true;
+                    $month = $matches[2];
+                    $start_day = $matches[3];
+                    $end_day = $matches[4];
+                    $year = $season_year ?: (date('Y', strtotime($order_date)) ?: date('Y'));
+                    $start_date_obj = DateTime::createFromFormat('F j Y', "$month $start_day $year");
+                    $end_date_obj = DateTime::createFromFormat('F j Y', "$month $end_day $year");
+                    if ($start_date_obj && $end_date_obj) {
+                        $parsed_start = $start_date_obj->format('Y-m-d');
+                        $parsed_end = $end_date_obj->format('Y-m-d');
+                        $parsed_label = "$parsed_start to $parsed_end";
+                    } else {
+                        error_log("InterSoccer: Date parsing failed for camp_terms $camp_terms (month: $month, start_day: $start_day, end_day: $end_day, year: $year)");
+                    }
+                } elseif (preg_match('/(?:^|[^a-z0-9])week-(\d+)-([a-z]+)-(\d{1,2})-(?:([a-z]+)-)?(\d{1,2})-(\d+)-days?(?:-[a-z]+)?/i', $camp_terms, $matches)) {
+                    $regex_matched = true;
+                    $month = $matches[2];
+                    $start_day = $matches[3];
+                    $end_month = (isset($matches[4]) && $matches[4] !== '') ? $matches[4] : $month;
+                    $end_day = $matches[5];
+                    $year = $season_year ?: (date('Y', strtotime($order_date)) ?: date('Y'));
+                    $start_date_obj = DateTime::createFromFormat('F j Y', "$month $start_day $year");
+                    $end_date_obj = DateTime::createFromFormat('F j Y', "$end_month $end_day $year");
+                    if ($start_date_obj && $end_date_obj) {
+                        $parsed_start = $start_date_obj->format('Y-m-d');
+                        $parsed_end = $end_date_obj->format('Y-m-d');
+                        $parsed_label = "$parsed_start to $parsed_end";
+                    } else {
+                        error_log("InterSoccer: Date parsing failed for camp_terms $camp_terms (month: $month, start_day: $start_day, end_month: $end_month, end_day: $end_day, year: $year)");
+                    }
                 }
-            } else {
-                error_log("InterSoccer: Regex failed to match camp_terms $camp_terms");
+                if (!empty($parsed_start) && $parsed_start !== '1970-01-01') {
+                    $start_date = $parsed_start;
+                    $end_date = !empty($parsed_end) ? $parsed_end : $parsed_start;
+                    $event_dates = !empty($parsed_label) ? $parsed_label : ($start_date . ' to ' . $end_date);
+                } elseif ($used_shared_parser || !$regex_matched) {
+                    error_log("InterSoccer: Regex failed to match camp_terms $camp_terms");
+                }
             }
         } elseif ($activity_type === 'Tournament') {
             // For tournaments, get date from product attribute pa_date or Date

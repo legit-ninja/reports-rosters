@@ -73,6 +73,7 @@
             <file>tests/Reports/FinalReportsTotalsTest.php</file>
             <file>tests/Reports/BookingReportTotalsHtmlTest.php</file>
             <file>tests/Reports/FinalReportsAggregationAccuracyTest.php</file>
+            <file>tests/Reports/CampTermFormatTest.php</file>
             <file>tests/Reports/FinalReportsUrgencyTest.php</file>
             <file>tests/Reports/EvergreenYearIsolationTest.php</file>
             <file>tests/Reports/CanonicalOrderMetaPreferenceTest.php</file>
@@ -112,7 +113,24 @@
             <file>tests/Reports/OrderMetaFieldMapTest.php</file>
             <file>tests/Reports/PaTwinOrderMetaReadersTest.php</file>
             <file>tests/Services/RosterBuilderSingleDayTest.php</file>
+            <file>tests/Data/Models/PlayerAgeGroupParserTest.php</file>
+            <file>tests/Data/Models/PlayerAgeGroupStatusPlaceholderTest.php</file>
+            <file>tests/Services/RosterRebuildKeepRows160Test.php</file>
+            <file>tests/Services/RosterRebuildProcessPath160Test.php</file>
+            <file>tests/Services/RosterRebuildCoverage160Test.php</file>
+            <file>tests/Data/Repositories/RosterRepositoryFillFields167Test.php</file>
+            <file>tests/Reports/CampReportTest.php</file>
+            <file>tests/Core/DatabaseNestedTransactionTest.php</file>
+            <file>tests/Services/RosterRebuildNestedTransaction160Test.php</file>
+            <file>tests/Services/RosterBuilderRr178CourseTermEnglishTest.php</file>
+            <file>tests/Services/RosterBuilderRr178CampTermEnglishTest.php</file>
             <file>tests/Services/DataValidatorSingleDayUnknownTest.php</file>
+            <file>tests/Services/DataValidatorTest.php</file>
+            <file>tests/Services/SignatureDriftServiceTest.php</file>
+            <file>tests/Services/RosterReconcileDeleteRulesTest.php</file>
+            <file>tests/Services/RosterReconcileWpmlLanguageFilterTest.php</file>
+            <file>tests/Services/RosterReconcilePaging155Test.php</file>
+            <file>tests/Services/RosterRebuildPagingMemoryTest.php</file>
             <file>tests/Unit/RosterCampBookingDisplayTest.php</file>
             <file>tests/Unit/BookingTypeNormalizerTest.php</file>
             <file>tests/Unit/InterSoccerPreFilterTestingGateTest.php</file>
@@ -140,10 +158,12 @@
             <file>tests/Legacy/MovePlayersFrDeQaFixesTest.php</file>
             <file>tests/Legacy/MovePlayersOrderLanguageMoveTest.php</file>
             <file>tests/Services/RosterBuilderMigrationBlankFillTest.php</file>
+            <file>tests/Services/RosterBuilderParentNameFallbackTest.php</file>
             <file>tests/Legacy/OrderAdminLineItemMetaDisplayTest.php</file>
             <file>tests/Legacy/MovePlayersRosterHistoryNoWriteOnBuildTest.php</file>
             <file>tests/Legacy/MovePlayersRosterRefreshAfterMoveTest.php</file>
             <directory>tests/ReportAccuracy</directory>
+            <file>tests/Services/DailyBfSalesEmailTest.php</file>
         </testsuite>
         <testsuite name="Complete">
             <directory>tests</directory>

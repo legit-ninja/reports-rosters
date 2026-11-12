@@ -269,15 +269,16 @@ class RosterReconcileWpmlLanguageFilterTest extends TestCase {
     }
 
     /**
-     * Control (expected to PASS today and after a fix): a row whose line item belongs to
-     * no order at all is still removed. Guards against "fixing" by disabling deletes.
+     * A stored order id that wc_get_order cannot load is a lookup failure, not proof the
+     * booking is gone. Reconcile keeps the row. A line that is missing from an order that
+     * did load is still deleted (see RosterReconcileDeleteRulesTest).
      *
      * @dataProvider languageContexts
      */
-    public function test_reconcile_still_deletes_true_orphan_rows(string $lang): void {
+    public function test_reconcile_keeps_row_when_order_lookup_fails(string $lang): void {
         $this->runFullReconcile($lang);
 
-        $this->assertContains(self::ORPHAN_ITEM, $this->deletedItemIds);
+        $this->assertNotContains(self::ORPHAN_ITEM, $this->deletedItemIds);
     }
 
     public function test_reconcile_uses_suppress_filters_and_paged_batches(): void {
