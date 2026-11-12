@@ -925,6 +925,7 @@ class RosterBuilder {
             
             // Process each order in the batch
             foreach ($orders as $order_id) {
+                $order = null;
                 try {
                     $order = wc_get_order($order_id);
                     
@@ -934,6 +935,7 @@ class RosterBuilder {
                             'order_id' => $order_id,
                             'type' => $order ? $order->get_type() : 'false/null'
                         ]);
+                        unset($order);
                         continue;
                     }
                     
@@ -941,6 +943,7 @@ class RosterBuilder {
                     $this->build_stats['orders_processed']++;
                     $total_processed++;
                 } catch (\Throwable $e) {
+                    unset($order);
                     $this->rethrowIfRebuildAborted($e);
                     $this->build_stats['skipped_orders']++;
                     $this->build_stats['errors'][] = "Order {$order_id}: " . $e->getMessage();
@@ -949,10 +952,17 @@ class RosterBuilder {
                         'error' => $e->getMessage()
                     ]);
                 }
+
+                unset($order);
             }
             
             $offset += $batch_size;
-            
+            unset($orders);
+
+            if ($batch_count >= $batch_size && function_exists('wp_cache_flush')) {
+                wp_cache_flush();
+            }
+
             // Memory cleanup
             if ($total_processed % 500 === 0) {
                 $this->logger->info('Batch processing checkpoint', [
