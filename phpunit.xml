@@ -114,6 +114,7 @@
             <file>tests/Reports/OrderMetaFieldMapTest.php</file>
             <file>tests/Reports/PaTwinOrderMetaReadersTest.php</file>
             <file>tests/Services/RosterBuilderSingleDayTest.php</file>
+            <file>tests/Services/RosterBuilderParseDates158Test.php</file>
             <file>tests/Data/Models/PlayerAgeGroupParserTest.php</file>
             <file>tests/Data/Models/PlayerAgeGroupStatusPlaceholderTest.php</file>
             <file>tests/Services/RosterRebuildKeepRows160Test.php</file>
