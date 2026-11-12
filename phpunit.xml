@@ -135,6 +135,7 @@
             <file>tests/Unit/BookingTypeNormalizerTest.php</file>
             <file>tests/Unit/InterSoccerPreFilterTestingGateTest.php</file>
             <file>tests/Unit/MedicalAccessTest.php</file>
+            <file>tests/Unit/RosterDetailsTitleVenue153Test.php</file>
             <file>tests/Unit/MedicalAccessSplitPermissionsTest.php</file>
             <file>tests/Unit/MedicalAccessPmMissingTest.php</file>
             <file>tests/Unit/MedicalRosterAjaxTest.php</file>

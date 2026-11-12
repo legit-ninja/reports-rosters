@@ -502,6 +502,118 @@ function intersoccer_fetch_roster_sibling_candidates_for_consolidation(array $an
 }
 
 /**
+ * Venue stored on the variation being viewed (attribute), not a roster row.
+ *
+ * @param int $variation_id
+ * @return string Raw attribute value, or empty when it cannot be read.
+ */
+function intersoccer_roster_details_variation_venue($variation_id) {
+    $variation_id = (int) $variation_id;
+    if ($variation_id <= 0) {
+        return '';
+    }
+
+    $raw = '';
+    if (function_exists('wc_get_product')) {
+        $product = wc_get_product($variation_id);
+        if ($product && method_exists($product, 'get_attribute')) {
+            $attr = $product->get_attribute('pa_intersoccer-venues');
+            if (is_array($attr)) {
+                $attr = implode(', ', array_map('trim', $attr));
+            }
+            $raw = trim((string) $attr);
+        }
+    }
+    if ($raw === '' && function_exists('get_post_meta')) {
+        $meta = get_post_meta($variation_id, 'attribute_pa_intersoccer-venues', true);
+        if (is_array($meta)) {
+            $meta = implode(', ', array_map('trim', $meta));
+        }
+        $raw = trim((string) $meta);
+    }
+    if ($raw === '' || strcasecmp($raw, 'N/A') === 0) {
+        return '';
+    }
+
+    return $raw;
+}
+
+/**
+ * Page-title venue for the event being viewed.
+ *
+ * Prefer the variation's own venue over whichever roster row sorts first.
+ * Row objects are not modified.
+ *
+ * @param int          $variation_id
+ * @param int[]        $variation_ids
+ * @param array        $rosters
+ * @param string       $request_venue
+ * @param object|null  $fallback_roster
+ * @return string Display label, or empty when none is known.
+ */
+function intersoccer_roster_details_title_venue($variation_id, array $variation_ids, $rosters, $request_venue, $fallback_roster) {
+    $candidate_ids = [];
+    $variation_id = (int) $variation_id;
+    if ($variation_id > 0) {
+        $candidate_ids[] = $variation_id;
+    } else {
+        foreach ($variation_ids as $id) {
+            $id = (int) $id;
+            if ($id > 0) {
+                $candidate_ids[] = $id;
+            }
+        }
+        if ($candidate_ids === [] && is_array($rosters)) {
+            foreach ($rosters as $row) {
+                $id = 0;
+                if (is_object($row)) {
+                    $id = (int) ($row->variation_id ?? 0);
+                } elseif (is_array($row)) {
+                    $id = (int) ($row['variation_id'] ?? 0);
+                }
+                if ($id > 0) {
+                    $candidate_ids[] = $id;
+                }
+            }
+        }
+    }
+    $candidate_ids = array_values(array_unique($candidate_ids));
+
+    $resolved = [];
+    foreach ($candidate_ids as $id) {
+        $from_variation = intersoccer_roster_details_variation_venue($id);
+        if ($from_variation !== '') {
+            $resolved[$from_variation] = true;
+        }
+    }
+
+    $raw = '';
+    if (count($resolved) === 1) {
+        $raw = (string) array_key_first($resolved);
+    }
+    if ($raw === '') {
+        $request_venue = trim((string) $request_venue);
+        if ($request_venue !== '' && strcasecmp($request_venue, 'N/A') !== 0) {
+            $raw = $request_venue;
+        }
+    }
+    if ($raw === '' && is_object($fallback_roster)) {
+        $raw = trim((string) ($fallback_roster->venue ?? ''));
+    }
+    if ($raw === '' || strcasecmp($raw, 'N/A') === 0) {
+        return '';
+    }
+    if (function_exists('intersoccer_get_term_name')) {
+        $named = intersoccer_get_term_name($raw, 'pa_intersoccer-venues');
+        if (is_string($named) && $named !== '' && strcasecmp($named, 'N/A') !== 0) {
+            return $named;
+        }
+    }
+
+    return $raw;
+}
+
+/**
  * Render the roster details page
  */
 function intersoccer_render_roster_details_page() {
@@ -967,10 +1079,13 @@ function intersoccer_render_roster_details_page() {
     if (function_exists('intersoccer_get_term_name')) {
         $display_age_group = intersoccer_get_term_name($display_age_group, 'pa_age-group');
     }
-    $display_venue = $base_roster->venue ?? '';
-    if (function_exists('intersoccer_get_term_name')) {
-        $display_venue = intersoccer_get_term_name($display_venue, 'pa_intersoccer-venues');
-    }
+    $display_venue = intersoccer_roster_details_title_venue(
+        $variation_id,
+        is_array($variation_ids) ? $variation_ids : [],
+        is_array($rosters) ? $rosters : [],
+        (string) $venue,
+        $base_roster
+    );
     // Only add parentheses if age group is not empty
     $age_group_suffix = !empty($display_age_group) && $display_age_group !== 'N/A'
         ? ' (' . esc_html($display_age_group) . ')'
@@ -1396,7 +1511,8 @@ function intersoccer_render_roster_details_page() {
     
     echo '<p><strong>' . esc_html__('Event Details', 'intersoccer-reports-rosters') . ':</strong></p>';
     echo '<p>' . esc_html__('Product Name: ', 'intersoccer-reports-rosters') . esc_html($base_roster->product_name ?? 'N/A') . '</p>';
-    echo '<p>' . esc_html__('Venue: ', 'intersoccer-reports-rosters') . esc_html(function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($base_roster->venue, 'pa_intersoccer-venues') : $base_roster->venue ?? 'N/A') . '</p>';
+    $event_venue_label = $display_venue !== '' ? $display_venue : 'N/A';
+    echo '<p>' . esc_html__('Venue: ', 'intersoccer-reports-rosters') . esc_html($event_venue_label) . '</p>';
     echo '<p>' . esc_html__('Age Group: ', 'intersoccer-reports-rosters') . esc_html(function_exists('intersoccer_get_term_name') ? intersoccer_get_term_name($base_roster->age_group, 'pa_age-group') : $base_roster->age_group ?? 'N/A') . '</p>';
     // Display day/terms based on activity type
     if ($base_roster->activity_type === 'Tournament') {
