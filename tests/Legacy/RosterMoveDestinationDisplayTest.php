@@ -256,4 +256,87 @@ class RosterMoveDestinationDisplayTest extends TestCase {
         $this->assertStringContainsString('Autumn 2026', $label);
         $this->assertStringNotContainsString('Autumn-2025', $label);
     }
+
+    public function test_rr165_success_label_uses_season_display_name_not_slug(): void {
+        require_once dirname(__DIR__, 2) . '/includes/migration-meta.php';
+        require_once dirname(__DIR__) . '/stubs/course-meta-stub.php';
+
+        $target_var = 903100;
+        $parent_id = 903000;
+        $slug = 'easter-camps-2026';
+        $display = 'Easter camps 2026';
+        $term = (object) [
+            'term_id' => 90301,
+            'slug' => $slug,
+            'name' => $display,
+        ];
+        $GLOBALS['intersoccer_test_terms_by_slug']['pa_program-season'] = [
+            $slug => $term,
+        ];
+        $GLOBALS['intersoccer_test_terms_by_id'][90301] = $term;
+        $GLOBALS['intersoccer_test_terms_by_name']['pa_program-season'] = [
+            strtolower($display) => $term,
+        ];
+
+        $variation = Mockery::mock(\WC_Product_Variation::class);
+        $variation->shouldReceive('get_id')->andReturn($target_var);
+        $variation->shouldReceive('get_parent_id')->andReturn($parent_id);
+        $variation->shouldReceive('get_variation_attributes')->andReturn([
+            'attribute_pa_program-season' => 'Easter-camps-2026',
+            'attribute_pa_intersoccer-venues' => 'north-pitch',
+            'attribute_pa_age-group' => '6-8y',
+            'attribute_pa_camp-terms' => 'week-1',
+            'attribute_pa_girls-only' => 'no',
+        ]);
+        $variation->shouldReceive('get_attribute')->andReturn('');
+        $variation->shouldReceive('get_name')->andReturn('Example Camp 2026');
+        $variation->shouldReceive('get_meta')->andReturn('');
+        $variation->shouldReceive('get_attributes')->andReturn([]);
+
+        global $intersoccer_test_wc_get_product_callback, $intersoccer_test_get_product_season_callback;
+        $intersoccer_test_wc_get_product_callback = static function ($id) use ($variation, $parent_id, $target_var) {
+            if ((int) $id === $target_var) {
+                return $variation;
+            }
+            if ((int) $id === $parent_id) {
+                $parent = Mockery::mock('WC_Product');
+                $parent->shouldReceive('get_id')->andReturn($parent_id);
+                $parent->shouldReceive('get_attribute')->andReturn('');
+                $parent->shouldReceive('get_name')->andReturn('Example Camp 2026');
+
+                return $parent;
+            }
+
+            return null;
+        };
+        $intersoccer_test_get_product_season_callback = static function ($pid) use ($parent_id) {
+            return (int) $pid === $parent_id ? 'Easter-camps-2026' : '';
+        };
+
+        global $wpdb;
+        $wpdb = Mockery::mock('wpdb');
+        $wpdb->prefix = 'wp_';
+        $wpdb->shouldReceive('prepare')->andReturn('query');
+        $wpdb->shouldReceive('get_row')->andReturn([
+            'product_name' => 'Example Camp 2026',
+            'season' => 'Spring 2026',
+            'course_day' => '',
+            'camp_terms' => 'week-1',
+            'venue' => 'north-pitch',
+            'age_group' => '6-8y',
+            'times' => '09:00-12:00',
+        ]);
+
+        $label = intersoccer_roster_move_target_display_name_for_variation($target_var);
+        $this->assertStringContainsString('Example Camp 2026', $label);
+        $this->assertStringContainsString($display, $label);
+        $this->assertStringNotContainsString('Easter-camps-2026', $label);
+        $this->assertStringNotContainsString($slug, $label);
+        $this->assertStringNotContainsString('Spring 2026', $label);
+
+        $this->assertSame($display, intersoccer_roster_move_picker_season_label('Easter-camps-2026'));
+        $this->assertSame('Spring 2026', intersoccer_roster_move_picker_season_label('Spring 2026'));
+        $this->assertSame('', intersoccer_roster_move_picker_season_label('missing-season-slug'));
+        $this->assertSame('Not set', intersoccer_roster_move_picker_season_label(''));
+    }
 }
