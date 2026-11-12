@@ -289,12 +289,95 @@ function intersoccer_roster_move_resolve_picker_term_label(string $value, string
 }
 
 /**
+ * True when a season value is still a raw attribute slug rather than a label.
+ */
+function intersoccer_roster_move_season_value_is_raw_slug(string $value): bool {
+    $value = trim($value);
+    if ($value === '' || strpos($value, ' ') !== false || strpos($value, "\t") !== false) {
+        return false;
+    }
+    if (function_exists('sanitize_title')) {
+        $slug = sanitize_title($value);
+        if ($slug !== '' && strtolower($value) === $slug && preg_match('/[a-z]/', $slug) && strpos($slug, '-') !== false) {
+            return true;
+        }
+        if ($slug !== '' && $value === $slug && preg_match('/^[a-z]+(?:-[a-z0-9]+)*$/', $slug)) {
+            return true;
+        }
+    }
+
+    return (bool) preg_match('/^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)+$/', $value);
+}
+
+/**
+ * English display name for a program-season slug or label.
+ *
+ * @return string Term name, or empty when the value does not resolve.
+ */
+function intersoccer_roster_move_lookup_program_season_name(string $value): string {
+    $value = trim($value);
+    if ($value === '') {
+        return '';
+    }
+
+    $candidates = [$value];
+    $lower = strtolower($value);
+    if ($lower !== $value) {
+        $candidates[] = $lower;
+    }
+    if (function_exists('sanitize_title')) {
+        $slug = sanitize_title($value);
+        if ($slug !== '' && !in_array($slug, $candidates, true)) {
+            $candidates[] = $slug;
+        }
+    }
+
+    foreach ($candidates as $candidate) {
+        if (function_exists('intersoccer_get_term_in_default_language')) {
+            $term = intersoccer_get_term_in_default_language($candidate, 'pa_program-season');
+            if ($term && !is_wp_error($term) && !empty($term->name)) {
+                return (string) $term->name;
+            }
+        }
+        if (function_exists('get_term_by')) {
+            $term = get_term_by('slug', $candidate, 'pa_program-season');
+            if ($term && !is_wp_error($term) && !empty($term->name)) {
+                return (string) $term->name;
+            }
+            $term = get_term_by('name', $candidate, 'pa_program-season');
+            if ($term && !is_wp_error($term) && !empty($term->name)) {
+                return (string) $term->name;
+            }
+        }
+        if (function_exists('intersoccer_get_term_name')) {
+            $named = intersoccer_get_term_name($candidate, 'pa_program-season');
+            if (is_string($named) && $named !== '' && strcasecmp($named, 'N/A') !== 0 && strcasecmp($named, $candidate) !== 0) {
+                return $named;
+            }
+        }
+    }
+
+    return '';
+}
+
+/**
  * Season label for destination picker filters (matches roster-details.php data-season).
+ *
+ * Resolved terms use their display name. An unresolved slug is omitted so the
+ * success message never prints a raw season slug.
  */
 function intersoccer_roster_move_picker_season_label(string $season_raw): string {
     $season = trim($season_raw);
     if ($season === '' || strcasecmp($season, 'N/A') === 0) {
         return __('Not set', 'intersoccer-reports-rosters');
+    }
+
+    $display = intersoccer_roster_move_lookup_program_season_name($season);
+    if ($display !== '') {
+        return $display;
+    }
+    if (intersoccer_roster_move_season_value_is_raw_slug($season)) {
+        return '';
     }
 
     return $season;
@@ -420,9 +503,13 @@ function intersoccer_roster_move_target_display_name_for_variation(int $variatio
 
     $parts = [$product];
     if (is_array($row)) {
-        $season = trim((string) ($row['season'] ?? ''));
-        if ($season !== '' && strcasecmp($season, 'N/A') !== 0) {
-            $parts[] = $season;
+        $season_raw = trim((string) ($row['season'] ?? ''));
+        if ($season_raw !== '' && strcasecmp($season_raw, 'N/A') !== 0) {
+            $season = intersoccer_roster_move_picker_season_label($season_raw);
+            $not_set = __('Not set', 'intersoccer-reports-rosters');
+            if ($season !== '' && strcasecmp($season, 'N/A') !== 0 && $season !== $not_set) {
+                $parts[] = $season;
+            }
         }
         $schedule = trim((string) ($row['course_day'] ?? ''));
         if ($schedule === '') {
