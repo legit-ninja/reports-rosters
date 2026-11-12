@@ -817,7 +817,13 @@ if (!function_exists('get_role')) {
 
 // Caching
 if (!function_exists('wp_cache_flush')) {
-    function wp_cache_flush() { return true; }
+    function wp_cache_flush() {
+        if (isset($GLOBALS['intersoccer_test_wp_cache_flush_count'])) {
+            $GLOBALS['intersoccer_test_wp_cache_flush_count']++;
+        }
+
+        return true;
+    }
 }
 
 if (!function_exists('wp_cache_get')) {

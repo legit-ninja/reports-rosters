@@ -430,13 +430,14 @@ class RosterRebuildCoverage160Test extends TestCase {
         $reconcile_deleted = $this->deleted;
         sort($reconcile_deleted);
 
-        // Reconcile still deletes obsolete rows; the rebuild keeps the same rows and lists them for review.
+        // Rebuild lists a failed order and a removed line. Reconcile deletes only the
+        // removed line: a failed status or a failed order lookup is not deleted.
         $this->assertSame([], $rebuild_deleted);
         $this->assertSame(0, $rebuild['row_drift']['count'], 'only empty fields were filled');
         $review = array_map(static fn ($row) => $row['order_item_id'], $rebuild['rows_for_review']['rows']);
         sort($review);
-        $this->assertSame($reconcile_deleted, $review);
         $this->assertSame([8007, 8999], $review);
+        $this->assertSame([8999], $reconcile_deleted);
         $this->assertSame(self::ids($rebuild['age_mismatches']), self::ids($reconcile['age_mismatches']));
     }
 
@@ -533,6 +534,34 @@ class RosterRebuildCoverage160Test extends TestCase {
         $this->assertContains([7202, Roster::STATUS_REFUNDED], $this->synced);
         $this->assertSame(5, $result['statistics']['skipped_orders']);
         $this->assertSame([], $result['statistics']['errors']);
+    }
+
+    public function test_full_and_targeted_rebuild_keep_on_hold_refunded_and_cancelled_status(): void {
+        $this->order(7401, 'on-hold', [7501 => $this->meta()]);
+        $this->order(7402, 'refunded', [7502 => $this->meta()]);
+        $this->order(7403, 'cancelled', [7503 => $this->meta()]);
+        $this->existingRow(7501, 7401, 'on-hold');
+        $this->existingRow(7502, 7402, 'refunded');
+        $this->existingRow(7503, 7403, 'cancelled');
+        $this->routeOrders([7401]);
+
+        $this->builder()->buildRosters(['clear_existing' => true, 'batch_size' => 10]);
+
+        $this->assertSame([], $this->deleted);
+        $this->assertSame('on-hold', $this->stored[7501]['order_status']);
+        $this->assertSame('refunded', $this->stored[7502]['order_status']);
+        $this->assertSame('cancelled', $this->stored[7503]['order_status']);
+        $this->assertArrayHasKey(7501, $this->stored);
+        $this->assertArrayHasKey(7502, $this->stored);
+        $this->assertArrayHasKey(7503, $this->stored);
+
+        $this->deleted = [];
+        $this->builder()->rebuildSpecificOrders([7401, 7402, 7403]);
+
+        $this->assertSame([], $this->deleted);
+        $this->assertSame('on-hold', $this->stored[7501]['order_status']);
+        $this->assertSame('refunded', $this->stored[7502]['order_status']);
+        $this->assertSame('cancelled', $this->stored[7503]['order_status']);
     }
 
     // ---- #160 review: no overwrite, drift report, dry run, DB-logging guard ------------------------------------
@@ -1055,7 +1084,8 @@ class RosterRebuildCoverage160Test extends TestCase {
     }
 
     public function test_reconcile_still_counts_delete_failures_as_errors(): void {
-        $this->order(8501, 'failed', [8601 => $this->meta()]);
+        // A failed order is kept, so the delete that can fail is a line confirmed gone.
+        $this->order(8501, 'completed', [8602 => $this->meta()]);
         $this->existingRow(8601, 8501);
         $this->routeOrders([]);
         $builder = $this->builder();

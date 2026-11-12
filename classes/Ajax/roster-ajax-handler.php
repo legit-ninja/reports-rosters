@@ -255,6 +255,12 @@ class RosterAjaxHandler {
                 'limit' => 1,
                 'offset' => 0,
             ];
+            if (!empty($options['date_from'])) {
+                $diag_filters['date_from'] = $options['date_from'];
+            }
+            if (!empty($options['date_to'])) {
+                $diag_filters['date_to'] = $options['date_to'];
+            }
             $diag_service = class_exists(ReportsRostersDiagnosticsService::class)
                 ? new ReportsRostersDiagnosticsService()
                 : null;

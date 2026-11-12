@@ -693,21 +693,6 @@ class RosterBuilder {
             $wpdb = $this->database->get_wpdb();
             $table = $wpdb->prefix . 'intersoccer_rosters';
 
-            $existing_rows = $wpdb->get_results(
-                "SELECT order_item_id, order_id FROM {$table}",
-                ARRAY_A
-            );
-            $existing_item_map = [];
-            if (is_array($existing_rows)) {
-                foreach ($existing_rows as $row) {
-                    $item_id = isset($row['order_item_id']) ? (int) $row['order_item_id'] : 0;
-                    if ($item_id <= 0) {
-                        continue;
-                    }
-                    $existing_item_map[$item_id] = isset($row['order_id']) ? (int) $row['order_id'] : 0;
-                }
-            }
-
             $date_from = isset($options['date_from']) ? trim((string) $options['date_from']) : '';
             $date_to = isset($options['date_to']) ? trim((string) $options['date_to']) : '';
             $order_query_options = [
@@ -717,6 +702,7 @@ class RosterBuilder {
             ];
 
             $batch_size = max(1, (int) ($options['batch_size'] ?? 200));
+            $existing_item_map = $this->loadReconcileExistingItemMap($wpdb, $table, $batch_size);
             $offset = 0;
             $orders_fetched = 0;
 
@@ -1077,14 +1063,70 @@ class RosterBuilder {
     }
 
     /**
-     * True only when the roster row's stored order is gone or confirmed ineligible for rebuild.
+     * True only when the stored line is confirmed gone from an order that loaded.
      *
-     * Uses the row's denormalized order_id (never wc_get_order_id_by_order_item_id). On any
-     * uncertainty (missing helper, invalid stored id, lookup failure, unreadable line items),
-     * returns false (keep).
+     * Uses the row's denormalized order_id (never wc_get_order_id_by_order_item_id). A lookup
+     * that returns nothing, or an order whose status is failed, is not proof the booking is
+     * obsolete, so the row is kept and logged.
      */
     private function shouldDeleteObsoleteReconcileRow(int $order_item_id, int $stored_order_id): bool {
-        return $this->obsoleteRowReason($order_item_id, $stored_order_id) !== null;
+        $reason = $this->obsoleteRowReason($order_item_id, $stored_order_id);
+        if ($reason === null) {
+            return false;
+        }
+        if ($reason === 'order_not_found' || $reason === 'order_failed') {
+            $message = $reason === 'order_not_found'
+                ? 'Keeping roster row; order lookup failed'
+                : 'Keeping roster row; order status is failed';
+            $this->logger->warning($message, [
+                'order_id' => $stored_order_id,
+                'order_item_id' => $order_item_id,
+            ]);
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Page roster ids so reconcile does not hold one unbounded result set.
+     *
+     * Stops if a later page adds no new ids, so a driver that ignores LIMIT cannot loop.
+     *
+     * @param object $wpdb
+     * @return array<int,int> order_item_id => stored order_id
+     */
+    private function loadReconcileExistingItemMap($wpdb, string $table, int $page_size): array {
+        $map = [];
+        $page_size = max(1, $page_size);
+        $offset = 0;
+
+        do {
+            $sql = "SELECT order_item_id, order_id FROM {$table} ORDER BY order_item_id ASC LIMIT {$page_size} OFFSET {$offset}";
+            $rows = $wpdb->get_results($sql, ARRAY_A);
+            if (!is_array($rows) || $rows === []) {
+                break;
+            }
+
+            $added = 0;
+            foreach ($rows as $row) {
+                $item_id = isset($row['order_item_id']) ? (int) $row['order_item_id'] : 0;
+                if ($item_id <= 0 || isset($map[$item_id])) {
+                    continue;
+                }
+                $map[$item_id] = isset($row['order_id']) ? (int) $row['order_id'] : 0;
+                $added++;
+            }
+
+            $count = count($rows);
+            unset($rows);
+            if ($count >= $page_size && function_exists('wp_cache_flush')) {
+                wp_cache_flush();
+            }
+            $offset += $page_size;
+        } while ($count >= $page_size && $added > 0);
+
+        return $map;
     }
 
     /**
