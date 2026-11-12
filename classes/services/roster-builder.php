@@ -3481,8 +3481,9 @@ class RosterBuilder {
                 if ($parsed_date) {
                     $data[$field] = $parsed_date;
                 } else {
+                    $raw_value = (string) $data[$field];
                     unset($data[$field]); // Remove unparseable dates
-                    $this->build_stats['warnings'][] = "Could not parse date: {$data[$field]}";
+                    $this->build_stats['warnings'][] = "Could not parse date: {$raw_value}";
                 }
             }
         }
