@@ -106,8 +106,12 @@ class WinbackReportCacheTest extends TestCase {
 			$this->markTestSkipped('PhpSpreadsheet required');
 		}
 		$rows = $this->minimal_engine_result()['rows'];
-		$build = static function (array $export_rows): string {
+		$fixed_stamp = 1577836800;
+		$build = static function (array $export_rows) use ($fixed_stamp): array {
 			$spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+			$spreadsheet->getProperties()
+				->setCreated($fixed_stamp)
+				->setModified($fixed_stamp);
 			$sheet = $spreadsheet->getActiveSheet();
 			$row_index = 1;
 			foreach ($export_rows as $row) {
@@ -122,15 +126,115 @@ class WinbackReportCacheTest extends TestCase {
 			$writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
 			$path = tempnam(sys_get_temp_dir(), 'wb-export-');
 			$writer->save($path);
-			$bytes = (string) file_get_contents($path);
+			$parts = self::xlsx_part_contents($path);
 			@unlink($path);
 
-			return $bytes;
+			return $parts;
 		};
 
 		$tab_rows = intersoccer_winback_report_rows_for_tab($rows, 'actionable');
-		$bytes_a = $build($tab_rows);
-		$bytes_b = $build($tab_rows);
-		$this->assertSame($bytes_a, $bytes_b);
+		$parts_a = $build($tab_rows);
+		usleep(1100000);
+		$parts_b = $build($tab_rows);
+		$this->assertNotSame([], $parts_a);
+		$this->assertSame($parts_a, $parts_b);
+		$this->assertArrayHasKey('xl/worksheets/sheet1.xml', $parts_a);
+		$this->assertArrayHasKey('xl/sharedStrings.xml', $parts_a);
+		$this->assertArrayHasKey('docProps/core.xml', $parts_a);
+		$this->assertStringContainsString('actionable', $parts_a['xl/sharedStrings.xml']);
+		$this->assertStringContainsString('2015-01-01', $parts_a['xl/sharedStrings.xml']);
+	}
+
+	/**
+	 * Uncompressed xlsx parts. Zip entry timestamps are ignored so a second
+	 * boundary does not change the comparison.
+	 *
+	 * @return array<string,string>
+	 */
+	private static function xlsx_part_contents(string $path): array {
+		if (class_exists('ZipArchive')) {
+			$zip = new \ZipArchive();
+			if ($zip->open($path) === true) {
+				$parts = [];
+				for ($i = 0; $i < $zip->numFiles; $i++) {
+					$name = $zip->getNameIndex($i);
+					if (!is_string($name) || $name === '' || substr($name, -1) === '/') {
+						continue;
+					}
+					$contents = $zip->getFromIndex($i);
+					if (!is_string($contents)) {
+						$zip->close();
+						throw new \RuntimeException('Could not read export part');
+					}
+					$parts[$name] = $contents;
+				}
+				$zip->close();
+				ksort($parts);
+
+				return $parts;
+			}
+		}
+
+		$bytes = file_get_contents($path);
+		if (!is_string($bytes) || $bytes === '') {
+			throw new \RuntimeException('Empty export');
+		}
+
+		return self::xlsx_part_contents_from_bytes($bytes);
+	}
+
+	/**
+	 * @return array<string,string>
+	 */
+	private static function xlsx_part_contents_from_bytes(string $data): array {
+		$eocd = strrpos($data, "PK\x05\x06");
+		if ($eocd === false || $eocd + 22 > strlen($data)) {
+			throw new \RuntimeException('Missing zip directory');
+		}
+		$total = unpack('v', substr($data, $eocd + 10, 2))[1];
+		$cd_size = unpack('V', substr($data, $eocd + 12, 4))[1];
+		$cd_offset = unpack('V', substr($data, $eocd + 16, 4))[1];
+		$offset = $cd_offset;
+		$end = $cd_offset + $cd_size;
+		$parts = [];
+		for ($n = 0; $n < $total && $offset + 46 <= $end; $n++) {
+			if (substr($data, $offset, 4) !== "PK\x01\x02") {
+				break;
+			}
+			$method = unpack('v', substr($data, $offset + 10, 2))[1];
+			$comp_size = unpack('V', substr($data, $offset + 20, 4))[1];
+			$name_len = unpack('v', substr($data, $offset + 28, 2))[1];
+			$extra_len = unpack('v', substr($data, $offset + 30, 2))[1];
+			$comment_len = unpack('v', substr($data, $offset + 32, 2))[1];
+			$local_off = unpack('V', substr($data, $offset + 42, 4))[1];
+			$name = substr($data, $offset + 46, $name_len);
+			$offset += 46 + $name_len + $extra_len + $comment_len;
+			if (substr($data, $local_off, 4) !== "PK\x03\x04") {
+				throw new \RuntimeException('Bad local header for ' . $name);
+			}
+			$local_name_len = unpack('v', substr($data, $local_off + 26, 2))[1];
+			$local_extra_len = unpack('v', substr($data, $local_off + 28, 2))[1];
+			$data_off = $local_off + 30 + $local_name_len + $local_extra_len;
+			$compressed = substr($data, $data_off, $comp_size);
+			if ($method === 0) {
+				$contents = $compressed;
+			} elseif ($method === 8) {
+				$contents = gzinflate($compressed);
+				if (!is_string($contents)) {
+					throw new \RuntimeException('Inflate failed for ' . $name);
+				}
+			} else {
+				throw new \RuntimeException('Unsupported zip method for ' . $name);
+			}
+			if ($name !== '' && substr($name, -1) !== '/') {
+				$parts[$name] = $contents;
+			}
+		}
+		if ($parts === []) {
+			throw new \RuntimeException('No export parts');
+		}
+		ksort($parts);
+
+		return $parts;
 	}
 }
