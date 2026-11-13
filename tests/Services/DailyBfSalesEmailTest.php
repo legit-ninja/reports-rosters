@@ -458,6 +458,9 @@ class DailyBfSalesEmailTest extends TestCase {
             $GLOBALS['intersoccer_rr_bf_coupon_expiries'],
             $GLOBALS['intersoccer_rr_bf_hpos_enabled']
         );
+        global $intersoccer_test_wc_get_order_callback, $intersoccer_test_wc_get_orders_callback;
+        $intersoccer_test_wc_get_order_callback = null;
+        $intersoccer_test_wc_get_orders_callback = null;
         \InterSoccerRRTestMeta::reset();
 
         global $wpdb;
@@ -677,7 +680,8 @@ class DailyBfSalesEmailTest extends TestCase {
         $refundedHtml = $service->renderHtml($refunded);
         $this->assertStringContainsString('<strong>53.85 CHF</strong> net inc-VAT', $refundedHtml);
         $this->assertStringContainsString('53.85', $refundedHtml);
-        $this->assertStringNotContainsString('>50.00<', $refundedHtml);
+        $comparison = $this->htmlSection($refundedHtml, '<h3>Regions</h3>', '<h2>Running total since campaign start</h2>');
+        $this->assertStringNotContainsString('>50.00<', $comparison);
     }
 
     public function test_coupon_window_includes_morning_after_expiry_and_skips_outside_days(): void {
@@ -1140,16 +1144,17 @@ class DailyBfSalesEmailTest extends TestCase {
         \InterSoccerRRTestMeta::$data[807]['attribute_pa_canton-region'] = 'Zurich';
 
         $digest = $service->buildDigest($this->zurich('2026-11-29 08:00:00'));
-        $this->assertSame(4, $this->regionByLabel($digest['daily'], 'Geneva')['quantity']);
-        $this->assertSame(2, $this->regionByLabel($digest['daily'], 'Basel-Stadt')['quantity']);
+        $this->assertSame(4, $this->regionByLabel($digest['daily'], 'Geneva/Versoix')['quantity']);
+        $this->assertSame(2, $this->regionByLabel($digest['daily'], 'Basel')['quantity']);
         $this->assertSame(1, $this->regionByLabel($digest['daily'], 'Zurich')['quantity']);
         $this->assertSame(1, $this->regionByLabel($digest['daily'], 'Vaud')['quantity']);
 
         $html = $service->renderHtml($digest);
         $this->assertStringContainsString('<h3>Regions</h3>', $html);
-        $this->assertStringContainsString('Geneva', $html);
-        $this->assertStringContainsString('Basel-Stadt', $html);
+        $this->assertStringContainsString('Geneva/Versoix', $html);
+        $this->assertStringContainsString('>Basel<', $html);
         $this->assertStringContainsString('Zurich', $html);
+        $this->assertStringNotContainsString('Basel-Stadt', $html);
         $this->assertStringNotContainsString('Genève', $html);
         $this->assertStringNotContainsString('Genf', $html);
         $this->assertStringNotContainsString('Bâle', $html);
@@ -1534,7 +1539,10 @@ class DailyBfSalesEmailTest extends TestCase {
         );
         $this->assertStringContainsString('<th>Daily qty</th><th>Daily inc-VAT</th><th>Campaign qty</th><th>Campaign inc-VAT</th>', $html);
         $this->assertStringContainsString('43.08', $html);
-        $this->assertStringContainsString('366.18', $html);
+        $this->assertStringContainsString('323.10', $html);
+        $this->assertSame('366.18', $this->cents((float) $this->seasonTypeByLabel($dayTwo['campaign'], 'Camps')['net_inc_vat']));
+        $season = $this->htmlSection($html, '<h3>Season and type</h3>', '<h3>Products</h3>');
+        $this->assertStringContainsString('>Other</td><td>1</td><td>43.08</td><td>7</td><td>458.03</td>', $season);
         $this->assertStringNotContainsString(DailyBfSalesEmail::FINAL_CAMPAIGN_LINE, $html);
     }
 
@@ -2000,9 +2008,12 @@ class DailyBfSalesEmailTest extends TestCase {
         $this->assertStringContainsString('Yesterday (2026-11-10, Europe/Zurich)', $mail['message']);
         $this->assertStringContainsString('<h3>Season and type</h3>', $mail['message']);
         $this->assertStringContainsString('Easter Camps', $mail['message']);
-        $this->assertStringContainsString('Winter Camps', $mail['message']);
+        $this->assertStringContainsString('Autumn Courses', $mail['message']);
+        $this->assertStringContainsString('Winter Courses', $mail['message']);
         $this->assertStringContainsString('Spring Courses', $mail['message']);
-        $this->assertStringContainsString('Summer Tournaments', $mail['message']);
+        $this->assertStringContainsString('Summer Camps', $mail['message']);
+        $this->assertSame(2, $this->seasonTypeByLabel($digest['daily'], 'Winter Camps')['quantity']);
+        $this->assertSame(1, $this->seasonTypeByLabel($digest['daily'], 'Summer Tournaments')['quantity']);
         foreach ([
             'Sample Camp A',
             'Sample Camp B',
@@ -2018,9 +2029,16 @@ class DailyBfSalesEmailTest extends TestCase {
             $this->assertStringContainsString($label, $mail['message'], $label);
         }
         $this->assertCount(10, $digest['daily']['products']);
-        $this->assertStringContainsString('Sample Region A', $mail['message']);
-        $this->assertStringContainsString('Sample Region B', $mail['message']);
-        $this->assertStringContainsString('Sample Region C', $mail['message']);
+        foreach (['Geneva/Versoix', 'Vaud', 'Basel', 'Zug/Cham', 'Zurich', 'Unknown'] as $region) {
+            $this->assertStringContainsString($region, $mail['message'], $region);
+        }
+        $this->assertStringNotContainsString('Sample Region', $mail['message']);
+        $this->assertStringContainsString('<h3>Paid orders</h3>', $mail['message']);
+        $this->assertStringContainsString('>900201<', $mail['message']);
+        $this->assertStringContainsString('Organic: Google', $mail['message']);
+        $this->assertStringContainsString('Source: Fb', $mail['message']);
+        $this->assertStringContainsString('Hall North; Hall West', $mail['message']);
+        $this->assertStringContainsString('Daily % bookings', $mail['message']);
         $this->assertStringContainsString('>900101<', $mail['message']);
         $this->assertStringContainsString('>900102<', $mail['message']);
         $this->assertStringContainsString('>900103<', $mail['message']);
@@ -2618,6 +2636,519 @@ class DailyBfSalesEmailTest extends TestCase {
         $html = $service->renderHtml($digest);
         $this->assertStringContainsString('post.php?post=880&action=edit', $html);
         $this->assertStringNotContainsString('page=wc-orders', $html);
+    }
+
+    public function test_order_list_columns_for_a_paid_order(): void {
+        $service = $this->enabledService([
+            'start' => $this->unix('2026-11-01 00:00:00'),
+            'expires' => $this->unix('2026-11-30 23:59:59'),
+        ], 'ops@example.com');
+        $this->wpdb->orders = [
+            [
+                'id' => 9290,
+                'post_date' => '2026-11-10 09:00:00',
+                'date_paid' => (string) $this->unix('2026-11-10 09:00:00'),
+                'items' => [
+                    $this->item(92901, 'Earlier Camp', 9290, 0, 1, '15.00', '15.00', '0.00'),
+                ],
+            ],
+            [
+                'id' => 9301,
+                'post_date' => '2026-11-28 08:00:00',
+                'date_paid' => (string) $this->unix('2026-11-28 10:30:00'),
+                'items' => [
+                    $this->item(93011, 'North Camp', 9301, 0, 1, '100.00', '100.00', '7.70'),
+                    $this->item(93012, 'South Course', 9302, 0, 1, '40.00', '40.00', '3.08'),
+                ],
+            ],
+        ];
+        $this->wpdb->itemMeta = [
+            92901 => ['_intersoccer_canonical_activity_type' => 'camp'],
+            93011 => [
+                '_intersoccer_canonical_activity_type' => 'camp',
+                'Sites InterSoccer' => 'Hall North',
+            ],
+            93012 => [
+                '_intersoccer_canonical_activity_type' => 'course',
+                'Sites InterSoccer' => 'Hall South',
+            ],
+        ];
+        global $intersoccer_test_wc_get_order_callback;
+        $intersoccer_test_wc_get_order_callback = static function ($orderId) {
+            if ((int) $orderId !== 9301) {
+                return false;
+            }
+            return new class(9301) {
+                /** @var int */
+                private $id;
+
+                public function __construct($id) {
+                    $this->id = (int) $id;
+                }
+
+                public function get_order_number() {
+                    return (string) $this->id;
+                }
+
+                public function get_customer_id() {
+                    return 77;
+                }
+
+                public function is_returning_customer() {
+                    return true;
+                }
+
+                public function get_meta($key, $single = true) {
+                    $meta = [
+                        '_wc_order_attribution_source_type' => 'organic',
+                        '_wc_order_attribution_utm_source' => 'google',
+                        'wpml_language' => 'fr',
+                    ];
+                    return isset($meta[$key]) ? $meta[$key] : '';
+                }
+            };
+        };
+
+        $digest = $service->buildDigest($this->zurich('2026-11-29 08:00:00'));
+        $this->assertSame(1, $digest['daily']['order_count']);
+        $this->assertSame(2, $digest['campaign']['order_count']);
+        $this->assertCount(1, $digest['daily_orders']);
+        $order = $digest['daily_orders'][0];
+        $this->assertSame('2026-11-28 10:30', $order['paid_at']);
+        $this->assertSame('9301', $order['order_number']);
+        $this->assertSame('North Camp; South Course', $order['products']);
+        $this->assertSame('Hall North; Hall South', $order['venues']);
+        $this->assertSame('140.00', $this->cents((float) $order['net_ex_vat']));
+        $this->assertSame('150.78', $this->cents((float) $order['net_inc_vat']));
+        $this->assertSame('Returning', $order['customer_type']);
+        $this->assertSame('Organic: Google', $order['attribution']);
+        $this->assertSame('fr', $order['language']);
+
+        $html = $service->renderHtml($digest);
+        $list = $this->htmlSection($html, '<h3>Paid orders</h3>', '<h3>Regions</h3>');
+        $this->assertStringContainsString('Date and time (Europe/Zurich)', $list);
+        $this->assertStringContainsString('>2026-11-28 10:30<', $list);
+        $this->assertStringContainsString('>9301<', $list);
+        $this->assertStringContainsString('North Camp; South Course', $list);
+        $this->assertStringContainsString('Hall North; Hall South', $list);
+        $this->assertStringContainsString('>140.00<', $list);
+        $this->assertStringContainsString('>150.78<', $list);
+        $this->assertStringContainsString('>Returning<', $list);
+        $this->assertStringContainsString('Organic: Google', $list);
+        $this->assertStringContainsString('>fr<', $list);
+        $this->assertStringNotContainsString('Earlier Camp', $list);
+        $this->assertStringNotContainsString('secret-buyer@example.com', $html);
+
+        $this->wpdb->orders = [];
+        $empty = $service->buildDigest($this->zurich('2026-11-29 08:00:00'));
+        $this->assertSame([], $empty['daily_orders']);
+        $this->assertStringContainsString(
+            'No paid orders in this window.',
+            $service->renderHtml($empty)
+        );
+    }
+
+    public function test_order_list_attribution_is_unknown_when_meta_is_missing(): void {
+        $service = $this->enabledService($this->novemberCoupon(), 'ops@example.com');
+        $this->wpdb->orders = [[
+            'id' => 9401,
+            'post_date' => '2026-11-28 10:00:00',
+            'date_paid' => (string) $this->unix('2026-11-28 10:00:00'),
+            'items' => [
+                $this->item(94011, 'Plain Course', 9401, 0, 1, '20.00', '20.00', '0.00'),
+            ],
+        ]];
+        $this->wpdb->itemMeta = [
+            94011 => [
+                '_intersoccer_canonical_activity_type' => 'course',
+                'Sites InterSoccer' => 'Hall North',
+            ],
+        ];
+        \InterSoccerRRTestMeta::$data[9401]['wpml_language'] = 'it';
+
+        $digest = $service->buildDigest($this->zurich('2026-11-29 08:00:00'));
+        $this->assertCount(1, $digest['daily_orders']);
+        $this->assertSame('Unknown', $digest['daily_orders'][0]['attribution']);
+        $this->assertSame('Unknown', $digest['daily_orders'][0]['language']);
+        $this->assertSame('New', $digest['daily_orders'][0]['customer_type']);
+        $html = $service->renderHtml($digest);
+        $list = $this->htmlSection($html, '<h3>Paid orders</h3>', '<h3>Regions</h3>');
+        $this->assertStringContainsString('>Unknown<', $list);
+        $this->assertStringNotContainsString('Organic:', $list);
+        $this->assertStringNotContainsString('>it<', $list);
+    }
+
+    public function test_customer_type_uses_woocommerce_then_earlier_paid_order(): void {
+        $service = $this->enabledService($this->novemberCoupon(), 'ops@example.com');
+        $paid = (string) $this->unix('2026-11-28 10:00:00');
+        $orders = [];
+        $meta = [];
+        foreach ([9201, 9202, 9203, 9204, 9205] as $id) {
+            $orders[] = [
+                'id' => $id,
+                'post_date' => '2026-11-28 10:00:00',
+                'date_paid' => $paid,
+                'items' => [
+                    $this->item($id * 10, 'Typed Camp ' . $id, $id, 0, 1, '10.00', '10.00', '0.00'),
+                ],
+            ];
+            $meta[$id * 10] = ['_intersoccer_canonical_activity_type' => 'camp'];
+        }
+        $this->wpdb->orders = $orders;
+        $this->wpdb->itemMeta = $meta;
+
+        global $intersoccer_test_wc_get_order_callback, $intersoccer_test_wc_get_orders_callback;
+        $queries = [];
+        $intersoccer_test_wc_get_order_callback = static function ($orderId) {
+            $orderId = (int) $orderId;
+            $flagged = [9201 => true, 9202 => false];
+            if (array_key_exists($orderId, $flagged)) {
+                return new class($orderId, 99, $flagged[$orderId]) {
+                    /** @var int */
+                    private $id;
+                    /** @var int */
+                    private $customerId;
+                    /** @var bool */
+                    private $returning;
+
+                    public function __construct($id, $customerId, $returning) {
+                        $this->id = (int) $id;
+                        $this->customerId = (int) $customerId;
+                        $this->returning = (bool) $returning;
+                    }
+
+                    public function get_order_number() {
+                        return (string) $this->id;
+                    }
+
+                    public function get_customer_id() {
+                        return $this->customerId;
+                    }
+
+                    public function is_returning_customer() {
+                        return $this->returning;
+                    }
+
+                    public function get_meta($key, $single = true) {
+                        return '';
+                    }
+                };
+            }
+            $accounts = [9203 => 42, 9204 => 43, 9205 => 0];
+            if (!array_key_exists($orderId, $accounts)) {
+                return false;
+            }
+            return new class($orderId, $accounts[$orderId]) {
+                /** @var int */
+                private $id;
+                /** @var int */
+                private $customerId;
+
+                public function __construct($id, $customerId) {
+                    $this->id = (int) $id;
+                    $this->customerId = (int) $customerId;
+                }
+
+                public function get_order_number() {
+                    return (string) $this->id;
+                }
+
+                public function get_customer_id() {
+                    return $this->customerId;
+                }
+
+                public function get_meta($key, $single = true) {
+                    return '';
+                }
+            };
+        };
+        $intersoccer_test_wc_get_orders_callback = static function ($args) use (&$queries) {
+            $queries[] = $args;
+            $customer = (int) ($args['customer_id'] ?? 0);
+            if ($customer === 42) {
+                return [800];
+            }
+            return [];
+        };
+
+        $digest = $service->buildDigest($this->zurich('2026-11-29 08:00:00'));
+        $byNumber = [];
+        foreach ($digest['daily_orders'] as $row) {
+            $byNumber[$row['order_number']] = $row['customer_type'];
+        }
+        $this->assertSame('Returning', $byNumber['9201']);
+        $this->assertSame('New', $byNumber['9202']);
+        $this->assertSame('Returning', $byNumber['9203']);
+        $this->assertSame('New', $byNumber['9204']);
+        $this->assertSame('New', $byNumber['9205']);
+
+        $customers = [];
+        foreach ($queries as $args) {
+            $this->assertContains('processing', $args['status']);
+            $this->assertContains('completed', $args['status']);
+            $this->assertStringStartsWith('<', (string) $args['date_paid']);
+            $customers[] = (int) ($args['customer_id'] ?? 0);
+        }
+        $this->assertContains(42, $customers);
+        $this->assertContains(43, $customers);
+        $this->assertNotContains(99, $customers);
+        $this->assertNotContains(0, $customers);
+    }
+
+    public function test_region_display_buckets_include_named_labels_and_unknown(): void {
+        $service = $this->enabledService($this->novemberCoupon(), 'ops@example.com');
+        $paid = (string) $this->unix('2026-11-28 10:00:00');
+        $rows = [
+            9501 => ['_intersoccer_canonical_canton' => 'zug'],
+            9502 => ['Canton / Region' => 'Zoug'],
+            9503 => ['pa_canton-region' => 'Cham'],
+            9504 => ['Canton / Region' => 'Versoix'],
+            9505 => ['Canton / Region' => 'Vaud'],
+            9506 => ['Canton / Région' => 'Bâle'],
+            9507 => ['Canton / Région' => 'Genève'],
+            9508 => ['Kanton / Region' => 'Zürich'],
+            9509 => [],
+            9510 => ['Canton / Region' => 'Neuchatel'],
+        ];
+        $orders = [];
+        $meta = [];
+        foreach ($rows as $id => $itemMeta) {
+            $orders[] = [
+                'id' => $id,
+                'post_date' => '2026-11-28 10:00:00',
+                'date_paid' => $paid,
+                'items' => [
+                    $this->item($id * 10, 'Bucket Camp ' . $id, $id, 0, 1, '10.00', '10.00', '0.00'),
+                ],
+            ];
+            $itemMeta['_intersoccer_canonical_activity_type'] = 'camp';
+            $meta[$id * 10] = $itemMeta;
+        }
+        $this->wpdb->orders = $orders;
+        $this->wpdb->itemMeta = $meta;
+
+        $digest = $service->buildDigest($this->zurich('2026-11-29 08:00:00'));
+        $daily = $digest['daily'];
+        $this->assertSame(3, $this->regionByLabel($daily, 'Zug/Cham')['quantity']);
+        $this->assertSame(2, $this->regionByLabel($daily, 'Geneva/Versoix')['quantity']);
+        $this->assertSame(1, $this->regionByLabel($daily, 'Vaud')['quantity']);
+        $this->assertSame(1, $this->regionByLabel($daily, 'Basel')['quantity']);
+        $this->assertSame(1, $this->regionByLabel($daily, 'Zurich')['quantity']);
+        $this->assertSame(2, $this->regionByLabel($daily, 'Unknown')['quantity']);
+
+        $html = $service->renderHtml($digest);
+        $regions = $this->htmlSection($html, '<h3>Regions</h3>', '<h3>Season and type</h3>');
+        foreach (['Geneva/Versoix', 'Vaud', 'Basel', 'Zug/Cham', 'Zurich', 'Unknown'] as $label) {
+            $this->assertStringContainsString($label, $regions, $label);
+        }
+        $this->assertStringNotContainsString('Basel-Stadt', $regions);
+        $this->assertStringNotContainsString('>Cham<', $regions);
+        $this->assertStringNotContainsString('>Versoix<', $regions);
+        $this->assertStringNotContainsString('>Zug<', $regions);
+        $this->assertStringNotContainsString('Neuchatel', $regions);
+        $this->assertStringNotContainsString('unmapped:', $regions);
+        $this->assertStringContainsString('<td>Total</td><td>10</td>', $regions);
+    }
+
+    public function test_programme_buckets_keep_primary_rows_and_remaining_types(): void {
+        $service = $this->enabledService($this->novemberCoupon(), 'ops@example.com');
+        $paid = (string) $this->unix('2026-11-28 10:00:00');
+        $lines = [
+            9601 => ['course', 'Autumn Course', ['Season' => 'Autumn']],
+            9602 => ['course', 'Winter Course', ['Season' => 'Winter']],
+            9603 => ['course', 'Spring Course', ['Season' => 'Spring']],
+            9604 => ['camp', 'Easter Field Camp', ['Season' => 'Easter', 'Camp Terms' => 'Week 1: March 22-25 (4 days)']],
+            9605 => ['camp', 'Summer Camp', ['Season' => 'Summer']],
+            9606 => ['camp', 'Spring Camp', ['Season' => 'Spring']],
+            9607 => ['course', 'Easter Course', ['Season' => 'Easter']],
+            9608 => ['birthday', 'Party Booking', ['Season' => 'Spring']],
+            9609 => ['tournament', 'Cup Booking', ['Season' => 'Summer']],
+            9610 => ['camp', 'Unspecified Camp', []],
+        ];
+        $orders = [];
+        $meta = [];
+        foreach ($lines as $id => $line) {
+            $orders[] = [
+                'id' => $id,
+                'post_date' => '2026-11-28 10:00:00',
+                'date_paid' => $paid,
+                'items' => [
+                    $this->item($id * 10, $line[1], $id, 0, 1, '10.00', '10.00', '0.00'),
+                ],
+            ];
+            $itemMeta = $line[2];
+            $itemMeta['_intersoccer_canonical_activity_type'] = $line[0];
+            $meta[$id * 10] = $itemMeta;
+        }
+        $this->wpdb->orders = $orders;
+        $this->wpdb->itemMeta = $meta;
+
+        $digest = $service->buildDigest($this->zurich('2026-11-29 08:00:00'));
+        $daily = $digest['daily'];
+        $this->assertSame(1, $this->seasonTypeByLabel($daily, 'Autumn Courses')['quantity']);
+        $this->assertSame(1, $this->seasonTypeByLabel($daily, 'Winter Courses')['quantity']);
+        $this->assertSame(1, $this->seasonTypeByLabel($daily, 'Spring Courses')['quantity']);
+        $this->assertSame(1, $this->seasonTypeByLabel($daily, 'Easter Camps')['quantity']);
+        $this->assertSame(1, $this->seasonTypeByLabel($daily, 'Summer Camps')['quantity']);
+        $this->assertSame(1, $this->seasonTypeByLabel($daily, 'Spring Camps')['quantity']);
+        $this->assertSame(1, $this->seasonTypeByLabel($daily, 'Easter Courses')['quantity']);
+        $this->assertSame(1, $this->seasonTypeByLabel($daily, 'Spring Birthdays')['quantity']);
+        $this->assertSame(1, $this->seasonTypeByLabel($daily, 'Summer Tournaments')['quantity']);
+        $this->assertSame(1, $this->seasonTypeByLabel($daily, 'Camps')['quantity']);
+
+        $html = $service->renderHtml($digest);
+        $section = $this->htmlSection($html, '<h3>Season and type</h3>', '<h3>Products</h3>');
+        foreach (['Autumn Courses', 'Winter Courses', 'Spring Courses', 'Easter Camps', 'Summer Camps', 'Other'] as $label) {
+            $this->assertStringContainsString($label, $section, $label);
+        }
+        $this->assertStringNotContainsString('Spring Camps', $section);
+        $this->assertStringNotContainsString('Easter Courses', $section);
+        $this->assertStringContainsString(
+            '>Other</td><td>5</td><td>50.00</td><td>5</td><td>50.00</td><td>50.0%</td><td>50.0%</td>',
+            $section
+        );
+        $this->assertStringContainsString(
+            '<td>Total</td><td>10</td><td>100.00</td><td>10</td><td>100.00</td><td>100.0%</td><td>100.0%</td><td>100.0%</td><td>100.0%</td>',
+            $section
+        );
+        $this->assertStringContainsString(
+            '>Easter Camps</td><td>1</td><td>10.00</td><td>1</td><td>10.00</td><td>10.0%</td><td>10.0%</td>',
+            $section
+        );
+    }
+
+    public function test_region_percentages_and_totals_use_the_table_total(): void {
+        $service = $this->enabledService($this->novemberCoupon(), 'ops@example.com');
+        $paid = (string) $this->unix('2026-11-28 10:00:00');
+        $this->wpdb->orders = [
+            [
+                'id' => 9701,
+                'post_date' => '2026-11-28 10:00:00',
+                'date_paid' => $paid,
+                'items' => [
+                    $this->item(97011, 'Geneva Booking', 9701, 0, 1, '30.00', '30.00', '0.00'),
+                ],
+            ],
+            [
+                'id' => 9702,
+                'post_date' => '2026-11-28 11:00:00',
+                'date_paid' => $paid,
+                'items' => [
+                    $this->item(97021, 'Vaud Booking', 9702, 0, 3, '10.00', '10.00', '0.00'),
+                ],
+            ],
+        ];
+        $this->wpdb->itemMeta = [
+            97011 => [
+                '_intersoccer_canonical_activity_type' => 'camp',
+                'Canton / Region' => 'Geneva',
+            ],
+            97021 => [
+                '_intersoccer_canonical_activity_type' => 'camp',
+                'Canton / Region' => 'Vaud',
+            ],
+        ];
+        $html = $service->renderHtml($service->buildDigest($this->zurich('2026-11-29 08:00:00')));
+        $regions = $this->htmlSection($html, '<h3>Regions</h3>', '<h3>Season and type</h3>');
+        $this->assertStringContainsString(
+            '>Geneva/Versoix</td><td>1</td><td>30.00</td><td>1</td><td>30.00</td><td>25.0%</td><td>75.0%</td><td>25.0%</td><td>75.0%</td>',
+            $regions
+        );
+        $this->assertStringContainsString(
+            '>Vaud</td><td>3</td><td>10.00</td><td>3</td><td>10.00</td><td>75.0%</td><td>25.0%</td><td>75.0%</td><td>25.0%</td>',
+            $regions
+        );
+        $this->assertStringContainsString(
+            '<td>Total</td><td>4</td><td>40.00</td><td>4</td><td>40.00</td><td>100.0%</td><td>100.0%</td><td>100.0%</td><td>100.0%</td>',
+            $regions
+        );
+
+        $this->wpdb->orders = [
+            [
+                'id' => 9711,
+                'post_date' => '2026-11-28 10:00:00',
+                'date_paid' => $paid,
+                'items' => [
+                    $this->item(97111, 'Geneva Share', 9711, 0, 1, '10.00', '10.00', '0.00'),
+                ],
+            ],
+            [
+                'id' => 9712,
+                'post_date' => '2026-11-28 11:00:00',
+                'date_paid' => $paid,
+                'items' => [
+                    $this->item(97121, 'Vaud Share', 9712, 0, 1, '10.00', '10.00', '0.00'),
+                ],
+            ],
+            [
+                'id' => 9713,
+                'post_date' => '2026-11-28 12:00:00',
+                'date_paid' => $paid,
+                'items' => [
+                    $this->item(97131, 'Basel Share', 9713, 0, 1, '10.00', '10.00', '0.00'),
+                ],
+            ],
+        ];
+        $this->wpdb->itemMeta = [
+            97111 => [
+                '_intersoccer_canonical_activity_type' => 'camp',
+                'Canton / Region' => 'Geneva',
+            ],
+            97121 => [
+                '_intersoccer_canonical_activity_type' => 'camp',
+                'Canton / Region' => 'Vaud',
+            ],
+            97131 => [
+                '_intersoccer_canonical_activity_type' => 'camp',
+                'Canton / Region' => 'Basel',
+            ],
+        ];
+        $rounded = $service->renderHtml($service->buildDigest($this->zurich('2026-11-29 08:00:00')));
+        $roundedRegions = $this->htmlSection($rounded, '<h3>Regions</h3>', '<h3>Season and type</h3>');
+        $this->assertStringContainsString('>Geneva/Versoix</td><td>1</td><td>10.00</td><td>1</td><td>10.00</td><td>33.4%</td>', $roundedRegions);
+        $this->assertStringContainsString('>Vaud</td><td>1</td><td>10.00</td><td>1</td><td>10.00</td><td>33.3%</td>', $roundedRegions);
+        $this->assertStringContainsString('>Basel</td><td>1</td><td>10.00</td><td>1</td><td>10.00</td><td>33.3%</td>', $roundedRegions);
+        $this->assertStringContainsString('<td>Total</td><td>3</td><td>30.00</td><td>3</td><td>30.00</td><td>100.0%</td><td>100.0%</td>', $roundedRegions);
+    }
+
+    public function test_sample_and_test_send_render_the_order_list_and_summary(): void {
+        $sampleService = $this->wooService();
+        $sample = $sampleService->sendSample('ops@example.com');
+        $this->assertTrue($sample['ok']);
+        $sampleMail = $GLOBALS['intersoccer_rr_bf_wp_mail_log'][0];
+        $this->assertStringStartsWith('[SAMPLE] ', $sampleMail['subject']);
+        $this->assertStringContainsString(DailyBfSalesEmail::SAMPLE_BANNER, $sampleMail['message']);
+        $this->assertStringContainsString('<h3>Paid orders</h3>', $sampleMail['message']);
+        $this->assertStringContainsString('>900201<', $sampleMail['message']);
+        $this->assertStringContainsString('Organic: Google', $sampleMail['message']);
+        $this->assertStringContainsString('Geneva/Versoix', $sampleMail['message']);
+        $this->assertStringContainsString('Autumn Courses', $sampleMail['message']);
+        $this->assertStringContainsString('Daily % bookings', $sampleMail['message']);
+        $this->assertStringNotContainsString('Should Not Load', $sampleMail['message']);
+
+        $GLOBALS['intersoccer_rr_bf_wp_mail_log'] = [];
+        $service = $this->enabledService($this->novemberCoupon(), 'list@example.test');
+        $this->wpdb->orders = [[
+            'id' => 9801,
+            'post_date' => '2026-11-28 10:00:00',
+            'date_paid' => (string) $this->unix('2026-11-28 10:00:00'),
+            'items' => [
+                $this->item(98011, 'North Camp', 9801, 0, 1, '10.00', '10.00', '0.00'),
+            ],
+        ]];
+        $this->wpdb->itemMeta = [
+            98011 => ['_intersoccer_canonical_activity_type' => 'camp'],
+        ];
+        $result = $service->sendTest('ops@example.com', $this->zurich('2026-11-29 08:00:00'));
+        $this->assertTrue($result['ok']);
+        $mail = $GLOBALS['intersoccer_rr_bf_wp_mail_log'][0];
+        $this->assertStringStartsWith('[TEST] ', $mail['subject']);
+        $this->assertStringNotContainsString('[SAMPLE]', $mail['subject']);
+        $this->assertStringNotContainsString(DailyBfSalesEmail::SAMPLE_BANNER, $mail['message']);
+        $this->assertStringContainsString('<h3>Paid orders</h3>', $mail['message']);
+        $this->assertStringContainsString('North Camp', $mail['message']);
+        $this->assertStringContainsString('Daily % sales', $mail['message']);
+        $this->assertStringNotContainsString('900201', $mail['message']);
     }
 
     private function loadHposClassesWithUsageOff(): void {
