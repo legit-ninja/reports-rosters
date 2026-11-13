@@ -3056,6 +3056,66 @@ class DailyBfSalesEmailTest extends TestCase {
         );
     }
 
+    public function test_primary_programme_rows_stay_visible_when_quantity_is_zero(): void {
+        $service = $this->enabledService($this->novemberCoupon(), 'ops@example.com');
+        $paid = (string) $this->unix('2026-11-28 10:00:00');
+        $lines = [
+            9621 => ['course', 'Winter Course', ['Season' => 'Winter']],
+            9622 => ['course', 'Spring Course', ['Season' => 'Spring']],
+            9623 => ['camp', 'Summer Camp', ['Season' => 'Summer']],
+        ];
+        $orders = [];
+        $meta = [];
+        foreach ($lines as $id => $line) {
+            $orders[] = [
+                'id' => $id,
+                'post_date' => '2026-11-28 10:00:00',
+                'date_paid' => $paid,
+                'items' => [
+                    $this->item($id * 10, $line[1], $id, 0, 1, '10.00', '10.00', '0.00'),
+                ],
+            ];
+            $itemMeta = $line[2];
+            $itemMeta['_intersoccer_canonical_activity_type'] = $line[0];
+            $meta[$id * 10] = $itemMeta;
+        }
+        $this->wpdb->orders = $orders;
+        $this->wpdb->itemMeta = $meta;
+
+        $digest = $service->buildDigest($this->zurich('2026-11-29 08:00:00'));
+        $html = $service->renderHtml($digest);
+        $section = $this->htmlSection($html, '<h3>Season and type</h3>', '<h3>Products</h3>');
+        foreach (['Autumn Courses', 'Winter Courses', 'Spring Courses', 'Easter Camps', 'Summer Camps'] as $label) {
+            $this->assertStringContainsString($label, $section, $label);
+        }
+        $this->assertStringContainsString(
+            '>Autumn Courses</td><td>0</td><td>0.00</td><td>0</td><td>0.00</td><td>0.0%</td><td>0.0%</td><td>0.0%</td><td>0.0%</td>',
+            $section
+        );
+        $this->assertStringContainsString(
+            '>Easter Camps</td><td>0</td><td>0.00</td><td>0</td><td>0.00</td><td>0.0%</td><td>0.0%</td><td>0.0%</td><td>0.0%</td>',
+            $section
+        );
+        $this->assertStringContainsString(
+            '>Winter Courses</td><td>1</td><td>10.00</td><td>1</td><td>10.00</td><td>33.4%</td><td>33.4%</td><td>33.4%</td><td>33.4%</td>',
+            $section
+        );
+        $this->assertStringContainsString(
+            '>Spring Courses</td><td>1</td><td>10.00</td><td>1</td><td>10.00</td><td>33.3%</td><td>33.3%</td><td>33.3%</td><td>33.3%</td>',
+            $section
+        );
+        $this->assertStringContainsString(
+            '>Summer Camps</td><td>1</td><td>10.00</td><td>1</td><td>10.00</td><td>33.3%</td><td>33.3%</td><td>33.3%</td><td>33.3%</td>',
+            $section
+        );
+        $this->assertStringNotContainsString('>Other</td>', $section);
+        $this->assertStringNotContainsString('>Unknown</td>', $section);
+        $this->assertStringContainsString(
+            '<td>Total</td><td>3</td><td>30.00</td><td>3</td><td>30.00</td><td>100.0%</td><td>100.0%</td><td>100.0%</td><td>100.0%</td>',
+            $section
+        );
+    }
+
     public function test_region_percentages_and_totals_use_the_table_total(): void {
         $service = $this->enabledService($this->novemberCoupon(), 'ops@example.com');
         $paid = (string) $this->unix('2026-11-28 10:00:00');

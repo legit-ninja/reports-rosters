@@ -33,9 +33,10 @@
  * The yesterday section lists each paid order once. Region rows use display
  * buckets for this email (Geneva/Versoix, Vaud, Basel, Zug/Cham, Zurich, and
  * Unknown). The season-and-type table keeps the daily-versus-campaign
- * comparison and groups rows into Autumn, Winter, and Spring courses, Easter
- * and Summer camps, and one Other row for everything else. Sales shares are
- * net inc-VAT. There is no year-on-year comparison.
+ * comparison and always shows Autumn, Winter, and Spring courses plus Easter
+ * and Summer camps, even when the quantity is zero. Empty Other and Unknown
+ * rows stay hidden. Sales shares are net inc-VAT. There is no year-on-year
+ * comparison.
  *
  * @package InterSoccer\ReportsRosters\Services
  */
@@ -2918,6 +2919,7 @@ class DailyBfSalesEmail {
     /**
      * Largest remainder to one decimal so the row percentages sum to 100.0.
      * Equal remainders prefer the earlier row. A zero total is 0.0% on every row.
+     * Only a row with a positive value receives leftover tenths.
      * Sales percentages use net inc-VAT.
      *
      * @param array<int,float|int> $values
@@ -2962,12 +2964,20 @@ class DailyBfSalesEmail {
         });
         $guard = 0;
         while ($left > 0 && $guard < 1000) {
+            $assigned = false;
             foreach ($order as $index) {
                 if ($left <= 0) {
                     break;
                 }
+                if ((float) $indexed[$index] <= 0) {
+                    continue;
+                }
                 $floors[$index]++;
                 $left--;
+                $assigned = true;
+            }
+            if (!$assigned) {
+                break;
             }
             $guard++;
         }
@@ -3076,12 +3086,12 @@ class DailyBfSalesEmail {
             $rightQty = (int) ($right['quantity'] ?? 0);
             $leftInc = (float) ($left['net_inc_vat'] ?? 0);
             $rightInc = (float) ($right['net_inc_vat'] ?? 0);
-            if ($hideEmpty && $leftQty === 0 && $rightQty === 0) {
-                continue;
-            }
             $label = (string) ($left['label'] ?? '');
             if ($label === '') {
                 $label = (string) ($right['label'] ?? '');
+            }
+            if ($hideEmpty && $leftQty === 0 && $rightQty === 0 && $this->comparisonRowHidesWhenEmpty($collection, $label)) {
+                continue;
             }
             $visible[] = [
                 'label' => $label,
@@ -3142,6 +3152,21 @@ class DailyBfSalesEmail {
         $html .= '<td>' . esc_html($this->totalPercentLabel($campaignInc)) . '</td></tr>';
         $html .= '</tbody></table>';
         return $html;
+    }
+
+    /**
+     * Regions and products drop every empty row. Season and type keeps the
+     * five primary programme rows and drops only empty Other and Unknown.
+     *
+     * @param string $collection
+     * @param string $label
+     * @return bool
+     */
+    private function comparisonRowHidesWhenEmpty($collection, $label) {
+        if ($collection !== 'season_types') {
+            return true;
+        }
+        return $label === 'Other' || $label === 'Unknown';
     }
 
     /**
