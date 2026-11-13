@@ -2776,6 +2776,7 @@ class DailyBfSalesEmail {
             'geneve' => 'Geneva/Versoix',
             'genf' => 'Geneva/Versoix',
             'versoix' => 'Geneva/Versoix',
+            'champel' => 'Geneva/Versoix',
             'vaud' => 'Vaud',
             'basel' => 'Basel',
             'bâle' => 'Basel',
@@ -2788,11 +2789,32 @@ class DailyBfSalesEmail {
             'zuerich' => 'Zurich',
         ];
         foreach ($map as $needle => $bucket) {
-            if ($lower === $needle || strpos($lower, $needle) !== false) {
+            if ($this->regionLabelMatches($lower, $needle)) {
                 return $bucket;
             }
         }
         return 'Unknown';
+    }
+
+    /**
+     * Exact match, or the needle as a whole word.
+     *
+     * A letter or number on either side blocks the match, so "cham" matches
+     * Cham and not Champel. Accented letters still count as letters.
+     *
+     * @param string $haystack
+     * @param string $needle
+     * @return bool
+     */
+    private function regionLabelMatches($haystack, $needle) {
+        if ($haystack === $needle) {
+            return true;
+        }
+        if ($needle === '') {
+            return false;
+        }
+        $pattern = '/(?:^|[^\p{L}\p{N}])' . preg_quote($needle, '/') . '(?:$|[^\p{L}\p{N}])/u';
+        return preg_match($pattern, $haystack) === 1;
     }
 
     /**

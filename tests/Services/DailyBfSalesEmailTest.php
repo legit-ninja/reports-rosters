@@ -2950,6 +2950,45 @@ class DailyBfSalesEmailTest extends TestCase {
         $this->assertStringContainsString('<td>Total</td><td>10</td>', $regions);
     }
 
+    public function test_champel_venue_buckets_as_geneva_not_zug(): void {
+        $service = $this->enabledService($this->novemberCoupon(), 'ops@example.com');
+        $paid = (string) $this->unix('2026-11-28 10:00:00');
+        $rows = [
+            9521 => ['Canton / Region' => 'Stade de Vessy, Champel'],
+            9522 => ['Canton / Region' => 'Cham'],
+            9523 => ['Canton / Region' => 'Championnat'],
+        ];
+        $orders = [];
+        $meta = [];
+        foreach ($rows as $id => $itemMeta) {
+            $orders[] = [
+                'id' => $id,
+                'post_date' => '2026-11-28 10:00:00',
+                'date_paid' => $paid,
+                'items' => [
+                    $this->item($id * 10, 'Sample Camp A', $id, 0, 1, '10.00', '10.00', '0.00'),
+                ],
+            ];
+            $itemMeta['_intersoccer_canonical_activity_type'] = 'camp';
+            $meta[$id * 10] = $itemMeta;
+        }
+        $this->wpdb->orders = $orders;
+        $this->wpdb->itemMeta = $meta;
+
+        $digest = $service->buildDigest($this->zurich('2026-11-29 08:00:00'));
+        $daily = $digest['daily'];
+        $this->assertSame(1, $this->regionByLabel($daily, 'Geneva/Versoix')['quantity']);
+        $this->assertSame(1, $this->regionByLabel($daily, 'Zug/Cham')['quantity']);
+        $this->assertSame(1, $this->regionByLabel($daily, 'Unknown')['quantity']);
+
+        $html = $service->renderHtml($digest);
+        $regions = $this->htmlSection($html, '<h3>Regions</h3>', '<h3>Season and type</h3>');
+        $this->assertStringContainsString('>Geneva/Versoix</td><td>1</td>', $regions);
+        $this->assertStringContainsString('>Zug/Cham</td><td>1</td>', $regions);
+        $this->assertStringNotContainsString('>Zug/Cham</td><td>2</td>', $regions);
+        $this->assertStringNotContainsString('Champel', $regions);
+    }
+
     public function test_programme_buckets_keep_primary_rows_and_remaining_types(): void {
         $service = $this->enabledService($this->novemberCoupon(), 'ops@example.com');
         $paid = (string) $this->unix('2026-11-28 10:00:00');
