@@ -404,6 +404,9 @@ class FinancialReportService {
             if ($date_basis !== 'post_date') {
                 $data[count($data) - 1]['order_date_local'] = (string) $row->order_date;
             }
+            if (isset($row->date_paid_gmt) && (string) $row->date_paid_gmt !== '' && (string) $row->date_paid_gmt !== '0') {
+                $data[count($data) - 1]['date_paid_gmt'] = (string) $row->date_paid_gmt;
+            }
 
             $totals['base_price'] += $base_price;
             $totals['discount_amount'] += $discount_amount;

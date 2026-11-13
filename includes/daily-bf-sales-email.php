@@ -30,6 +30,14 @@
  * date. The low threshold is an admin setting and defaults to 3. Zero bookings
  * are a separate list.
  *
+ * The yesterday section lists each paid order once. Region rows use display
+ * buckets for this email (Geneva/Versoix, Vaud, Basel, Zug/Cham, Zurich, and
+ * Unknown). The season-and-type table keeps the daily-versus-campaign
+ * comparison and always shows Autumn, Winter, and Spring courses plus Easter
+ * and Summer camps, even when the quantity is zero. Empty Other and Unknown
+ * rows stay hidden. Sales shares are net inc-VAT. There is no year-on-year
+ * comparison.
+ *
  * @package InterSoccer\ReportsRosters\Services
  */
 
@@ -599,6 +607,7 @@ class DailyBfSalesEmail {
             'campaign_available' => $couponStatus['coupon'] !== null,
             'campaign_started' => $campaignStarted,
             'daily' => $daily,
+            'daily_orders' => $this->orderList(is_array($dailyReport) ? $dailyReport : []),
             'campaign' => $campaign,
             'daily_on_hold' => $dailyOnHold,
             'campaign_on_hold' => $campaignOnHold,
@@ -658,21 +667,21 @@ class DailyBfSalesEmail {
                     'label' => 'Sample Camp E',
                     'season' => 'Winter',
                     'type' => 'Camp',
-                    'region' => 'Sample Region A',
+                    'region' => 'Geneva/Versoix',
                     'count' => 1,
                 ],
                 [
                     'label' => 'Sample Course D',
                     'season' => 'Spring',
                     'type' => 'Course',
-                    'region' => 'Sample Region B',
+                    'region' => 'Vaud',
                     'count' => 2,
                 ],
                 [
                     'label' => 'Sample Tournament B',
                     'season' => 'Easter',
                     'type' => 'Tournament',
-                    'region' => 'Sample Region C',
+                    'region' => 'Basel',
                     'count' => 1,
                 ],
             ],
@@ -681,13 +690,59 @@ class DailyBfSalesEmail {
                     'label' => 'Sample Camp F',
                     'season' => 'Easter',
                     'type' => 'Camp',
-                    'region' => 'Sample Region A',
+                    'region' => 'Zug/Cham',
                     'count' => 0,
                 ],
             ],
             'used_created_fallback' => false,
             'final_campaign' => true,
             'booking_report_url' => 'https://example.com/sample-booking-report/900001',
+            'daily_orders' => [
+                [
+                    'paid_at' => '2026-11-10 09:15',
+                    'order_number' => '900201',
+                    'products' => 'Sample Camp A; Sample Camp B',
+                    'venues' => 'Hall North; Hall West',
+                    'net_ex_vat' => 185.70,
+                    'net_inc_vat' => 200.00,
+                    'customer_type' => 'Returning',
+                    'attribution' => 'Organic: Google',
+                    'language' => 'fr',
+                ],
+                [
+                    'paid_at' => '2026-11-10 11:40',
+                    'order_number' => '900202',
+                    'products' => 'Sample Camp C; Sample Camp D',
+                    'venues' => 'Hall South',
+                    'net_ex_vat' => 208.91,
+                    'net_inc_vat' => 225.00,
+                    'customer_type' => 'New',
+                    'attribution' => 'Direct',
+                    'language' => 'de',
+                ],
+                [
+                    'paid_at' => '2026-11-10 14:05',
+                    'order_number' => '900203',
+                    'products' => 'Sample Course A; Sample Course B; Sample Course C',
+                    'venues' => 'Hall East',
+                    'net_ex_vat' => 171.77,
+                    'net_inc_vat' => 185.00,
+                    'customer_type' => 'Returning',
+                    'attribution' => 'Source: Fb',
+                    'language' => 'en',
+                ],
+                [
+                    'paid_at' => '2026-11-10 16:20',
+                    'order_number' => '900204',
+                    'products' => 'Sample Venue B; Sample Birthday A; Sample Tournament A',
+                    'venues' => 'Hall Central',
+                    'net_ex_vat' => 136.49,
+                    'net_inc_vat' => 147.00,
+                    'customer_type' => 'New',
+                    'attribution' => 'Unknown',
+                    'language' => 'Unknown',
+                ],
+            ],
         ];
     }
 
@@ -699,16 +754,16 @@ class DailyBfSalesEmail {
      */
     private function sampleLines() {
         return [
-            ['product_key' => 'p:sample-camp-a', 'product' => 'Sample Camp A', 'season' => 'Winter', 'type' => 'Camp', 'type_plural' => 'Camps', 'region' => 'Sample Region A', 'daily_qty' => 2, 'daily_inc' => 120.00, 'campaign_qty' => 5, 'campaign_inc' => 300.00],
-            ['product_key' => 'p:sample-camp-b', 'product' => 'Sample Camp B', 'season' => 'Winter', 'type' => 'Camp', 'type_plural' => 'Camps', 'region' => 'Sample Region B', 'daily_qty' => 1, 'daily_inc' => 80.00, 'campaign_qty' => 3, 'campaign_inc' => 240.00],
-            ['product_key' => 'p:sample-camp-c', 'product' => 'Sample Camp C', 'season' => 'Easter', 'type' => 'Camp', 'type_plural' => 'Camps', 'region' => 'Sample Region A', 'daily_qty' => 2, 'daily_inc' => 150.00, 'campaign_qty' => 4, 'campaign_inc' => 300.00],
-            ['product_key' => 'p:sample-camp-d', 'product' => 'Sample Camp D', 'season' => 'Easter', 'type' => 'Camp', 'type_plural' => 'Camps', 'region' => 'Sample Region C', 'daily_qty' => 1, 'daily_inc' => 75.00, 'campaign_qty' => 2, 'campaign_inc' => 150.00],
-            ['product_key' => 'p:sample-course-a', 'product' => 'Sample Course A', 'season' => 'Spring', 'type' => 'Course', 'type_plural' => 'Courses', 'region' => 'Sample Region B', 'daily_qty' => 3, 'daily_inc' => 90.00, 'campaign_qty' => 6, 'campaign_inc' => 180.00],
-            ['product_key' => 'p:sample-course-b', 'product' => 'Sample Course B', 'season' => 'Spring', 'type' => 'Course', 'type_plural' => 'Courses', 'region' => 'Sample Region A', 'daily_qty' => 1, 'daily_inc' => 40.00, 'campaign_qty' => 2, 'campaign_inc' => 80.00],
-            ['product_key' => 'p:sample-course-c', 'product' => 'Sample Course C', 'season' => 'Summer', 'type' => 'Course', 'type_plural' => 'Courses', 'region' => 'Sample Region C', 'daily_qty' => 1, 'daily_inc' => 55.00, 'campaign_qty' => 2, 'campaign_inc' => 110.00],
-            ['product_key' => 'p:sample-venue-b', 'product' => 'Sample Venue B', 'season' => 'Winter', 'type' => 'Course', 'type_plural' => 'Courses', 'region' => 'Sample Region B', 'daily_qty' => 2, 'daily_inc' => 64.00, 'campaign_qty' => 4, 'campaign_inc' => 128.00],
-            ['product_key' => 'p:sample-birthday-a', 'product' => 'Sample Birthday A', 'season' => 'Spring', 'type' => 'Birthday', 'type_plural' => 'Birthdays', 'region' => 'Sample Region A', 'daily_qty' => 1, 'daily_inc' => 35.00, 'campaign_qty' => 1, 'campaign_inc' => 35.00],
-            ['product_key' => 'p:sample-tournament-a', 'product' => 'Sample Tournament A', 'season' => 'Summer', 'type' => 'Tournament', 'type_plural' => 'Tournaments', 'region' => 'Sample Region C', 'daily_qty' => 1, 'daily_inc' => 48.00, 'campaign_qty' => 2, 'campaign_inc' => 96.00],
+            ['product_key' => 'p:sample-camp-a', 'product' => 'Sample Camp A', 'season' => 'Winter', 'type' => 'Camp', 'type_plural' => 'Camps', 'region' => 'Geneva/Versoix', 'daily_qty' => 2, 'daily_inc' => 120.00, 'campaign_qty' => 5, 'campaign_inc' => 300.00],
+            ['product_key' => 'p:sample-camp-b', 'product' => 'Sample Camp B', 'season' => 'Summer', 'type' => 'Camp', 'type_plural' => 'Camps', 'region' => 'Vaud', 'daily_qty' => 1, 'daily_inc' => 80.00, 'campaign_qty' => 3, 'campaign_inc' => 240.00],
+            ['product_key' => 'p:sample-camp-c', 'product' => 'Sample Camp C', 'season' => 'Easter', 'type' => 'Camp', 'type_plural' => 'Camps', 'region' => 'Basel', 'daily_qty' => 2, 'daily_inc' => 150.00, 'campaign_qty' => 4, 'campaign_inc' => 300.00],
+            ['product_key' => 'p:sample-camp-d', 'product' => 'Sample Camp D', 'season' => 'Easter', 'type' => 'Camp', 'type_plural' => 'Camps', 'region' => 'Zug/Cham', 'daily_qty' => 1, 'daily_inc' => 75.00, 'campaign_qty' => 2, 'campaign_inc' => 150.00],
+            ['product_key' => 'p:sample-course-a', 'product' => 'Sample Course A', 'season' => 'Spring', 'type' => 'Course', 'type_plural' => 'Courses', 'region' => 'Zurich', 'daily_qty' => 3, 'daily_inc' => 90.00, 'campaign_qty' => 6, 'campaign_inc' => 180.00],
+            ['product_key' => 'p:sample-course-b', 'product' => 'Sample Course B', 'season' => 'Autumn', 'type' => 'Course', 'type_plural' => 'Courses', 'region' => 'Geneva/Versoix', 'daily_qty' => 1, 'daily_inc' => 40.00, 'campaign_qty' => 2, 'campaign_inc' => 80.00],
+            ['product_key' => 'p:sample-course-c', 'product' => 'Sample Course C', 'season' => 'Winter', 'type' => 'Course', 'type_plural' => 'Courses', 'region' => 'Vaud', 'daily_qty' => 1, 'daily_inc' => 55.00, 'campaign_qty' => 2, 'campaign_inc' => 110.00],
+            ['product_key' => 'p:sample-venue-b', 'product' => 'Sample Venue B', 'season' => 'Winter', 'type' => 'Course', 'type_plural' => 'Courses', 'region' => 'Basel', 'daily_qty' => 2, 'daily_inc' => 64.00, 'campaign_qty' => 4, 'campaign_inc' => 128.00],
+            ['product_key' => 'p:sample-birthday-a', 'product' => 'Sample Birthday A', 'season' => 'Spring', 'type' => 'Birthday', 'type_plural' => 'Birthdays', 'region' => 'Unknown', 'daily_qty' => 1, 'daily_inc' => 35.00, 'campaign_qty' => 1, 'campaign_inc' => 35.00],
+            ['product_key' => 'p:sample-tournament-a', 'product' => 'Sample Tournament A', 'season' => 'Summer', 'type' => 'Tournament', 'type_plural' => 'Tournaments', 'region' => 'Zug/Cham', 'daily_qty' => 1, 'daily_inc' => 48.00, 'campaign_qty' => 2, 'campaign_inc' => 96.00],
         ];
     }
 
@@ -796,6 +851,9 @@ class DailyBfSalesEmail {
             'On hold yesterday',
             isset($digest['daily_on_hold']) && is_array($digest['daily_on_hold']) ? $digest['daily_on_hold'] : []
         );
+        $html .= '<h3>Paid orders</h3>';
+        $orders = (isset($digest['daily_orders']) && is_array($digest['daily_orders'])) ? $digest['daily_orders'] : [];
+        $html .= $this->renderOrderList($orders);
         $html .= '<h3>Regions</h3>';
         $html .= $this->renderComparisonTable('Region', $daily, $campaign, 'regions', true);
         if (self::compositeSeasonTypeLabels()) {
@@ -1972,7 +2030,7 @@ class DailyBfSalesEmail {
             $products[$key]['net_ex_vat'] += $netEx;
             $products[$key]['net_inc_vat'] += $netInc;
 
-            $regionLabel = $this->regionLabel($row);
+            $regionLabel = $this->regionDisplayBucket($this->regionLabel($row));
             if (!isset($regions[$regionLabel])) {
                 $regions[$regionLabel] = [
                     'key' => $regionLabel,
@@ -2364,12 +2422,617 @@ class DailyBfSalesEmail {
     }
 
     /**
+     * One row per paid order in the daily window. Several product names on
+     * the same order are joined with "; ". Venues use the same join.
+     *
+     * @param array<string,mixed> $report
+     * @return array<int,array<string,mixed>>
+     */
+    private function orderList(array $report) {
+        $rows = isset($report['data']) && is_array($report['data']) ? $report['data'] : [];
+        $grouped = [];
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $orderId = (int) ($row['order_id'] ?? 0);
+            if ($orderId <= 0) {
+                continue;
+            }
+            if (!isset($grouped[$orderId])) {
+                $grouped[$orderId] = [
+                    'paid_gmt' => isset($row['date_paid_gmt']) ? (string) $row['date_paid_gmt'] : '',
+                    'created_local' => isset($row['order_date_local']) ? (string) $row['order_date_local'] : '',
+                    'products' => [],
+                    'venues' => [],
+                    'net_ex_vat' => 0.0,
+                    'net_inc_vat' => 0.0,
+                ];
+            }
+            $name = trim((string) ($row['order_item_name'] ?? ''));
+            if ($name === '') {
+                $name = trim((string) ($row['class_name'] ?? ''));
+            }
+            if ($name !== '') {
+                $grouped[$orderId]['products'][] = $name;
+            }
+            $venue = trim((string) ($row['venue'] ?? ''));
+            if ($venue !== '' && strcasecmp($venue, 'N/A') !== 0) {
+                $grouped[$orderId]['venues'][] = $venue;
+            }
+            $grouped[$orderId]['net_ex_vat'] += (float) ($row['net_ex_vat'] ?? 0);
+            $grouped[$orderId]['net_inc_vat'] += $this->netIncVat($row);
+        }
+        $list = [];
+        foreach ($grouped as $orderId => $order) {
+            $paidGmt = (string) $order['paid_gmt'];
+            $facts = $this->orderFacts((int) $orderId, $paidGmt);
+            $list[] = [
+                'paid_at' => $this->zurichPaidLabel($paidGmt, (string) $order['created_local']),
+                'order_number' => (string) $facts['order_number'],
+                'products' => $this->joinLabels($order['products'], 'Unknown'),
+                'venues' => $this->joinLabels($order['venues'], 'Unknown'),
+                'net_ex_vat' => round((float) $order['net_ex_vat'], 2),
+                'net_inc_vat' => round((float) $order['net_inc_vat'], 2),
+                'customer_type' => (string) $facts['customer_type'],
+                'attribution' => (string) $facts['attribution'],
+                'language' => (string) $facts['language'],
+            ];
+        }
+        usort($list, function ($a, $b) {
+            $byTime = strcmp((string) $a['paid_at'], (string) $b['paid_at']);
+            if ($byTime !== 0) {
+                return $byTime;
+            }
+            return strcmp((string) $a['order_number'], (string) $b['order_number']);
+        });
+        return $list;
+    }
+
+    /**
+     * @param int    $orderId
+     * @param string $paidGmt
+     * @return array{order_number:string,customer_type:string,attribution:string,language:string}
+     */
+    private function orderFacts($orderId, $paidGmt) {
+        $order = null;
+        if (function_exists('wc_get_order')) {
+            $loaded = wc_get_order((int) $orderId);
+            if (is_object($loaded)) {
+                $order = $loaded;
+            }
+        }
+        $paidUnix = (ctype_digit((string) $paidGmt)) ? (int) $paidGmt : 0;
+        $number = (string) (int) $orderId;
+        if (is_object($order) && method_exists($order, 'get_order_number')) {
+            $custom = trim((string) $order->get_order_number());
+            if ($custom !== '') {
+                $number = $custom;
+            }
+        }
+        return [
+            'order_number' => $number,
+            'customer_type' => $this->customerTypeLabel($order, (int) $orderId, $paidUnix),
+            'attribution' => $this->attributionLabel($order, (int) $orderId),
+            'language' => $this->orderLanguageLabel($order, (int) $orderId),
+        ];
+    }
+
+    /**
+     * Paid instant in Europe/Zurich. The created date is the fallback, using
+     * the same site-local conversion as zurichCreatedLabel().
+     *
+     * @param string $paidGmt
+     * @param string $createdLocal
+     * @return string
+     */
+    private function zurichPaidLabel($paidGmt, $createdLocal) {
+        $paidGmt = trim((string) $paidGmt);
+        if ($paidGmt !== '' && $paidGmt !== '0' && ctype_digit($paidGmt)) {
+            try {
+                $dt = new \DateTimeImmutable('@' . $paidGmt);
+            } catch (\Exception $e) {
+                return $this->zurichCreatedLabel($createdLocal);
+            }
+            return $dt->setTimezone(new \DateTimeZone(self::TIMEZONE))->format('Y-m-d H:i');
+        }
+        return $this->zurichCreatedLabel($createdLocal);
+    }
+
+    /**
+     * WooCommerce's own returning-customer flag when the order exposes one.
+     * Otherwise a customer account with an earlier paid order (same strict
+     * paid statuses) is Returning, and everyone else is New. Guests have no
+     * customer id, so this fallback labels them New. It does not match
+     * guests by billing email.
+     *
+     * @param object|null $order
+     * @param int         $orderId
+     * @param int         $paidUnix
+     * @return string
+     */
+    private function customerTypeLabel($order, $orderId, $paidUnix) {
+        if (is_object($order) && method_exists($order, 'is_returning_customer')) {
+            return $order->is_returning_customer() ? 'Returning' : 'New';
+        }
+        $customerId = 0;
+        if (is_object($order) && method_exists($order, 'get_customer_id')) {
+            $customerId = (int) $order->get_customer_id();
+        }
+        if ($customerId <= 0) {
+            $customerId = (int) $this->orderMetaString($order, $orderId, '_customer_user');
+        }
+        if ($customerId <= 0) {
+            return 'New';
+        }
+        if ($this->hasEarlierPaidOrder($customerId, (int) $orderId, (int) $paidUnix)) {
+            return 'Returning';
+        }
+        return 'New';
+    }
+
+    /**
+     * @param int $customerId
+     * @param int $orderId
+     * @param int $paidUnix
+     * @return bool
+     */
+    private function hasEarlierPaidOrder($customerId, $orderId, $paidUnix) {
+        if (!function_exists('wc_get_orders') || (int) $customerId <= 0 || (int) $paidUnix <= 0) {
+            return false;
+        }
+        $statuses = [];
+        foreach (self::paidOrderStatuses() as $status) {
+            $status = (string) $status;
+            if (strpos($status, 'wc-') === 0) {
+                $status = substr($status, 3);
+            }
+            if ($status !== '' && !in_array($status, $statuses, true)) {
+                $statuses[] = $status;
+            }
+        }
+        $ids = wc_get_orders([
+            'customer' => (int) $customerId,
+            'customer_id' => (int) $customerId,
+            'status' => $statuses,
+            'exclude' => [(int) $orderId],
+            'limit' => 1,
+            'return' => 'ids',
+            'orderby' => 'date',
+            'order' => 'ASC',
+            'date_paid' => '<' . (int) $paidUnix,
+        ]);
+        if (!is_array($ids)) {
+            return false;
+        }
+        foreach ($ids as $id) {
+            $id = (int) $id;
+            if ($id > 0 && $id !== (int) $orderId) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * WooCommerce order-attribution meta. Direct and organic keep those words.
+     * Any other stored source is shown as "Source: Name". Missing meta is Unknown.
+     *
+     * @param object|null $order
+     * @param int         $orderId
+     * @return string
+     */
+    private function attributionLabel($order, $orderId) {
+        $type = strtolower($this->orderMetaString($order, $orderId, '_wc_order_attribution_source_type'));
+        $source = $this->orderMetaString($order, $orderId, '_wc_order_attribution_utm_source');
+        if ($type === '' && $source === '') {
+            return 'Unknown';
+        }
+        if ($type === 'organic') {
+            $name = $source !== '' ? $this->attributionSourceName($source) : 'Unknown';
+            return 'Organic: ' . $name;
+        }
+        if ($type === 'typein' || $type === 'direct') {
+            return 'Direct';
+        }
+        if ($source !== '') {
+            return 'Source: ' . $this->attributionSourceName($source);
+        }
+        return 'Source: ' . $this->attributionSourceName($type);
+    }
+
+    /**
+     * @param string $source
+     * @return string
+     */
+    private function attributionSourceName($source) {
+        $source = trim((string) $source);
+        if ($source === '') {
+            return 'Unknown';
+        }
+        return strtoupper(substr($source, 0, 1)) . substr($source, 1);
+    }
+
+    /**
+     * Same meta key as intersoccer_roster_move_order_language(). That helper
+     * falls back to the site default. This email shows Unknown when the stored
+     * language is missing or is not en, fr, or de.
+     *
+     * @param object|null $order
+     * @param int         $orderId
+     * @return string
+     */
+    private function orderLanguageLabel($order, $orderId) {
+        $raw = strtolower($this->orderMetaString($order, $orderId, 'wpml_language'));
+        if (strlen($raw) >= 2) {
+            $raw = substr($raw, 0, 2);
+        }
+        if ($raw === 'en' || $raw === 'fr' || $raw === 'de') {
+            return $raw;
+        }
+        return 'Unknown';
+    }
+
+    /**
+     * @param object|null $order
+     * @param int         $orderId
+     * @param string      $key
+     * @return string
+     */
+    private function orderMetaString($order, $orderId, $key) {
+        if (is_object($order) && method_exists($order, 'get_meta')) {
+            $value = $order->get_meta($key, true);
+            if (is_string($value) || is_numeric($value)) {
+                $text = trim((string) $value);
+                if ($text !== '') {
+                    return $text;
+                }
+            }
+        }
+        if (!function_exists('get_post_meta')) {
+            return '';
+        }
+        $value = get_post_meta((int) $orderId, (string) $key, true);
+        if (is_string($value) || is_numeric($value)) {
+            return trim((string) $value);
+        }
+        return '';
+    }
+
+    /**
+     * @param array<int,string> $labels
+     * @param string            $empty
+     * @return string
+     */
+    private function joinLabels(array $labels, $empty) {
+        $clean = [];
+        foreach ($labels as $label) {
+            $label = trim((string) $label);
+            if ($label === '' || in_array($label, $clean, true)) {
+                continue;
+            }
+            $clean[] = $label;
+        }
+        if ($clean === []) {
+            return (string) $empty;
+        }
+        return implode('; ', $clean);
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $orders
+     * @return string
+     */
+    private function renderOrderList(array $orders) {
+        if ($orders === []) {
+            return '<p>No paid orders in this window.</p>';
+        }
+        $html = '<table><thead><tr>';
+        $html .= '<th>Date and time (Europe/Zurich)</th><th>Order</th><th>Product</th><th>Venue</th>';
+        $html .= '<th>Ex-VAT</th><th>Inc-VAT</th><th>Customer</th><th>Attribution</th><th>Language</th>';
+        $html .= '</tr></thead><tbody>';
+        foreach ($orders as $order) {
+            if (!is_array($order)) {
+                continue;
+            }
+            $html .= '<tr>';
+            $html .= '<td>' . esc_html((string) ($order['paid_at'] ?? '')) . '</td>';
+            $html .= '<td>' . esc_html((string) ($order['order_number'] ?? '')) . '</td>';
+            $html .= '<td>' . esc_html((string) ($order['products'] ?? '')) . '</td>';
+            $html .= '<td>' . esc_html((string) ($order['venues'] ?? '')) . '</td>';
+            $html .= '<td>' . esc_html($this->money((float) ($order['net_ex_vat'] ?? 0))) . '</td>';
+            $html .= '<td>' . esc_html($this->money((float) ($order['net_inc_vat'] ?? 0))) . '</td>';
+            $html .= '<td>' . esc_html((string) ($order['customer_type'] ?? '')) . '</td>';
+            $html .= '<td>' . esc_html((string) ($order['attribution'] ?? '')) . '</td>';
+            $html .= '<td>' . esc_html((string) ($order['language'] ?? '')) . '</td>';
+            $html .= '</tr>';
+        }
+        $html .= '</tbody></table>';
+        return $html;
+    }
+
+    /**
+     * Email display bucket. FacetNormalizer labels stay unchanged for other reports.
+     * Versoix and Cham are not FacetNormalizer regions; they are mapped here.
+     *
+     * @param string $label
+     * @return string
+     */
+    private function regionDisplayBucket($label) {
+        $label = trim((string) $label);
+        if ($label === '' || strcasecmp($label, 'Unknown') === 0 || strcasecmp($label, 'not_recorded') === 0) {
+            return 'Unknown';
+        }
+        if (stripos($label, 'unmapped:') === 0) {
+            $label = trim(substr($label, strlen('unmapped:')));
+        }
+        if ($label === '' || strcasecmp($label, 'Unknown') === 0 || strcasecmp($label, 'not_recorded') === 0) {
+            return 'Unknown';
+        }
+        $lower = strtolower(FacetNormalizer::decode_label($label));
+        $map = [
+            'basel-stadt' => 'Basel',
+            'geneva' => 'Geneva/Versoix',
+            'genève' => 'Geneva/Versoix',
+            'geneve' => 'Geneva/Versoix',
+            'genf' => 'Geneva/Versoix',
+            'versoix' => 'Geneva/Versoix',
+            'champel' => 'Geneva/Versoix',
+            'vaud' => 'Vaud',
+            'basel' => 'Basel',
+            'bâle' => 'Basel',
+            'bale' => 'Basel',
+            'zoug' => 'Zug/Cham',
+            'zug' => 'Zug/Cham',
+            'cham' => 'Zug/Cham',
+            'zürich' => 'Zurich',
+            'zurich' => 'Zurich',
+            'zuerich' => 'Zurich',
+        ];
+        foreach ($map as $needle => $bucket) {
+            if ($this->regionLabelMatches($lower, $needle)) {
+                return $bucket;
+            }
+        }
+        return 'Unknown';
+    }
+
+    /**
+     * Exact match, or the needle as a whole word.
+     *
+     * A letter or number on either side blocks the match, so "cham" matches
+     * Cham and not Champel. Accented letters still count as letters.
+     *
+     * @param string $haystack
+     * @param string $needle
+     * @return bool
+     */
+    private function regionLabelMatches($haystack, $needle) {
+        if ($haystack === $needle) {
+            return true;
+        }
+        if ($needle === '') {
+            return false;
+        }
+        $pattern = '/(?:^|[^\p{L}\p{N}])' . preg_quote($needle, '/') . '(?:$|[^\p{L}\p{N}])/u';
+        return preg_match($pattern, $haystack) === 1;
+    }
+
+    /**
+     * @param string $label
+     * @return int
+     */
+    private function regionDisplayOrder($label) {
+        $order = [
+            'Geneva/Versoix' => 1,
+            'Vaud' => 2,
+            'Basel' => 3,
+            'Zug/Cham' => 4,
+            'Zurich' => 5,
+            'Unknown' => 6,
+        ];
+        return isset($order[$label]) ? $order[$label] : 7;
+    }
+
+    /**
+     * Primary programme rows, then one Other row for every remaining season and type.
+     *
+     * @return array<string,string>
+     */
+    private function programmeLabels() {
+        return [
+            'autumn-courses' => 'Autumn Courses',
+            'winter-courses' => 'Winter Courses',
+            'spring-courses' => 'Spring Courses',
+            'easter-camps' => 'Easter Camps',
+            'summer-camps' => 'Summer Camps',
+            'other' => 'Other',
+        ];
+    }
+
+    /**
+     * @param array<string,mixed>|null $row
+     * @return string
+     */
+    private function programmeBucketKey($row) {
+        if (!is_array($row)) {
+            return 'other';
+        }
+        $season = isset($row['season']) ? (string) $row['season'] : '';
+        $type = isset($row['type']) ? (string) $row['type'] : '';
+        $primary = [
+            'Autumn|' . ProductTypeClassifierService::TYPE_COURSE => 'autumn-courses',
+            'Winter|' . ProductTypeClassifierService::TYPE_COURSE => 'winter-courses',
+            'Spring|' . ProductTypeClassifierService::TYPE_COURSE => 'spring-courses',
+            'Easter|' . ProductTypeClassifierService::TYPE_CAMP => 'easter-camps',
+            'Summer|' . ProductTypeClassifierService::TYPE_CAMP => 'summer-camps',
+        ];
+        $key = $season . '|' . $type;
+        return isset($primary[$key]) ? $primary[$key] : 'other';
+    }
+
+    /**
+     * @param array<int,array{0:array<string,mixed>|null,1:array<string,mixed>|null}> $pairs
+     * @return array<int,array{0:array<string,mixed>,1:array<string,mixed>}>
+     */
+    private function groupProgrammePairs(array $pairs) {
+        $buckets = [];
+        foreach ($this->programmeLabels() as $key => $label) {
+            $buckets[$key] = [
+                $this->moneyRow($key, $label),
+                $this->moneyRow($key, $label),
+            ];
+        }
+        foreach ($pairs as $pair) {
+            $left = (isset($pair[0]) && is_array($pair[0])) ? $pair[0] : null;
+            $right = (isset($pair[1]) && is_array($pair[1])) ? $pair[1] : null;
+            $source = $left !== null ? $left : $right;
+            $key = $this->programmeBucketKey($source);
+            if (!isset($buckets[$key])) {
+                $key = 'other';
+            }
+            if ($left !== null) {
+                $this->addMoneyRow($buckets[$key][0], $left);
+            }
+            if ($right !== null) {
+                $this->addMoneyRow($buckets[$key][1], $right);
+            }
+        }
+        $out = [];
+        foreach ($buckets as $pair) {
+            $out[] = $pair;
+        }
+        return $out;
+    }
+
+    /**
+     * @param array<string,mixed> $target
+     * @param array<string,mixed> $row
+     * @return void
+     */
+    private function addMoneyRow(array &$target, array $row) {
+        $target['quantity'] += (int) ($row['quantity'] ?? 0);
+        $target['net_ex_vat'] += (float) ($row['net_ex_vat'] ?? 0);
+        $target['net_inc_vat'] += (float) ($row['net_inc_vat'] ?? 0);
+    }
+
+    /**
+     * Largest remainder to one decimal so the row percentages sum to 100.0.
+     * Equal remainders prefer the earlier row. A zero total is 0.0% on every row.
+     * Only a row with a positive value receives leftover tenths.
+     * Sales percentages use net inc-VAT.
+     *
+     * @param array<int,float|int> $values
+     * @return array<int,string>
+     */
+    private function percentLabels(array $values) {
+        $indexed = array_values($values);
+        $count = count($indexed);
+        if ($count === 0) {
+            return [];
+        }
+        $total = 0.0;
+        foreach ($indexed as $value) {
+            $total += (float) $value;
+        }
+        if ($total <= 0) {
+            return array_fill(0, $count, '0.0%');
+        }
+        $floors = [];
+        $remainders = [];
+        $used = 0;
+        foreach ($indexed as $i => $value) {
+            $exact = ((float) $value / $total) * 1000.0;
+            if ($exact < 0) {
+                $exact = 0.0;
+            }
+            $floor = (int) floor($exact + 1.0e-8);
+            $floors[$i] = $floor;
+            $remainders[$i] = $exact - $floor;
+            $used += $floor;
+        }
+        $left = 1000 - $used;
+        $order = array_keys($floors);
+        usort($order, function ($a, $b) use ($remainders, $indexed) {
+            if ($remainders[$a] == $remainders[$b]) {
+                if ((float) $indexed[$a] == (float) $indexed[$b]) {
+                    return $a <=> $b;
+                }
+                return ((float) $indexed[$b]) <=> ((float) $indexed[$a]);
+            }
+            return ($remainders[$a] < $remainders[$b]) ? 1 : -1;
+        });
+        $guard = 0;
+        while ($left > 0 && $guard < 1000) {
+            $assigned = false;
+            foreach ($order as $index) {
+                if ($left <= 0) {
+                    break;
+                }
+                if ((float) $indexed[$index] <= 0) {
+                    continue;
+                }
+                $floors[$index]++;
+                $left--;
+                $assigned = true;
+            }
+            if (!$assigned) {
+                break;
+            }
+            $guard++;
+        }
+        while ($left < 0 && $guard < 2000) {
+            foreach (array_reverse($order) as $index) {
+                if ($left >= 0) {
+                    break;
+                }
+                if ($floors[$index] <= 0) {
+                    continue;
+                }
+                $floors[$index]--;
+                $left++;
+            }
+            $guard++;
+        }
+        $out = [];
+        foreach ($floors as $tenths) {
+            $out[] = number_format($tenths / 10, 1, '.', '') . '%';
+        }
+        return $out;
+    }
+
+    /**
+     * @param float|int $total
+     * @return string
+     */
+    private function totalPercentLabel($total) {
+        return ((float) $total) > 0 ? '100.0%' : '0.0%';
+    }
+
+    /**
+     * @param array{0:mixed,1:mixed} $pair
+     * @return string
+     */
+    private function pairLabel(array $pair) {
+        $left = (isset($pair[0]) && is_array($pair[0])) ? $pair[0] : [];
+        $right = (isset($pair[1]) && is_array($pair[1])) ? $pair[1] : [];
+        $label = (string) ($left['label'] ?? '');
+        if ($label === '') {
+            $label = (string) ($right['label'] ?? '');
+        }
+        return $label;
+    }
+
+    /**
      * Daily and campaign-to-date columns in one table. Inc-VAT is the amount shown.
+     * Bookings are the quantity already used in the table. Percentages are of that
+     * table's own total. The season-and-type collection is grouped into programme rows.
      *
      * @param string              $labelHeading
      * @param array<string,mixed> $daily
      * @param array<string,mixed> $campaign
-     * @param string              $collection types|products
+     * @param string              $collection types|products|regions|seasons|season_types
+     * @param bool                $hideEmpty
      * @return string
      */
     private function renderComparisonTable($labelHeading, array $daily, array $campaign, $collection, $hideEmpty = false) {
@@ -2402,43 +3065,73 @@ class DailyBfSalesEmail {
             }
             $pairs[] = [null, $row];
         }
-        $html = '<table><thead><tr>';
-        $html .= '<th>' . esc_html((string) $labelHeading) . '</th>';
-        $html .= '<th>Daily qty</th><th>Daily inc-VAT</th><th>Campaign qty</th><th>Campaign inc-VAT</th>';
-        $html .= '</tr></thead><tbody>';
-        $shown = 0;
-        $dailyQty = 0;
-        $dailyInc = 0.0;
-        $campaignQty = 0;
-        $campaignInc = 0.0;
+        if ($collection === 'season_types') {
+            $pairs = $this->groupProgrammePairs($pairs);
+        } elseif ($collection === 'regions') {
+            usort($pairs, function ($a, $b) {
+                $aLabel = $this->pairLabel($a);
+                $bLabel = $this->pairLabel($b);
+                $byOrder = $this->regionDisplayOrder($aLabel) <=> $this->regionDisplayOrder($bLabel);
+                if ($byOrder !== 0) {
+                    return $byOrder;
+                }
+                return strcmp($aLabel, $bLabel);
+            });
+        }
+        $visible = [];
         foreach ($pairs as $pair) {
-            $left = is_array($pair[0]) ? $pair[0] : [];
-            $right = is_array($pair[1]) ? $pair[1] : [];
+            $left = (isset($pair[0]) && is_array($pair[0])) ? $pair[0] : [];
+            $right = (isset($pair[1]) && is_array($pair[1])) ? $pair[1] : [];
             $leftQty = (int) ($left['quantity'] ?? 0);
             $rightQty = (int) ($right['quantity'] ?? 0);
             $leftInc = (float) ($left['net_inc_vat'] ?? 0);
             $rightInc = (float) ($right['net_inc_vat'] ?? 0);
-            if ($hideEmpty && $leftQty === 0 && $rightQty === 0) {
-                continue;
-            }
             $label = (string) ($left['label'] ?? '');
             if ($label === '') {
                 $label = (string) ($right['label'] ?? '');
             }
-            $html .= '<tr>';
-            $html .= '<td>' . esc_html($label) . '</td>';
-            $html .= '<td>' . esc_html((string) $leftQty) . '</td>';
-            $html .= '<td>' . esc_html($this->money($leftInc)) . '</td>';
-            $html .= '<td>' . esc_html((string) $rightQty) . '</td>';
-            $html .= '<td>' . esc_html($this->money($rightInc)) . '</td>';
-            $html .= '</tr>';
-            $shown++;
-            $dailyQty += $leftQty;
-            $dailyInc += $leftInc;
-            $campaignQty += $rightQty;
-            $campaignInc += $rightInc;
+            if ($hideEmpty && $leftQty === 0 && $rightQty === 0 && $this->comparisonRowHidesWhenEmpty($collection, $label)) {
+                continue;
+            }
+            $visible[] = [
+                'label' => $label,
+                'left_qty' => $leftQty,
+                'left_inc' => $leftInc,
+                'right_qty' => $rightQty,
+                'right_inc' => $rightInc,
+            ];
         }
-        if ($hideEmpty && $shown === 0) {
+        $dailyQtyPct = $this->percentLabels(array_column($visible, 'left_qty'));
+        $dailyIncPct = $this->percentLabels(array_column($visible, 'left_inc'));
+        $campaignQtyPct = $this->percentLabels(array_column($visible, 'right_qty'));
+        $campaignIncPct = $this->percentLabels(array_column($visible, 'right_inc'));
+        $html = '<table><thead><tr>';
+        $html .= '<th>' . esc_html((string) $labelHeading) . '</th>';
+        $html .= '<th>Daily qty</th><th>Daily inc-VAT</th><th>Campaign qty</th><th>Campaign inc-VAT</th>';
+        $html .= '<th>Daily % bookings</th><th>Daily % sales</th><th>Campaign % bookings</th><th>Campaign % sales</th>';
+        $html .= '</tr></thead><tbody>';
+        $dailyQty = 0;
+        $dailyInc = 0.0;
+        $campaignQty = 0;
+        $campaignInc = 0.0;
+        foreach ($visible as $index => $row) {
+            $html .= '<tr>';
+            $html .= '<td>' . esc_html((string) $row['label']) . '</td>';
+            $html .= '<td>' . esc_html((string) $row['left_qty']) . '</td>';
+            $html .= '<td>' . esc_html($this->money((float) $row['left_inc'])) . '</td>';
+            $html .= '<td>' . esc_html((string) $row['right_qty']) . '</td>';
+            $html .= '<td>' . esc_html($this->money((float) $row['right_inc'])) . '</td>';
+            $html .= '<td>' . esc_html(isset($dailyQtyPct[$index]) ? $dailyQtyPct[$index] : '0.0%') . '</td>';
+            $html .= '<td>' . esc_html(isset($dailyIncPct[$index]) ? $dailyIncPct[$index] : '0.0%') . '</td>';
+            $html .= '<td>' . esc_html(isset($campaignQtyPct[$index]) ? $campaignQtyPct[$index] : '0.0%') . '</td>';
+            $html .= '<td>' . esc_html(isset($campaignIncPct[$index]) ? $campaignIncPct[$index] : '0.0%') . '</td>';
+            $html .= '</tr>';
+            $dailyQty += (int) $row['left_qty'];
+            $dailyInc += (float) $row['left_inc'];
+            $campaignQty += (int) $row['right_qty'];
+            $campaignInc += (float) $row['right_inc'];
+        }
+        if ($hideEmpty && $visible === []) {
             if ($collection === 'regions') {
                 $empty = 'No regions in this range.';
             } elseif ($collection === 'products') {
@@ -2446,15 +3139,34 @@ class DailyBfSalesEmail {
             } else {
                 $empty = 'None in this range.';
             }
-            $html .= '<tr><td colspan="5">' . esc_html($empty) . '</td></tr>';
+            $html .= '<tr><td colspan="9">' . esc_html($empty) . '</td></tr>';
         }
         $html .= '<tr><td>Total</td>';
         $html .= '<td>' . esc_html((string) $dailyQty) . '</td>';
         $html .= '<td>' . esc_html($this->money($dailyInc)) . '</td>';
         $html .= '<td>' . esc_html((string) $campaignQty) . '</td>';
-        $html .= '<td>' . esc_html($this->money($campaignInc)) . '</td></tr>';
+        $html .= '<td>' . esc_html($this->money($campaignInc)) . '</td>';
+        $html .= '<td>' . esc_html($this->totalPercentLabel($dailyQty)) . '</td>';
+        $html .= '<td>' . esc_html($this->totalPercentLabel($dailyInc)) . '</td>';
+        $html .= '<td>' . esc_html($this->totalPercentLabel($campaignQty)) . '</td>';
+        $html .= '<td>' . esc_html($this->totalPercentLabel($campaignInc)) . '</td></tr>';
         $html .= '</tbody></table>';
         return $html;
+    }
+
+    /**
+     * Regions and products drop every empty row. Season and type keeps the
+     * five primary programme rows and drops only empty Other and Unknown.
+     *
+     * @param string $collection
+     * @param string $label
+     * @return bool
+     */
+    private function comparisonRowHidesWhenEmpty($collection, $label) {
+        if ($collection !== 'season_types') {
+            return true;
+        }
+        return $label === 'Other' || $label === 'Unknown';
     }
 
     /**
