@@ -1048,7 +1048,7 @@ function intersoccer_render_roster_edit_form() {
                     <h2><?php _e('Event Details', 'intersoccer-reports-rosters'); ?></h2>
                     <table class="form-table">
                         <?php intersoccer_render_form_field($roster, 'product_name', 'Product Name', 'text'); ?>
-                        <?php intersoccer_render_form_field_select($roster, 'activity_type', 'Activity Type', ['', 'Camp', 'Course', 'Tournament', 'Other']); ?>
+                        <?php intersoccer_render_form_field_select($roster, 'activity_type', 'Activity Type', ['', 'Camp', 'Course', 'Tournament', 'Girls Only', 'Other']); ?>
                         <?php intersoccer_render_form_field($roster, 'venue', 'Venue', 'text'); ?>
                         <?php intersoccer_render_form_field($roster, 'booking_type', 'Booking Type', 'text'); ?>
                         <?php intersoccer_render_form_field($roster, 'selected_days', 'Selected Days', 'text'); ?>

@@ -767,9 +767,28 @@ class RosterRebuildCoverage160Test extends TestCase {
         $this->assertSame([], $builder->getBuildStatistics()['errors']);
     }
 
+    public function test_girls_only_and_other_orders_get_roster_rows(): void {
+        foreach (['Girls Only' => 9701, 'Other' => 9702] as $type => $oid) {
+            $this->order($oid, 'completed', [$oid + 10 => $this->meta([
+                'Activity Type' => $type,
+                'pa_activity-type' => strtolower(str_replace(' ', '-', $type)),
+            ])]);
+        }
+        $this->routeOrders([9701, 9702]);
+        $builder = $this->builder();
+
+        $builder->buildRosterFromOrder(9701);
+        $builder->buildRosterFromOrder(9702);
+
+        $this->assertSame([9711, 9712], $this->created);
+        $this->assertSame([], $builder->getBuildStatistics()['errors']);
+        $this->assertSame('Girls Only', $this->stored[9711]['activity_type']);
+        $this->assertSame('Other', $this->stored[9712]['activity_type']);
+    }
+
     public function test_line_error_reports_validation_fields(): void {
-        // 'Other' is still outside the allowed activity types.
-        $this->order(9901, 'completed', [9911 => $this->meta(['Activity Type' => 'Other', 'pa_activity-type' => 'other'])]);
+        // A label the canonical mapper cannot fold into a roster activity type is still rejected.
+        $this->order(9901, 'completed', [9911 => $this->meta(['Activity Type' => 'Not A Type', 'pa_activity-type' => 'not-a-type'])]);
         $this->routeOrders([9901]);
 
         $result = $this->builder()->buildRosters(['clear_existing' => true]);
@@ -779,7 +798,7 @@ class RosterRebuildCoverage160Test extends TestCase {
         $this->assertSame(1, $errors['count']);
         $this->assertSame(['ValidationException: activity_type' => 1], $errors['by_reason']);
         $this->assertSame(9911, $errors['rows'][0]['order_item_id']);
-        $this->assertSame('Other', $errors['rows'][0]['activity_type']);
+        $this->assertSame('Not A Type', $errors['rows'][0]['activity_type']);
         $this->assertArrayHasKey('activity_type', $errors['rows'][0]['validation_errors']);
     }
 
