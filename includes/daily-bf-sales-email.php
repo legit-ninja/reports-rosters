@@ -30,13 +30,19 @@
  * date. The low threshold is an admin setting and defaults to 3. Zero bookings
  * are a separate list.
  *
- * The yesterday section lists each paid order once. Region rows use display
+ * The yesterday section lists each paid order once, then one line per paid
+ * booking. Booking lines show the product, Zurich paid time, venue, city,
+ * and the amount paid including VAT. They do not show customer or player
+ * names, email addresses, or order numbers. A new or returning flag uses an
+ * earlier paid order for the same customer. Product names link to the
+ * product page, and the coupon setting is added as a coupon query parameter
+ * when the code matches the front-end format. Region rows use display
  * buckets for this email (Geneva/Versoix, Vaud, Basel, Zug/Cham, Zurich, and
  * Unknown). The season-and-type table keeps the daily-versus-campaign
  * comparison and always shows Autumn, Winter, and Spring courses plus Easter
  * and Summer camps, even when the quantity is zero. Empty Other and Unknown
- * rows stay hidden. Sales shares are net inc-VAT. There is no year-on-year
- * comparison.
+ * rows stay hidden. Every amount in the email is what the customer paid,
+ * including VAT. There is no year-on-year comparison.
  *
  * @package InterSoccer\ReportsRosters\Services
  */
@@ -523,7 +529,7 @@ class DailyBfSalesEmail {
         foreach ($this->configurationWarnings() as $warning) {
             echo '<div class="notice notice-warning"><p>' . esc_html($warning) . '</p></div>';
         }
-        echo '<p>Totals are net inc-VAT for processing and completed orders with a paid date in the window. On-hold orders are counted separately by the date they were created and are not included. Orders with no paid date are omitted from the paid totals.</p>';
+        echo '<p>Totals are CHF incl. VAT for processing and completed orders with a paid date in the window. On-hold orders are counted separately by the date they were created and are not included. Orders with no paid date are omitted from the paid totals.</p>';
         echo '<form method="post" action="' . esc_url(admin_url('admin.php?page=' . self::PAGE_SLUG)) . '">';
         $this->nonceField(self::NONCE_SETTINGS);
         echo '<table class="form-table"><tbody>';
@@ -608,6 +614,8 @@ class DailyBfSalesEmail {
             'campaign_started' => $campaignStarted,
             'daily' => $daily,
             'daily_orders' => $this->orderList(is_array($dailyReport) ? $dailyReport : []),
+            'booking_lines' => $this->bookingLines(is_array($dailyReport) ? $dailyReport : []),
+            'coupon_code' => $this->urlCouponCode($this->settings()['coupon_code']),
             'campaign' => $campaign,
             'daily_on_hold' => $dailyOnHold,
             'campaign_on_hold' => $campaignOnHold,
@@ -697,13 +705,14 @@ class DailyBfSalesEmail {
             'used_created_fallback' => false,
             'final_campaign' => true,
             'booking_report_url' => 'https://example.com/sample-booking-report/900001',
+            'coupon_code' => 'sample-code',
+            'booking_lines' => $this->sampleBookingLines($lines),
             'daily_orders' => [
                 [
                     'paid_at' => '2026-11-10 09:15',
                     'order_number' => '900201',
                     'products' => 'Sample Camp A; Sample Camp B',
                     'venues' => 'Hall North; Hall West',
-                    'net_ex_vat' => 185.70,
                     'net_inc_vat' => 200.00,
                     'customer_type' => 'Returning',
                     'attribution' => 'Organic: Google',
@@ -714,7 +723,6 @@ class DailyBfSalesEmail {
                     'order_number' => '900202',
                     'products' => 'Sample Camp C; Sample Camp D',
                     'venues' => 'Hall South',
-                    'net_ex_vat' => 208.91,
                     'net_inc_vat' => 225.00,
                     'customer_type' => 'New',
                     'attribution' => 'Direct',
@@ -725,7 +733,6 @@ class DailyBfSalesEmail {
                     'order_number' => '900203',
                     'products' => 'Sample Course A; Sample Course B; Sample Course C',
                     'venues' => 'Hall East',
-                    'net_ex_vat' => 171.77,
                     'net_inc_vat' => 185.00,
                     'customer_type' => 'Returning',
                     'attribution' => 'Source: Fb',
@@ -736,7 +743,6 @@ class DailyBfSalesEmail {
                     'order_number' => '900204',
                     'products' => 'Sample Venue B; Sample Birthday A; Sample Tournament A',
                     'venues' => 'Hall Central',
-                    'net_ex_vat' => 136.49,
                     'net_inc_vat' => 147.00,
                     'customer_type' => 'New',
                     'attribution' => 'Unknown',
@@ -765,6 +771,55 @@ class DailyBfSalesEmail {
             ['product_key' => 'p:sample-birthday-a', 'product' => 'Sample Birthday A', 'season' => 'Spring', 'type' => 'Birthday', 'type_plural' => 'Birthdays', 'region' => 'Unknown', 'daily_qty' => 1, 'daily_inc' => 35.00, 'campaign_qty' => 1, 'campaign_inc' => 35.00],
             ['product_key' => 'p:sample-tournament-a', 'product' => 'Sample Tournament A', 'season' => 'Summer', 'type' => 'Tournament', 'type_plural' => 'Tournaments', 'region' => 'Zug/Cham', 'daily_qty' => 1, 'daily_inc' => 48.00, 'campaign_qty' => 2, 'campaign_inc' => 96.00],
         ];
+    }
+
+    /**
+     * One invented booking per sample product that sold yesterday.
+     * Amounts are the same VAT-included figures as the daily summary.
+     * Permalinks stay on the example test host. This does not read orders.
+     *
+     * @param array<int,array<string,mixed>> $lines
+     * @return array<int,array<string,mixed>>
+     */
+    private function sampleBookingLines(array $lines) {
+        $out = [];
+        $index = 0;
+        foreach ($lines as $line) {
+            if (!is_array($line)) {
+                continue;
+            }
+            $qty = (int) ($line['daily_qty'] ?? 0);
+            $inc = round((float) ($line['daily_inc'] ?? 0), 2);
+            if ($qty <= 0 || $inc <= 0) {
+                continue;
+            }
+            $slug = strtolower((string) ($line['product_key'] ?? 'sample'));
+            if (strpos($slug, 'p:') === 0) {
+                $slug = substr($slug, 2);
+            }
+            $slug = preg_replace('/[^a-z0-9-]+/', '', $slug);
+            if (!is_string($slug) || $slug === '') {
+                $slug = 'sample';
+            }
+            $minute = 15 + ($index * 7);
+            $hour = 9 + (int) floor($minute / 60);
+            $minute = $minute % 60;
+            $permalink = 'https://example.test/' . $slug . '/';
+            if ($index === 1) {
+                $permalink .= '?view=week';
+            }
+            $out[] = [
+                'product' => (string) ($line['product'] ?? 'Sample'),
+                'paid_at' => sprintf('2026-11-10 %02d:%02d', $hour, $minute),
+                'venue' => 'Example Park',
+                'city' => 'Sampletown',
+                'amount_inc_vat' => $inc,
+                'customer' => ($index % 2 === 0) ? 'New' : 'Returning',
+                'permalink' => $permalink,
+            ];
+            $index++;
+        }
+        return $out;
     }
 
     /**
@@ -845,7 +900,7 @@ class DailyBfSalesEmail {
         $campaign = isset($digest['campaign']) && is_array($digest['campaign']) ? $digest['campaign'] : $this->emptySummary();
         $html = '<div>';
         $html .= '<h2>Yesterday (' . esc_html($reportDate) . ', Europe/Zurich)</h2>';
-        $html .= '<p><strong>' . esc_html($this->money((float) ($daily['net_inc_vat'] ?? 0))) . ' CHF</strong> net inc-VAT</p>';
+        $html .= '<p><strong>' . esc_html($this->money((float) ($daily['net_inc_vat'] ?? 0))) . ' CHF</strong> incl. VAT</p>';
         $html .= '<p>Orders: ' . esc_html((string) (int) ($daily['order_count'] ?? 0)) . '</p>';
         $html .= $this->renderOnHoldNote(
             'On hold yesterday',
@@ -854,6 +909,10 @@ class DailyBfSalesEmail {
         $html .= '<h3>Paid orders</h3>';
         $orders = (isset($digest['daily_orders']) && is_array($digest['daily_orders'])) ? $digest['daily_orders'] : [];
         $html .= $this->renderOrderList($orders);
+        $html .= '<h3>Bookings</h3>';
+        $bookingLines = (isset($digest['booking_lines']) && is_array($digest['booking_lines'])) ? $digest['booking_lines'] : [];
+        $couponCode = isset($digest['coupon_code']) ? (string) $digest['coupon_code'] : '';
+        $html .= $this->renderBookingLines($bookingLines, $couponCode);
         $html .= '<h3>Regions</h3>';
         $html .= $this->renderComparisonTable('Region', $daily, $campaign, 'regions', true);
         if (self::compositeSeasonTypeLabels()) {
@@ -890,11 +949,11 @@ class DailyBfSalesEmail {
                 'On hold in the campaign',
                 isset($digest['campaign_on_hold']) && is_array($digest['campaign_on_hold']) ? $digest['campaign_on_hold'] : []
             );
-            $html .= '<p>Campaign total: ' . esc_html($this->money((float) ($campaign['net_inc_vat'] ?? 0))) . ' CHF inc-VAT.</p>';
+            $html .= '<p>Campaign total: ' . esc_html($this->money((float) ($campaign['net_inc_vat'] ?? 0))) . ' CHF incl. VAT.</p>';
         }
         $url = (string) ($digest['booking_report_url'] ?? '');
         $html .= '<p><a href="' . esc_url($url) . '">Booking report for this day</a></p>';
-        $html .= '<p>Net inc-VAT is what the customer paid after discounts and refunds, including remaining line tax.</p>';
+        $html .= '<p>Amounts are CHF incl. VAT: what the customer paid after discounts and refunds.</p>';
         $html .= '<p>' . esc_html(self::FOOTER_PAID_DATE) . '</p>';
         $html .= '</div>';
         return $html;
@@ -2407,7 +2466,7 @@ class DailyBfSalesEmail {
         $count = (int) ($onHold['order_count'] ?? 0);
         $amount = $this->money((float) ($onHold['net_inc_vat'] ?? 0));
         return '<p>' . esc_html((string) $label) . ': ' . esc_html((string) $count)
-            . ' orders, ' . esc_html($amount) . ' CHF inc-VAT. Not included in the totals.</p>';
+            . ' orders, ' . esc_html($amount) . ' CHF incl. VAT. Not included in the totals.</p>';
     }
 
     /**
@@ -2720,6 +2779,501 @@ class DailyBfSalesEmail {
     }
 
     /**
+     * One row per paid booking line for the reported day. Identity used to
+     * flag new or returning customers stays in memory and is not returned.
+     *
+     * @param array<string,mixed> $report
+     * @return array<int,array<string,mixed>>
+     */
+    private function bookingLines(array $report) {
+        $rows = isset($report['data']) && is_array($report['data']) ? $report['data'] : [];
+        $pending = [];
+        $orderIds = [];
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $orderId = (int) ($row['order_id'] ?? 0);
+            if ($orderId <= 0) {
+                continue;
+            }
+            $orderIds[$orderId] = $orderId;
+            $pending[] = $row;
+        }
+        $customers = $this->loadCustomerUsers(array_values($orderIds));
+        $orders = [];
+        foreach ($pending as $row) {
+            $orderId = (int) ($row['order_id'] ?? 0);
+            if (isset($orders[$orderId])) {
+                continue;
+            }
+            $orders[$orderId] = [
+                'instant' => $this->orderInstant(
+                    isset($row['date_paid_gmt']) ? (string) $row['date_paid_gmt'] : '',
+                    isset($row['order_date_local']) ? (string) $row['order_date_local'] : ''
+                ),
+                'customer_id' => isset($customers[$orderId]) ? (int) $customers[$orderId] : 0,
+                'email' => $this->rowEmail($row),
+            ];
+        }
+        $flags = $this->customerFlags($orders);
+        $lines = [];
+        foreach ($pending as $row) {
+            $orderId = (int) ($row['order_id'] ?? 0);
+            $name = trim((string) ($row['order_item_name'] ?? ''));
+            if ($name === '') {
+                $name = trim((string) ($row['class_name'] ?? ''));
+            }
+            if ($name === '') {
+                $name = 'Unknown';
+            }
+            $venue = trim((string) ($row['venue'] ?? ''));
+            if ($venue === '' || strcasecmp($venue, 'N/A') === 0) {
+                $venue = 'Unknown';
+            }
+            $city = $this->lineCity($row);
+            if ($city === '') {
+                $city = 'Unknown';
+            }
+            $lines[] = [
+                'product' => $name,
+                'paid_at' => $this->zurichPaidLabel(
+                    isset($row['date_paid_gmt']) ? (string) $row['date_paid_gmt'] : '',
+                    isset($row['order_date_local']) ? (string) $row['order_date_local'] : ''
+                ),
+                'venue' => $venue,
+                'city' => $city,
+                'amount_inc_vat' => round($this->netIncVat($row), 2),
+                'customer' => (isset($flags[$orderId]) && $flags[$orderId] === 'Returning') ? 'Returning' : 'New',
+                'permalink' => $this->frontPermalink((int) ($row['product_id'] ?? 0)),
+            ];
+        }
+        usort($lines, function ($a, $b) {
+            $byTime = strcmp((string) $a['paid_at'], (string) $b['paid_at']);
+            if ($byTime !== 0) {
+                return $byTime;
+            }
+            return strcmp((string) $a['product'], (string) $b['product']);
+        });
+        return $lines;
+    }
+
+    /**
+     * @param array<string,mixed> $row
+     * @return string
+     */
+    private function rowEmail(array $row) {
+        $email = trim((string) ($row['booker_email'] ?? ''));
+        if ($email === '' || strcasecmp($email, 'N/A') === 0) {
+            return '';
+        }
+        return $email;
+    }
+
+    /**
+     * @param array<string,mixed> $row
+     * @return string
+     */
+    private function lineCity(array $row) {
+        $meta = (isset($row['line_meta']) && is_array($row['line_meta'])) ? $row['line_meta'] : [];
+        $keys = ['City', 'pa_city', 'attribute_pa_city', 'Ville', 'Stadt'];
+        $value = trim((string) $this->facetNormalizer()->meta_value($meta, $keys));
+        if ($value === '' || strcasecmp($value, 'N/A') === 0) {
+            return '';
+        }
+        return $value;
+    }
+
+    /**
+     * @param string $paidRaw
+     * @param string $createdLocal
+     * @return int
+     */
+    private function orderInstant($paidRaw, $createdLocal) {
+        $paidRaw = trim((string) $paidRaw);
+        if ($paidRaw !== '' && $paidRaw !== '0' && ctype_digit($paidRaw)) {
+            return (int) $paidRaw;
+        }
+        $createdLocal = trim((string) $createdLocal);
+        if ($createdLocal === '') {
+            return 0;
+        }
+        $dt = \DateTimeImmutable::createFromFormat('Y-m-d H:i:s', $createdLocal, $this->siteTimezone());
+        if (!($dt instanceof \DateTimeImmutable)) {
+            return 0;
+        }
+        return $dt->getTimestamp();
+    }
+
+    /**
+     * @param string $email
+     * @return string
+     */
+    private function guestEmailKey($email) {
+        $email = trim((string) $email);
+        if ($email === '' || strcasecmp($email, 'N/A') === 0 || strpos($email, '@') === false) {
+            return '';
+        }
+        return strtolower($email);
+    }
+
+    /**
+     * @param string $status
+     * @return bool
+     */
+    private function isPaidOrderStatus($status) {
+        $status = (string) $status;
+        if (strpos($status, 'wc-') !== 0) {
+            $status = 'wc-' . $status;
+        }
+        return in_array($status, self::paidOrderStatuses(), true);
+    }
+
+    /**
+     * Batch-read customer user ids. Billing email is already on the report row.
+     *
+     * @param array<int,int> $orderIds
+     * @return array<int,int>
+     */
+    private function loadCustomerUsers(array $orderIds) {
+        $orderIds = array_values(array_unique(array_filter(array_map('intval', $orderIds))));
+        if ($orderIds === []) {
+            return [];
+        }
+        $wpdb = $this->db();
+        if (!is_object($wpdb) || !method_exists($wpdb, 'prepare') || !method_exists($wpdb, 'get_results')) {
+            return [];
+        }
+        $placeholders = implode(',', array_fill(0, count($orderIds), '%d'));
+        $sql = "SELECT post_id, meta_value FROM {$wpdb->postmeta} WHERE meta_key = '_customer_user' AND post_id IN ($placeholders)";
+        $prepared = $wpdb->prepare($sql, $orderIds);
+        $rows = $wpdb->get_results($prepared);
+        $out = [];
+        foreach ((array) $rows as $row) {
+            if (is_array($row)) {
+                $row = (object) $row;
+            }
+            if (!is_object($row)) {
+                continue;
+            }
+            $orderId = (int) ($row->post_id ?? 0);
+            $customerId = (int) ($row->meta_value ?? 0);
+            if ($orderId > 0 && $customerId > 0) {
+                $out[$orderId] = $customerId;
+            }
+        }
+        return $out;
+    }
+
+    /**
+     * One read of earlier completed and processing orders for the customers
+     * in this digest. Guest emails are compared in PHP, not in SQL.
+     *
+     * @param array<int,int> $userIds
+     * @param bool           $hasGuests
+     * @param int            $maxInstant
+     * @return array<int,array<string,mixed>>
+     */
+    private function loadPaidHistory(array $userIds, $hasGuests, $maxInstant) {
+        $userIds = array_values(array_unique(array_filter(array_map('intval', $userIds))));
+        $maxInstant = (int) $maxInstant;
+        if ($maxInstant <= 0 || ($userIds === [] && !$hasGuests)) {
+            return [];
+        }
+        $wpdb = $this->db();
+        if (!is_object($wpdb) || !method_exists($wpdb, 'prepare') || !method_exists($wpdb, 'get_results')) {
+            return [];
+        }
+        $statuses = self::paidOrderStatuses();
+        if ($statuses === []) {
+            return [];
+        }
+        $args = [];
+        $statusSql = implode(',', array_fill(0, count($statuses), '%s'));
+        foreach ($statuses as $status) {
+            $args[] = (string) $status;
+        }
+        $identitySql = '1=0';
+        if ($userIds !== []) {
+            $idSql = implode(',', array_fill(0, count($userIds), '%d'));
+            $identitySql = 'CAST(cust.meta_value AS UNSIGNED) IN (' . $idSql . ')';
+            foreach ($userIds as $userId) {
+                $args[] = (int) $userId;
+            }
+        }
+        if ($hasGuests) {
+            $guestSql = "(CAST(IFNULL(cust.meta_value, '0') AS UNSIGNED) = 0 AND IFNULL(mail.meta_value, '') <> '')";
+            $identitySql = ($identitySql === '1=0') ? $guestSql : '(' . $identitySql . ' OR ' . $guestSql . ')';
+        }
+        $args[] = $maxInstant;
+        $args[] = $this->siteLocalFromUnix($maxInstant);
+        $sql = "SELECT p.ID AS order_id, p.post_status, p.post_date, cust.meta_value AS customer_user, mail.meta_value AS billing_email, paid.meta_value AS date_paid"
+            . " FROM {$wpdb->posts} p"
+            . " LEFT JOIN {$wpdb->postmeta} cust ON cust.post_id = p.ID AND cust.meta_key = '_customer_user'"
+            . " LEFT JOIN {$wpdb->postmeta} mail ON mail.post_id = p.ID AND mail.meta_key = '_billing_email'"
+            . " LEFT JOIN {$wpdb->postmeta} paid ON paid.post_id = p.ID AND paid.meta_key = '_date_paid'"
+            . " WHERE p.post_type = 'shop_order'"
+            . " AND p.post_status IN ($statusSql)"
+            . " AND ($identitySql)"
+            . " AND ((paid.meta_value IS NOT NULL AND paid.meta_value <> '' AND paid.meta_value <> '0' AND CAST(paid.meta_value AS UNSIGNED) < %d)"
+            . " OR ((paid.meta_value IS NULL OR paid.meta_value = '' OR paid.meta_value = '0') AND p.post_date < %s))";
+        $prepared = $wpdb->prepare($sql, $args);
+        $rows = $wpdb->get_results($prepared);
+        $list = [];
+        foreach ((array) $rows as $row) {
+            if (is_array($row)) {
+                $row = (object) $row;
+            }
+            if (!is_object($row)) {
+                continue;
+            }
+            $id = (int) ($row->order_id ?? 0);
+            if ($id <= 0) {
+                continue;
+            }
+            $list[] = [
+                'id' => $id,
+                'status' => isset($row->post_status) ? (string) $row->post_status : '',
+                'customer_id' => (int) ($row->customer_user ?? 0),
+                'email' => isset($row->billing_email) ? (string) $row->billing_email : '',
+                'instant' => $this->orderInstant(
+                    isset($row->date_paid) ? (string) $row->date_paid : '',
+                    isset($row->post_date) ? (string) $row->post_date : ''
+                ),
+            ];
+        }
+        return $list;
+    }
+
+    /**
+     * @param int $unix
+     * @return string
+     */
+    private function siteLocalFromUnix($unix) {
+        try {
+            $dt = new \DateTimeImmutable('@' . (int) $unix);
+        } catch (\Exception $e) {
+            return '1970-01-01 00:00:00';
+        }
+        return $dt->setTimezone($this->siteTimezone())->format('Y-m-d H:i:s');
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $orders
+     * @return array<int,string>
+     */
+    private function customerFlags(array $orders) {
+        $flags = [];
+        $userIds = [];
+        $hasGuests = false;
+        $maxInstant = 0;
+        foreach ($orders as $orderId => $order) {
+            if (!is_array($order)) {
+                continue;
+            }
+            $orderId = (int) $orderId;
+            $flags[$orderId] = 'New';
+            $customerId = (int) ($order['customer_id'] ?? 0);
+            if ($customerId > 0) {
+                $userIds[$customerId] = $customerId;
+            } elseif ($this->guestEmailKey((string) ($order['email'] ?? '')) !== '') {
+                $hasGuests = true;
+            }
+            $instant = (int) ($order['instant'] ?? 0);
+            if ($instant > $maxInstant) {
+                $maxInstant = $instant;
+            }
+        }
+        if ($maxInstant <= 0 || ($userIds === [] && !$hasGuests)) {
+            return $flags;
+        }
+        $history = $this->loadPaidHistory(array_values($userIds), $hasGuests, $maxInstant);
+        foreach ($orders as $orderId => $order) {
+            if (!is_array($order)) {
+                continue;
+            }
+            $orderId = (int) $orderId;
+            $instant = (int) ($order['instant'] ?? 0);
+            if ($instant <= 0) {
+                continue;
+            }
+            $customerId = (int) ($order['customer_id'] ?? 0);
+            $emailKey = $this->guestEmailKey((string) ($order['email'] ?? ''));
+            if ($customerId <= 0 && $emailKey === '') {
+                continue;
+            }
+            foreach ($history as $past) {
+                if ((int) $past['id'] === $orderId) {
+                    continue;
+                }
+                if ((int) $past['instant'] <= 0 || (int) $past['instant'] >= $instant) {
+                    continue;
+                }
+                if (!$this->isPaidOrderStatus((string) $past['status'])) {
+                    continue;
+                }
+                if ($customerId > 0) {
+                    if ((int) $past['customer_id'] === $customerId) {
+                        $flags[$orderId] = 'Returning';
+                        break;
+                    }
+                    continue;
+                }
+                if ((int) $past['customer_id'] > 0) {
+                    continue;
+                }
+                $pastEmail = $this->guestEmailKey((string) $past['email']);
+                if ($pastEmail !== '' && $pastEmail === $emailKey) {
+                    $flags[$orderId] = 'Returning';
+                    break;
+                }
+            }
+        }
+        return $flags;
+    }
+
+    /**
+     * Same database handle the booking report already uses.
+     *
+     * @return object|null
+     */
+    private function db() {
+        $reports = $this->reportService();
+        try {
+            $property = new \ReflectionProperty(FinancialReportService::class, 'wpdb');
+            $property->setAccessible(true);
+            $wpdb = $property->getValue($reports);
+        } catch (\Exception $e) {
+            return null;
+        }
+        if (is_object($wpdb) && method_exists($wpdb, 'get_results')) {
+            return $wpdb;
+        }
+        return null;
+    }
+
+    /**
+     * @param int $productId
+     * @return string
+     */
+    private function frontPermalink($productId) {
+        $productId = (int) $productId;
+        if ($productId <= 0 || !function_exists('get_permalink')) {
+            return '';
+        }
+        $url = get_permalink($productId);
+        if (!is_string($url)) {
+            return '';
+        }
+        $url = trim($url);
+        if ($url === '') {
+            return '';
+        }
+        return $url;
+    }
+
+    /**
+     * Front-end coupon query codes: wc_format_coupon_code, then at most 32
+     * characters matching letters, numbers, hyphens, and underscores.
+     * An already-normal code is kept when WooCommerce is not loaded.
+     * This does not read the product-variations allowlist.
+     *
+     * @param mixed $raw
+     * @return string
+     */
+    private function urlCouponCode($raw) {
+        if (is_array($raw) || is_object($raw) || is_bool($raw)) {
+            return '';
+        }
+        $raw = trim((string) $raw);
+        if ($raw === '') {
+            return '';
+        }
+        if (function_exists('wc_format_coupon_code')) {
+            $code = wc_format_coupon_code($raw);
+            if (!is_string($code)) {
+                return '';
+            }
+            $code = trim($code);
+        } else {
+            $code = $raw;
+        }
+        if ($code === '' || strlen($code) > 32) {
+            return '';
+        }
+        if (preg_match('/^[a-z0-9_-]+$/', $code) !== 1) {
+            return '';
+        }
+        return $code;
+    }
+
+    /**
+     * @param string $permalink
+     * @param string $couponCode
+     * @return string
+     */
+    private function bookingLineUrl($permalink, $couponCode) {
+        $permalink = trim((string) $permalink);
+        if ($permalink === '') {
+            return '';
+        }
+        $code = $this->urlCouponCode($couponCode);
+        if ($code === '' || !function_exists('add_query_arg')) {
+            return $permalink;
+        }
+        $url = add_query_arg('coupon', $code, $permalink);
+        if (!is_string($url) || $url === '') {
+            return $permalink;
+        }
+        return $url;
+    }
+
+    /**
+     * @param array<string,mixed> $line
+     * @param string              $couponCode
+     * @return string
+     */
+    private function bookingProductHtml(array $line, $couponCode) {
+        $name = esc_html((string) ($line['product'] ?? ''));
+        $url = $this->bookingLineUrl(isset($line['permalink']) ? (string) $line['permalink'] : '', $couponCode);
+        if ($url === '') {
+            return $name;
+        }
+        return '<a href="' . esc_url($url) . '">' . $name . '</a>';
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $lines
+     * @param string                         $couponCode
+     * @return string
+     */
+    private function renderBookingLines(array $lines, $couponCode) {
+        if ($lines === []) {
+            return '<p>No paid bookings in this window.</p>';
+        }
+        $html = '<table><thead><tr>';
+        $html .= '<th>Camp or course</th><th>Date and time (Europe/Zurich)</th><th>Venue</th><th>City</th>';
+        $html .= '<th>CHF incl. VAT</th><th>Customer</th>';
+        $html .= '</tr></thead><tbody>';
+        foreach ($lines as $line) {
+            if (!is_array($line)) {
+                continue;
+            }
+            $flag = ((string) ($line['customer'] ?? '')) === 'Returning' ? 'Returning' : 'New';
+            $html .= '<tr>';
+            $html .= '<td>' . $this->bookingProductHtml($line, $couponCode) . '</td>';
+            $html .= '<td>' . esc_html((string) ($line['paid_at'] ?? '')) . '</td>';
+            $html .= '<td>' . esc_html((string) ($line['venue'] ?? '')) . '</td>';
+            $html .= '<td>' . esc_html((string) ($line['city'] ?? '')) . '</td>';
+            $html .= '<td>' . esc_html($this->money((float) ($line['amount_inc_vat'] ?? 0))) . '</td>';
+            $html .= '<td>' . esc_html($flag) . '</td>';
+            $html .= '</tr>';
+        }
+        $html .= '</tbody></table>';
+        return $html;
+    }
+
+    /**
      * @param array<int,array<string,mixed>> $orders
      * @return string
      */
@@ -2729,7 +3283,7 @@ class DailyBfSalesEmail {
         }
         $html = '<table><thead><tr>';
         $html .= '<th>Date and time (Europe/Zurich)</th><th>Order</th><th>Product</th><th>Venue</th>';
-        $html .= '<th>Ex-VAT</th><th>Inc-VAT</th><th>Customer</th><th>Attribution</th><th>Language</th>';
+        $html .= '<th>Incl. VAT</th><th>Customer</th><th>Attribution</th><th>Language</th>';
         $html .= '</tr></thead><tbody>';
         foreach ($orders as $order) {
             if (!is_array($order)) {
@@ -2740,7 +3294,6 @@ class DailyBfSalesEmail {
             $html .= '<td>' . esc_html((string) ($order['order_number'] ?? '')) . '</td>';
             $html .= '<td>' . esc_html((string) ($order['products'] ?? '')) . '</td>';
             $html .= '<td>' . esc_html((string) ($order['venues'] ?? '')) . '</td>';
-            $html .= '<td>' . esc_html($this->money((float) ($order['net_ex_vat'] ?? 0))) . '</td>';
             $html .= '<td>' . esc_html($this->money((float) ($order['net_inc_vat'] ?? 0))) . '</td>';
             $html .= '<td>' . esc_html((string) ($order['customer_type'] ?? '')) . '</td>';
             $html .= '<td>' . esc_html((string) ($order['attribution'] ?? '')) . '</td>';
@@ -2920,7 +3473,7 @@ class DailyBfSalesEmail {
      * Largest remainder to one decimal so the row percentages sum to 100.0.
      * Equal remainders prefer the earlier row. A zero total is 0.0% on every row.
      * Only a row with a positive value receives leftover tenths.
-     * Sales percentages use net inc-VAT.
+     * Sales percentages use the VAT-included amount.
      *
      * @param array<int,float|int> $values
      * @return array<int,string>
@@ -3024,7 +3577,7 @@ class DailyBfSalesEmail {
     }
 
     /**
-     * Daily and campaign-to-date columns in one table. Inc-VAT is the amount shown.
+     * Daily and campaign-to-date columns in one table. The amount shown is incl. VAT.
      * Bookings are the quantity already used in the table. Percentages are of that
      * table's own total. The season-and-type collection is grouped into programme rows.
      *
@@ -3107,7 +3660,7 @@ class DailyBfSalesEmail {
         $campaignIncPct = $this->percentLabels(array_column($visible, 'right_inc'));
         $html = '<table><thead><tr>';
         $html .= '<th>' . esc_html((string) $labelHeading) . '</th>';
-        $html .= '<th>Daily qty</th><th>Daily inc-VAT</th><th>Campaign qty</th><th>Campaign inc-VAT</th>';
+        $html .= '<th>Daily qty</th><th>Daily incl. VAT</th><th>Campaign qty</th><th>Campaign incl. VAT</th>';
         $html .= '<th>Daily % bookings</th><th>Daily % sales</th><th>Campaign % bookings</th><th>Campaign % sales</th>';
         $html .= '</tr></thead><tbody>';
         $dailyQty = 0;
