@@ -90,6 +90,22 @@ namespace {
         }
     }
 
+    if (!function_exists('wc_format_coupon_code')) {
+        function wc_format_coupon_code($code) {
+            return strtolower(trim((string) $code));
+        }
+    }
+
+    if (!function_exists('get_permalink')) {
+        function get_permalink($post = 0, $leavename = false) {
+            $id = is_object($post) && isset($post->ID) ? (int) $post->ID : (int) $post;
+            if (isset($GLOBALS['intersoccer_rr_bf_permalinks']) && is_array($GLOBALS['intersoccer_rr_bf_permalinks']) && array_key_exists($id, $GLOBALS['intersoccer_rr_bf_permalinks'])) {
+                return $GLOBALS['intersoccer_rr_bf_permalinks'][$id];
+            }
+            return false;
+        }
+    }
+
     if (!class_exists('WC_Coupon')) {
         class WC_Coupon {
             /** @var int */
@@ -198,6 +214,9 @@ class DailyBfSalesEmailFixtureWpdb extends \InterSoccerTestWpdb {
         }
         $query = (string) $query;
         $this->queries[] = $query;
+        if (strpos($query, '_billing_email') !== false && strpos($query, "post_type = 'shop_order'") !== false) {
+            return $this->customerHistoryRows($query);
+        }
         if (strpos($query, "post_type = 'shop_order'") !== false) {
             if (strpos($query, '_date_paid') !== false) {
                 return $this->bookingRows($query);
@@ -213,7 +232,66 @@ class DailyBfSalesEmailFixtureWpdb extends \InterSoccerTestWpdb {
         if (preg_match('/order_item_id = (\d+)/', $query, $matches)) {
             return $this->metaRows((int) $matches[1]);
         }
+        if (strpos($query, '_customer_user') !== false && strpos($query, 'post_id IN') !== false) {
+            return $this->customerUserRows($query);
+        }
         return [];
+    }
+
+    /**
+     * @param string $query
+     * @return array<int,object>
+     */
+    private function customerUserRows($query) {
+        if (!preg_match('/post_id IN \(([^)]+)\)/', $query, $matches)) {
+            return [];
+        }
+        $ids = array_map('intval', explode(',', $matches[1]));
+        $rows = [];
+        foreach ($ids as $id) {
+            if ($id <= 0) {
+                continue;
+            }
+            $meta = (isset(\InterSoccerRRTestMeta::$data[$id]) && is_array(\InterSoccerRRTestMeta::$data[$id]))
+                ? \InterSoccerRRTestMeta::$data[$id]
+                : [];
+            if (!array_key_exists('_customer_user', $meta)) {
+                continue;
+            }
+            $rows[] = (object) [
+                'post_id' => $id,
+                'meta_value' => (string) $meta['_customer_user'],
+            ];
+        }
+        return $rows;
+    }
+
+    /**
+     * @param string $query
+     * @return array<int,object>
+     */
+    private function customerHistoryRows($query) {
+        $statuses = $this->statusList($query);
+        $rows = [];
+        foreach ($this->orders as $order) {
+            $status = isset($order['status']) ? (string) $order['status'] : 'wc-completed';
+            if ($statuses !== [] && !in_array($status, $statuses, true)) {
+                continue;
+            }
+            $id = (int) $order['id'];
+            $meta = (isset(\InterSoccerRRTestMeta::$data[$id]) && is_array(\InterSoccerRRTestMeta::$data[$id]))
+                ? \InterSoccerRRTestMeta::$data[$id]
+                : [];
+            $rows[] = (object) [
+                'order_id' => $id,
+                'post_status' => $status,
+                'post_date' => (string) ($order['post_date'] ?? ''),
+                'customer_user' => isset($meta['_customer_user']) ? (string) $meta['_customer_user'] : '0',
+                'billing_email' => isset($meta['_billing_email']) ? (string) $meta['_billing_email'] : '',
+                'date_paid' => isset($order['date_paid']) ? (string) $order['date_paid'] : '',
+            ];
+        }
+        return $rows;
     }
 
     public function get_col($query = null, $x = 0) {
@@ -382,6 +460,7 @@ class DailyBfSalesEmailTest extends TestCase {
      * and this class does not install its own Monkey patches.
      */
     private function resetDailyBfIsolation(): void {
+        unset($GLOBALS['intersoccer_rr_bf_permalinks']);
         $resetStatics = \Closure::bind(static function () {
             self::$hooksRegistered = false;
             self::$instance = null;
@@ -553,10 +632,10 @@ class DailyBfSalesEmailTest extends TestCase {
         $this->assertSame(1, $digest['daily_on_hold']['order_count']);
         $this->assertSame('107.70', $this->cents($digest['daily_on_hold']['net_inc_vat']));
         $this->assertStringContainsString('Processing Camp', $html);
-        $this->assertStringContainsString('On hold yesterday: 1 orders, 107.70 CHF inc-VAT. Not included in the totals.', $html);
+        $this->assertStringContainsString('On hold yesterday: 1 orders, 107.70 CHF incl. VAT. Not included in the totals.', $html);
         $this->assertStringNotContainsString('Held Camp', $html);
         $this->assertStringNotContainsString('Refunded Status Camp', $html);
-        $this->assertStringContainsString('<th>Daily qty</th><th>Daily inc-VAT</th><th>Campaign qty</th><th>Campaign inc-VAT</th>', $html);
+        $this->assertStringContainsString('<th>Daily qty</th><th>Daily incl. VAT</th><th>Campaign qty</th><th>Campaign incl. VAT</th>', $html);
 
         $paidSql = $this->bookingSql();
         $this->assertStringContainsString("'wc-processing'", $paidSql);
@@ -646,8 +725,8 @@ class DailyBfSalesEmailTest extends TestCase {
         $this->seedCatalogue();
         $html = $service->renderHtml($service->buildDigest($this->zurich('2026-11-29 08:00:00')));
 
-        $this->assertStringContainsString('<strong>414.95 CHF</strong> net inc-VAT', $html);
-        $this->assertStringContainsString('<th>Daily qty</th><th>Daily inc-VAT</th><th>Campaign qty</th><th>Campaign inc-VAT</th>', $html);
+        $this->assertStringContainsString('<strong>414.95 CHF</strong> incl. VAT', $html);
+        $this->assertStringContainsString('<th>Daily qty</th><th>Daily incl. VAT</th><th>Campaign qty</th><th>Campaign incl. VAT</th>', $html);
         $this->assertStringNotContainsString('Gross ex-VAT', $html);
         $this->assertStringNotContainsString('Net ex-VAT', $html);
         $this->assertStringContainsString('323.10', $html);
@@ -678,7 +757,7 @@ class DailyBfSalesEmailTest extends TestCase {
         $this->assertSame('50.00', $this->cents($camp['net_ex_vat']));
         $this->assertSame('53.85', $this->cents($camp['net_inc_vat']));
         $refundedHtml = $service->renderHtml($refunded);
-        $this->assertStringContainsString('<strong>53.85 CHF</strong> net inc-VAT', $refundedHtml);
+        $this->assertStringContainsString('<strong>53.85 CHF</strong> incl. VAT', $refundedHtml);
         $this->assertStringContainsString('53.85', $refundedHtml);
         $comparison = $this->htmlSection($refundedHtml, '<h3>Regions</h3>', '<h2>Running total since campaign start</h2>');
         $this->assertStringNotContainsString('>50.00<', $comparison);
@@ -1534,10 +1613,10 @@ class DailyBfSalesEmailTest extends TestCase {
         $this->assertStringContainsString('Running total since campaign start', $html);
         $this->assertStringContainsString('2026-11-28 through 2026-11-29', $html);
         $this->assertStringContainsString(
-            'Campaign total: ' . $this->cents($dayTwo['campaign']['net_inc_vat']) . ' CHF inc-VAT.',
+            'Campaign total: ' . $this->cents($dayTwo['campaign']['net_inc_vat']) . ' CHF incl. VAT.',
             $html
         );
-        $this->assertStringContainsString('<th>Daily qty</th><th>Daily inc-VAT</th><th>Campaign qty</th><th>Campaign inc-VAT</th>', $html);
+        $this->assertStringContainsString('<th>Daily qty</th><th>Daily incl. VAT</th><th>Campaign qty</th><th>Campaign incl. VAT</th>', $html);
         $this->assertStringContainsString('43.08', $html);
         $this->assertStringContainsString('323.10', $html);
         $this->assertSame('366.18', $this->cents((float) $this->seasonTypeByLabel($dayTwo['campaign'], 'Camps')['net_inc_vat']));
@@ -1577,10 +1656,10 @@ class DailyBfSalesEmailTest extends TestCase {
         $this->assertStringContainsString('2026-11-28 through 2026-11-30', $html);
         $this->assertStringContainsString(DailyBfSalesEmail::FINAL_CAMPAIGN_LINE, $html);
         $this->assertStringContainsString(
-            'Campaign total: ' . $this->cents($final['campaign']['net_inc_vat']) . ' CHF inc-VAT.',
+            'Campaign total: ' . $this->cents($final['campaign']['net_inc_vat']) . ' CHF incl. VAT.',
             $html
         );
-        $this->assertStringContainsString('<th>Daily qty</th><th>Daily inc-VAT</th><th>Campaign qty</th><th>Campaign inc-VAT</th>', $html);
+        $this->assertStringContainsString('<th>Daily qty</th><th>Daily incl. VAT</th><th>Campaign qty</th><th>Campaign incl. VAT</th>', $html);
         $this->assertStringContainsString('Closing Camp', $html);
 
         $GLOBALS['intersoccer_rr_bf_wp_mail_log'] = [];
@@ -2077,8 +2156,8 @@ class DailyBfSalesEmailTest extends TestCase {
         $this->assertStringNotContainsString('Summer', $zeroHtml);
         $this->assertStringNotContainsString('Autumn', $zeroHtml);
         $this->assertStringContainsString('>0<', $mail['message']);
-        $this->assertStringContainsString('On hold yesterday: 2 orders, 45.00 CHF inc-VAT.', $mail['message']);
-        $this->assertStringContainsString('On hold in the campaign: 3 orders, 90.50 CHF inc-VAT.', $mail['message']);
+        $this->assertStringContainsString('On hold yesterday: 2 orders, 45.00 CHF incl. VAT.', $mail['message']);
+        $this->assertStringContainsString('On hold in the campaign: 3 orders, 90.50 CHF incl. VAT.', $mail['message']);
         $this->assertStringContainsString('Orders: 4', $mail['message']);
         $this->assertStringContainsString('Orders: 9', $mail['message']);
         $this->assertStringContainsString('<h2>Running total since campaign start</h2>', $mail['message']);
@@ -2731,7 +2810,8 @@ class DailyBfSalesEmailTest extends TestCase {
         $this->assertStringContainsString('>9301<', $list);
         $this->assertStringContainsString('North Camp; South Course', $list);
         $this->assertStringContainsString('Hall North; Hall South', $list);
-        $this->assertStringContainsString('>140.00<', $list);
+        $this->assertStringNotContainsString('>140.00<', $list);
+        $this->assertStringNotContainsString('Ex-VAT', $list);
         $this->assertStringContainsString('>150.78<', $list);
         $this->assertStringContainsString('>Returning<', $list);
         $this->assertStringContainsString('Organic: Google', $list);
@@ -3248,6 +3328,356 @@ class DailyBfSalesEmailTest extends TestCase {
         $this->assertStringContainsString('North Camp', $mail['message']);
         $this->assertStringContainsString('Daily % sales', $mail['message']);
         $this->assertStringNotContainsString('900201', $mail['message']);
+    }
+
+    public function test_rendered_email_is_vat_included_only(): void {
+        $service = $this->enabledService($this->novemberCoupon(), 'ops@example.com');
+        $paid = (string) $this->unix('2026-11-28 10:00:00');
+        $this->wpdb->orders = [[
+            'id' => 7301,
+            'post_date' => '2026-11-28 10:00:00',
+            'date_paid' => $paid,
+            'items' => [
+                $this->item(73011, 'Sample Autumn Camp', 7301, 0, 1, '100.00', '100.00', '7.70'),
+                $this->item(73012, 'Sample Spring Course', 7302, 0, 1, '40.00', '40.00', '3.08'),
+            ],
+        ]];
+        $this->wpdb->itemMeta = [
+            73011 => [
+                '_intersoccer_canonical_activity_type' => 'camp',
+                'Sites InterSoccer' => 'Example Park',
+                'City' => 'Sampletown',
+            ],
+            73012 => [
+                '_intersoccer_canonical_activity_type' => 'course',
+                'Sites InterSoccer' => 'Example Hall',
+                'City' => 'Sampletown',
+            ],
+        ];
+        $digest = $service->buildDigest($this->zurich('2026-11-29 08:00:00'));
+        $sum = 0.0;
+        $this->assertNotEmpty($digest['booking_lines']);
+        foreach ($digest['booking_lines'] as $line) {
+            $sum += (float) $line['amount_inc_vat'];
+        }
+        $this->assertSame($this->cents($digest['daily']['net_inc_vat']), $this->cents($sum));
+        $this->assertSame('150.78', $this->cents($sum));
+
+        $html = $service->renderHtml($digest);
+        $this->assertSame(0, preg_match('/ex[-\s]?vat|excl|net of vat/i', $html));
+        $this->assertStringNotContainsString('>100.00<', $html);
+        $this->assertStringNotContainsString('>40.00<', $html);
+        $this->assertStringContainsString('<strong>150.78 CHF</strong> incl. VAT', $html);
+        $bookings = $this->htmlSection($html, '<h3>Bookings</h3>', '<h3>Regions</h3>');
+        $this->assertStringContainsString('>107.70<', $bookings);
+        $this->assertStringContainsString('>43.08<', $bookings);
+        $this->assertStringContainsString('Example Park', $bookings);
+        $this->assertStringContainsString('Example Hall', $bookings);
+        $this->assertStringContainsString('Sampletown', $bookings);
+        $this->assertStringContainsString('Sample Autumn Camp', $bookings);
+        $this->assertStringContainsString('Sample Spring Course', $bookings);
+
+        $sample = $this->invokeSampleDigest($service);
+        $sampleSum = 0.0;
+        foreach ($sample['booking_lines'] as $line) {
+            $sampleSum += (float) $line['amount_inc_vat'];
+        }
+        $this->assertSame($this->cents($sample['daily']['net_inc_vat']), $this->cents($sampleSum));
+        $sampleHtml = $service->renderHtml($sample);
+        $this->assertSame(0, preg_match('/ex[-\s]?vat|excl|net of vat/i', $sampleHtml));
+        $this->assertStringNotContainsString('185.70', $sampleHtml);
+        $this->assertStringNotContainsString('208.91', $sampleHtml);
+    }
+
+    public function test_booking_lines_flag_new_and_returning_without_identity(): void {
+        $service = $this->enabledService($this->novemberCoupon(), 'ops@example.com');
+        $this->wpdb->orders = [
+            [
+                'id' => 8101,
+                'post_date' => '2026-11-20 09:00:00',
+                'date_paid' => (string) $this->unix('2026-11-20 09:00:00'),
+                'items' => [
+                    $this->item(81011, 'Earlier Sample Camp', 8101, 0, 1, '10.00', '10.00', '0.00'),
+                ],
+            ],
+            [
+                'id' => 8104,
+                'post_date' => '2026-11-01 09:00:00',
+                'date_paid' => (string) $this->unix('2026-11-01 09:00:00'),
+                'items' => [
+                    $this->item(81041, 'Earlier Guest Camp', 8104, 0, 1, '10.00', '10.00', '0.00'),
+                ],
+            ],
+            [
+                'id' => 8107,
+                'status' => 'wc-failed',
+                'post_date' => '2026-11-10 09:00:00',
+                'date_paid' => (string) $this->unix('2026-11-10 09:00:00'),
+                'items' => [
+                    $this->item(81071, 'Failed Sample Camp', 8107, 0, 1, '10.00', '10.00', '0.00'),
+                ],
+            ],
+            [
+                'id' => 8109,
+                'post_date' => '2026-11-29 09:00:00',
+                'date_paid' => (string) $this->unix('2026-11-29 09:00:00'),
+                'items' => [
+                    $this->item(81091, 'Later Sample Camp', 8109, 0, 1, '10.00', '10.00', '0.00'),
+                ],
+            ],
+            [
+                'id' => 8110,
+                'post_date' => '2026-11-28 09:00:00',
+                'date_paid' => (string) $this->unix('2026-11-28 09:00:00'),
+                'items' => [
+                    $this->item(81101, 'Sample Autumn Camp', 8110, 0, 1, '10.00', '10.00', '0.00'),
+                ],
+            ],
+            [
+                'id' => 8102,
+                'post_date' => '2026-11-28 10:00:00',
+                'date_paid' => (string) $this->unix('2026-11-28 10:00:00'),
+                'items' => [
+                    $this->item(81021, 'Sample Autumn Camp', 8102, 0, 1, '10.00', '10.00', '0.00'),
+                ],
+            ],
+            [
+                'id' => 8103,
+                'post_date' => '2026-11-28 11:00:00',
+                'date_paid' => (string) $this->unix('2026-11-28 11:00:00'),
+                'items' => [
+                    $this->item(81031, 'Sample Spring Course', 8103, 0, 1, '10.00', '10.00', '0.00'),
+                ],
+            ],
+            [
+                'id' => 8105,
+                'post_date' => '2026-11-28 12:00:00',
+                'date_paid' => (string) $this->unix('2026-11-28 12:00:00'),
+                'items' => [
+                    $this->item(81051, 'Sample Guest Course', 8105, 0, 1, '10.00', '10.00', '0.00'),
+                ],
+            ],
+            [
+                'id' => 8106,
+                'post_date' => '2026-11-28 13:00:00',
+                'date_paid' => (string) $this->unix('2026-11-28 13:00:00'),
+                'items' => [
+                    $this->item(81061, 'Sample First Camp', 8106, 0, 1, '10.00', '10.00', '0.00'),
+                ],
+            ],
+            [
+                'id' => 8108,
+                'post_date' => '2026-11-28 14:00:00',
+                'date_paid' => (string) $this->unix('2026-11-28 14:00:00'),
+                'items' => [
+                    $this->item(81081, 'Sample Later Check Camp', 8108, 0, 1, '10.00', '10.00', '0.00'),
+                ],
+            ],
+            [
+                'id' => 8111,
+                'post_date' => '2026-11-28 15:00:00',
+                'date_paid' => (string) $this->unix('2026-11-28 15:00:00'),
+                'items' => [
+                    $this->item(81111, 'Sample Return Course', 8111, 0, 1, '10.00', '10.00', '0.00'),
+                ],
+            ],
+        ];
+        $this->wpdb->itemMeta = [
+            81011 => ['_intersoccer_canonical_activity_type' => 'camp'],
+            81041 => ['_intersoccer_canonical_activity_type' => 'camp'],
+            81071 => ['_intersoccer_canonical_activity_type' => 'camp'],
+            81091 => ['_intersoccer_canonical_activity_type' => 'camp'],
+            81101 => [
+                '_intersoccer_canonical_activity_type' => 'camp',
+                'Sites InterSoccer' => 'Example Park',
+                'City' => 'Sampletown',
+                'Attendee Name' => 'Hidden Player',
+            ],
+            81021 => [
+                '_intersoccer_canonical_activity_type' => 'camp',
+                'Sites InterSoccer' => 'Example Park',
+                'City' => 'Sampletown',
+            ],
+            81031 => ['_intersoccer_canonical_activity_type' => 'course'],
+            81051 => ['_intersoccer_canonical_activity_type' => 'course'],
+            81061 => ['_intersoccer_canonical_activity_type' => 'camp'],
+            81081 => ['_intersoccer_canonical_activity_type' => 'camp'],
+            81111 => ['_intersoccer_canonical_activity_type' => 'course'],
+        ];
+        \InterSoccerRRTestMeta::$data[8101]['_customer_user'] = '15';
+        \InterSoccerRRTestMeta::$data[8101]['_billing_email'] = 'member@example.test';
+        \InterSoccerRRTestMeta::$data[8102]['_customer_user'] = '15';
+        \InterSoccerRRTestMeta::$data[8102]['_billing_email'] = 'member@example.test';
+        \InterSoccerRRTestMeta::$data[8103]['_customer_user'] = '16';
+        \InterSoccerRRTestMeta::$data[8103]['_billing_email'] = 'first@example.test';
+        \InterSoccerRRTestMeta::$data[8104]['_customer_user'] = '0';
+        \InterSoccerRRTestMeta::$data[8104]['_billing_email'] = 'Guest.Buyer@Example.Test';
+        \InterSoccerRRTestMeta::$data[8105]['_customer_user'] = '0';
+        \InterSoccerRRTestMeta::$data[8105]['_billing_email'] = 'guest.buyer@example.test';
+        \InterSoccerRRTestMeta::$data[8106]['_customer_user'] = '17';
+        \InterSoccerRRTestMeta::$data[8106]['_billing_email'] = 'failed-buyer@example.test';
+        \InterSoccerRRTestMeta::$data[8107]['_customer_user'] = '17';
+        \InterSoccerRRTestMeta::$data[8107]['_billing_email'] = 'failed-buyer@example.test';
+        \InterSoccerRRTestMeta::$data[8108]['_customer_user'] = '18';
+        \InterSoccerRRTestMeta::$data[8108]['_billing_email'] = 'later-buyer@example.test';
+        \InterSoccerRRTestMeta::$data[8109]['_customer_user'] = '18';
+        \InterSoccerRRTestMeta::$data[8109]['_billing_email'] = 'later-buyer@example.test';
+        \InterSoccerRRTestMeta::$data[8110]['_customer_user'] = '19';
+        \InterSoccerRRTestMeta::$data[8110]['_billing_email'] = 'same-day@example.test';
+        \InterSoccerRRTestMeta::$data[8111]['_customer_user'] = '19';
+        \InterSoccerRRTestMeta::$data[8111]['_billing_email'] = 'same-day@example.test';
+
+        $digest = $service->buildDigest($this->zurich('2026-11-29 08:00:00'));
+        $flags = [];
+        foreach ($digest['booking_lines'] as $line) {
+            $this->assertSame(
+                ['product', 'paid_at', 'venue', 'city', 'amount_inc_vat', 'customer', 'permalink'],
+                array_keys($line)
+            );
+            $flags[$line['paid_at'] . '|' . $line['product']] = $line['customer'];
+        }
+        $this->assertSame('New', $flags['2026-11-28 09:00|Sample Autumn Camp']);
+        $this->assertSame('Returning', $flags['2026-11-28 10:00|Sample Autumn Camp']);
+        $this->assertSame('New', $flags['2026-11-28 11:00|Sample Spring Course']);
+        $this->assertSame('Returning', $flags['2026-11-28 12:00|Sample Guest Course']);
+        $this->assertSame('New', $flags['2026-11-28 13:00|Sample First Camp']);
+        $this->assertSame('New', $flags['2026-11-28 14:00|Sample Later Check Camp']);
+        $this->assertSame('Returning', $flags['2026-11-28 15:00|Sample Return Course']);
+
+        $customerQueries = [];
+        $historyQueries = [];
+        foreach ($this->wpdb->queries as $query) {
+            if (strpos($query, '_customer_user') !== false && strpos($query, 'post_id IN') !== false && strpos($query, "post_type = 'shop_order'") === false) {
+                $customerQueries[] = $query;
+            }
+            if (strpos($query, '_billing_email') !== false && strpos($query, "post_type = 'shop_order'") !== false) {
+                $historyQueries[] = $query;
+            }
+        }
+        $this->assertCount(1, $customerQueries);
+        $this->assertCount(1, $historyQueries);
+        $this->assertStringContainsString('8110', $customerQueries[0]);
+        $this->assertStringContainsString('8105', $customerQueries[0]);
+        $this->assertStringNotContainsString('post_id = ', $customerQueries[0]);
+        $this->assertStringContainsString("'wc-processing'", $historyQueries[0]);
+        $this->assertStringContainsString("'wc-completed'", $historyQueries[0]);
+        $this->assertStringNotContainsString("'wc-failed'", $historyQueries[0]);
+        $this->assertStringNotContainsString("'wc-on-hold'", $historyQueries[0]);
+        $this->assertStringNotContainsString('LOWER(', $historyQueries[0]);
+        $this->assertFalse(stripos($historyQueries[0], 'INSERT') !== false);
+        $this->assertFalse(stripos($historyQueries[0], 'UPDATE') !== false);
+        $this->assertFalse(stripos($historyQueries[0], 'DELETE') !== false);
+        $this->assertStringNotContainsString('intersoccer_url_coupon_allowlist', $historyQueries[0]);
+
+        $html = $service->renderHtml($digest);
+        $bookings = $this->htmlSection($html, '<h3>Bookings</h3>', '<h3>Regions</h3>');
+        foreach (['8101', '8102', '8103', '8104', '8105', '8106', '8107', '8108', '8109', '8110', '8111'] as $orderId) {
+            $this->assertStringNotContainsString('>' . $orderId . '<', $bookings);
+        }
+        $this->assertStringNotContainsString('Hidden Player', $html);
+        $this->assertStringNotContainsString('member@example.test', $html);
+        $this->assertStringNotContainsString('guest.buyer@example.test', $html);
+        $this->assertStringNotContainsString('Guest.Buyer@Example.Test', $html);
+        $this->assertStringNotContainsString('first@example.test', $html);
+        $this->assertStringNotContainsString('failed-buyer@example.test', $html);
+        $this->assertStringNotContainsString('later-buyer@example.test', $html);
+        $this->assertStringNotContainsString('same-day@example.test', $html);
+        $this->assertNoAddressesLogged();
+        $logged = (string) json_encode($this->logger->entries);
+        $this->assertStringNotContainsString('15', $logged);
+    }
+
+    public function test_booking_line_coupon_links_follow_the_setting(): void {
+        $service = $this->enabledService($this->novemberCoupon(), 'ops@example.com');
+        $rendered = $service->renderHtml([
+            'report_date' => '2026-11-10',
+            'daily' => ['order_count' => 2, 'net_inc_vat' => 30.0, 'regions' => [], 'products' => [], 'seasons' => [], 'season_types' => [], 'types' => []],
+            'campaign' => ['order_count' => 2, 'net_inc_vat' => 30.0, 'regions' => [], 'products' => [], 'seasons' => [], 'season_types' => [], 'types' => []],
+            'campaign_available' => true,
+            'campaign_started' => true,
+            'coupon_code' => 'SAMPLE-CODE',
+            'booking_lines' => [
+                [
+                    'product' => 'Sample <Autumn> Camp',
+                    'paid_at' => '2026-11-10 09:15',
+                    'venue' => 'Example Park',
+                    'city' => 'Sampletown',
+                    'amount_inc_vat' => 10.0,
+                    'customer' => 'New',
+                    'permalink' => 'https://example.test/sample-autumn-camp/',
+                ],
+                [
+                    'product' => 'Sample Spring Course',
+                    'paid_at' => '2026-11-10 11:40',
+                    'venue' => 'Example Hall',
+                    'city' => 'Sampletown',
+                    'amount_inc_vat' => 20.0,
+                    'customer' => 'Returning',
+                    'permalink' => 'https://example.test/sample-spring-course/?week=1&day=2',
+                ],
+            ],
+        ]);
+        $bookings = $this->htmlSection($rendered, '<h3>Bookings</h3>', '<h3>Regions</h3>');
+        $this->assertStringContainsString(
+            'href="https://example.test/sample-autumn-camp/?coupon=sample-code"',
+            $bookings
+        );
+        $this->assertStringContainsString(
+            'href="https://example.test/sample-spring-course/?week=1&day=2&coupon=sample-code"',
+            $bookings
+        );
+        $this->assertStringContainsString('Sample &lt;Autumn&gt; Camp', $bookings);
+        $this->assertStringNotContainsString('SAMPLE-CODE', $bookings);
+
+        foreach (['', 'bad code', 'bad!code', str_repeat('a', 33)] as $invalid) {
+            $plain = $service->renderHtml([
+                'report_date' => '2026-11-10',
+                'daily' => ['order_count' => 1, 'net_inc_vat' => 10.0],
+                'campaign_available' => false,
+                'coupon_code' => $invalid,
+                'booking_lines' => [[
+                    'product' => 'Sample Autumn Camp',
+                    'paid_at' => '2026-11-10 09:15',
+                    'venue' => 'Example Park',
+                    'city' => 'Sampletown',
+                    'amount_inc_vat' => 10.0,
+                    'customer' => 'New',
+                    'permalink' => 'https://example.test/sample-autumn-camp/',
+                ]],
+            ]);
+            $section = $this->htmlSection($plain, '<h3>Bookings</h3>', '<h3>Regions</h3>');
+            $this->assertStringNotContainsString('coupon=', $section);
+            $this->assertStringContainsString('href="https://example.test/sample-autumn-camp/"', $section);
+        }
+
+        $settings = $GLOBALS['intersoccer_test_option_store'][DailyBfSalesEmail::OPTION_SETTINGS];
+        $settings['coupon_code'] = 'SAMPLE-CODE';
+        $GLOBALS['intersoccer_test_option_store'][DailyBfSalesEmail::OPTION_SETTINGS] = $settings;
+        $GLOBALS['intersoccer_rr_bf_permalinks'] = [
+            7401 => 'https://example.test/sample-autumn-camp/',
+            7402 => 'https://example.test/sample-spring-course/?week=1',
+        ];
+        $this->wpdb->orders = [[
+            'id' => 7400,
+            'post_date' => '2026-11-28 10:00:00',
+            'date_paid' => (string) $this->unix('2026-11-28 10:00:00'),
+            'items' => [
+                $this->item(74001, 'Sample Autumn Camp', 7401, 0, 1, '10.00', '10.00', '0.00'),
+                $this->item(74002, 'Sample Spring Course', 7402, 0, 1, '20.00', '20.00', '0.00'),
+            ],
+        ]];
+        $this->wpdb->itemMeta = [
+            74001 => ['_intersoccer_canonical_activity_type' => 'camp'],
+            74002 => ['_intersoccer_canonical_activity_type' => 'course'],
+        ];
+        $built = $service->renderHtml($service->buildDigest($this->zurich('2026-11-29 08:00:00')));
+        $builtLines = $this->htmlSection($built, '<h3>Bookings</h3>', '<h3>Regions</h3>');
+        $this->assertStringContainsString('https://example.test/sample-autumn-camp/?coupon=sample-code', $builtLines);
+        $this->assertStringContainsString('https://example.test/sample-spring-course/?week=1&coupon=sample-code', $builtLines);
+        $this->assertArrayNotHasKey('intersoccer_url_coupon_allowlist', $GLOBALS['intersoccer_test_option_store']);
+        foreach ($this->wpdb->queries as $query) {
+            $this->assertStringNotContainsString('intersoccer_url_coupon_allowlist', $query);
+        }
     }
 
     private function loadHposClassesWithUsageOff(): void {
