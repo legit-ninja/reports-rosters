@@ -113,9 +113,7 @@ class Roster extends AbstractModel {
         'last_name' => ['required', 'string', 'min:1', 'max:100'],
         'dob' => ['required', 'date', 'before:today'],
         'gender' => ['required', 'in:male,female,other'],
-        // Tournament and Event are written by the canonical activity mapping and read by the roster
-        // listing, Roster Details and Live Numbers; rejecting them dropped those bookings (#167).
-        'activity_type' => ['required', 'in:Camp,Course,Birthday Party,Tournament,Event'],
+        // activity_type is required and limited to CANONICAL_ACTIVITY_TYPES (set in the constructor).
         'venue' => ['string', 'max:200'],
         'start_date' => ['nullable', 'date'],
         'order_status' => ['required', 'in:pending,processing,on-hold,completed,cancelled,refunded,failed']
@@ -150,6 +148,24 @@ class Roster extends AbstractModel {
      */
     protected $hidden = [];
     
+    /**
+     * Activity types a roster row may store.
+     *
+     * Same set intersoccer_canonical_activity_type_for_roster() returns when the
+     * label is already canonical, including Girls Only and Other.
+     *
+     * @var string[]
+     */
+    const CANONICAL_ACTIVITY_TYPES = [
+        'Camp',
+        'Course',
+        'Birthday Party',
+        'Tournament',
+        'Event',
+        'Girls Only',
+        'Other',
+    ];
+
     /**
      * Activity type constants
      */
@@ -190,6 +206,17 @@ class Roster extends AbstractModel {
      * @var Player|null
      */
     private $player_instance = null;
+
+    /**
+     * @param array $attributes Initial attributes
+     */
+    public function __construct(array $attributes = []) {
+        $this->validation_rules['activity_type'] = [
+            'required',
+            'in:' . implode(',', self::CANONICAL_ACTIVITY_TYPES),
+        ];
+        parent::__construct($attributes);
+    }
     
     /**
      * Get full name
