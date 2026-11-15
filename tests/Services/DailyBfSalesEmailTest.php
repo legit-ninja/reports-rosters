@@ -901,6 +901,8 @@ class DailyBfSalesEmailTest extends TestCase {
         $this->assertStringNotContainsString('_date_starts', $html);
         $this->assertStringNotContainsString('date_starts', $html);
         $this->assertStringNotContainsString('notice-warning', $html);
+        $this->assertStringContainsString('Totals are CHF incl. VAT', $html);
+        $this->assertStringNotContainsString('inc-VAT', $html);
     }
 
     public function test_loader_start_is_ignored_and_the_setting_opens_the_window(): void {

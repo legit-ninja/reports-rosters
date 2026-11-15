@@ -529,7 +529,7 @@ class DailyBfSalesEmail {
         foreach ($this->configurationWarnings() as $warning) {
             echo '<div class="notice notice-warning"><p>' . esc_html($warning) . '</p></div>';
         }
-        echo '<p>Totals are net inc-VAT for processing and completed orders with a paid date in the window. On-hold orders are counted separately by the date they were created and are not included. Orders with no paid date are omitted from the paid totals.</p>';
+        echo '<p>Totals are CHF incl. VAT for processing and completed orders with a paid date in the window. On-hold orders are counted separately by the date they were created and are not included. Orders with no paid date are omitted from the paid totals.</p>';
         echo '<form method="post" action="' . esc_url(admin_url('admin.php?page=' . self::PAGE_SLUG)) . '">';
         $this->nonceField(self::NONCE_SETTINGS);
         echo '<table class="form-table"><tbody>';
@@ -3577,7 +3577,7 @@ class DailyBfSalesEmail {
     }
 
     /**
-     * Daily and campaign-to-date columns in one table. Inc-VAT is the amount shown.
+     * Daily and campaign-to-date columns in one table. The amount shown is incl. VAT.
      * Bookings are the quantity already used in the table. Percentages are of that
      * table's own total. The season-and-type collection is grouped into programme rows.
      *
