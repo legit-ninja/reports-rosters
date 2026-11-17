@@ -19,6 +19,10 @@
  * fixed fake dataset, with [SAMPLE] in the subject and a sample banner.
  * It does not read shop data, does not use the Send to list, and does
  * not mark the day.
+ * The message also attaches an .xlsx workbook: a campaign booking summary
+ * and one row per paid order in the campaign window. Workbook amounts are
+ * CHF incl. VAT. If that file cannot be built, the HTML message is still
+ * sent without the attachment.
  *
  * Paid totals count processing and completed orders whose paid date falls in
  * the Europe/Zurich window. On-hold orders are counted separately by the date
@@ -117,16 +121,26 @@ class DailyBfSalesEmail {
     private $facets = null;
 
     /**
+     * Optional workbook builder. Null uses the production writer.
+     * The callable receives the digest and returns the xlsx path, or throws.
+     *
+     * @var callable|null
+     */
+    private $workbookBuilder;
+
+    /**
      * @param Logger|null                  $logger
      * @param FinancialReportService|null  $reports
      * @param callable|null                $couponLoader
      * @param \DateTimeZone|null           $siteTimezone Site timezone used to read order created dates.
+     * @param callable|null                $workbookBuilder
      */
-    public function __construct($logger = null, $reports = null, $couponLoader = null, $siteTimezone = null) {
+    public function __construct($logger = null, $reports = null, $couponLoader = null, $siteTimezone = null, $workbookBuilder = null) {
         $this->logger = ($logger instanceof Logger) ? $logger : new Logger();
         $this->reports = ($reports instanceof FinancialReportService) ? $reports : null;
         $this->couponLoader = is_callable($couponLoader) ? $couponLoader : null;
         $this->siteTimezone = ($siteTimezone instanceof \DateTimeZone) ? $siteTimezone : null;
+        $this->workbookBuilder = is_callable($workbookBuilder) ? $workbookBuilder : null;
     }
 
     /**
@@ -355,7 +369,7 @@ class DailyBfSalesEmail {
             return 'report_failed';
         }
 
-        $delivery = $this->deliver($parsed['emails'], $this->subjectFor($digest), $this->renderHtml($digest));
+        $delivery = $this->deliver($parsed['emails'], $this->subjectFor($digest), $this->renderHtml($digest), $digest);
         if (!$delivery['ok']) {
             $this->logReason('mail_failed');
             $this->writeResult('mail_failed');
@@ -398,7 +412,8 @@ class DailyBfSalesEmail {
         $delivery = $this->deliver(
             [$valid['email']],
             '[TEST] ' . $this->subjectFor($digest),
-            $this->renderHtml($digest)
+            $this->renderHtml($digest),
+            $digest
         );
         if (!$delivery['ok']) {
             $detail = $delivery['message'] !== '' ? $delivery['message'] : 'The mailer did not accept the message.';
@@ -436,7 +451,8 @@ class DailyBfSalesEmail {
         $delivery = $this->deliver(
             [$valid['email']],
             '[SAMPLE] ' . $this->subjectFor($digest),
-            $this->renderSampleHtml($digest)
+            $this->renderSampleHtml($digest),
+            $digest
         );
         if (!$delivery['ok']) {
             $detail = $delivery['message'] !== '' ? $delivery['message'] : 'The mailer did not accept the message.';
@@ -587,6 +603,7 @@ class DailyBfSalesEmail {
         $couponStatus = $this->couponStatus($this->settings()['coupon_code']);
         $campaignStart = '';
         $campaign = null;
+        $campaignReport = ['data' => []];
         $campaignOnHold = $this->onHoldFigures($this->emptySummary());
         $campaignStarted = false;
         $finalCampaign = false;
@@ -599,8 +616,9 @@ class DailyBfSalesEmail {
             );
             if (strcmp($campaignStart, $reportDate) <= 0) {
                 $campaignStarted = true;
-                $campaignReport = $this->loadReport($campaignStart, $reportDate, self::paidOrderStatuses());
-                $campaign = $this->summarize(is_array($campaignReport) ? $campaignReport : []);
+                $loadedCampaign = $this->loadReport($campaignStart, $reportDate, self::paidOrderStatuses());
+                $campaignReport = is_array($loadedCampaign) ? $loadedCampaign : ['data' => []];
+                $campaign = $this->summarize($campaignReport);
                 $campaignOnHold = $this->onHoldFigures($this->summarize($this->loadOnHoldReport($campaignStart, $reportDate)));
             } else {
                 $campaign = $this->emptySummary();
@@ -625,6 +643,12 @@ class DailyBfSalesEmail {
             'used_created_fallback' => false,
             'final_campaign' => $finalCampaign,
             'booking_report_url' => $this->bookingReportUrl($reportDate),
+            'workbook' => $this->workbookFromReport(
+                is_array($campaignReport) ? $campaignReport : [],
+                $reportDate,
+                $campaignStart,
+                (string) $this->settings()['coupon_code']
+            ),
         ];
     }
 
@@ -706,6 +730,7 @@ class DailyBfSalesEmail {
             'final_campaign' => true,
             'booking_report_url' => 'https://example.com/sample-booking-report/900001',
             'coupon_code' => 'sample-code',
+            'workbook' => $this->sampleWorkbook($lines, '2026-11-01', '2026-11-10', 'sample-code'),
             'booking_lines' => $this->sampleBookingLines($lines),
             'daily_orders' => [
                 [
@@ -2551,7 +2576,7 @@ class DailyBfSalesEmail {
     /**
      * @param int    $orderId
      * @param string $paidGmt
-     * @return array{order_number:string,customer_type:string,attribution:string,language:string}
+     * @return array{order_number:string,customer_type:string,attribution:string,language:string,status:string,currency:string}
      */
     private function orderFacts($orderId, $paidGmt) {
         $order = null;
@@ -2574,7 +2599,38 @@ class DailyBfSalesEmail {
             'customer_type' => $this->customerTypeLabel($order, (int) $orderId, $paidUnix),
             'attribution' => $this->attributionLabel($order, (int) $orderId),
             'language' => $this->orderLanguageLabel($order, (int) $orderId),
+            'status' => $this->orderStatusLabel($order),
+            'currency' => $this->orderCurrency($order),
         ];
+    }
+
+    /**
+     * @param object|null $order
+     * @return string
+     */
+    private function orderStatusLabel($order) {
+        if (!is_object($order) || !method_exists($order, 'get_status')) {
+            return '';
+        }
+        $status = trim((string) $order->get_status());
+        if ($status === '') {
+            return '';
+        }
+        if (strpos($status, 'wc-') === 0) {
+            $status = substr($status, 3);
+        }
+        return strtoupper(substr($status, 0, 1)) . substr($status, 1);
+    }
+
+    /**
+     * @param object|null $order
+     * @return string
+     */
+    private function orderCurrency($order) {
+        if (!is_object($order) || !method_exists($order, 'get_currency')) {
+            return '';
+        }
+        return trim((string) $order->get_currency());
     }
 
     /**
@@ -3754,14 +3810,33 @@ class DailyBfSalesEmail {
     }
 
     /**
-     * @param array<int,string> $emails
-     * @param string            $subject
-     * @param string            $html
+     * @param array<int,string>   $emails
+     * @param string              $subject
+     * @param string              $html
+     * @param array<string,mixed> $digest
      * @return array{ok:bool,message:string}
      */
-    private function deliver(array $emails, $subject, $html) {
+    private function deliver(array $emails, $subject, $html, array $digest) {
         if (!function_exists('wp_mail') || $emails === []) {
             return ['ok' => false, 'message' => ''];
+        }
+        $path = '';
+        $dir = '';
+        $attachments = [];
+        try {
+            $built = $this->resolveWorkbook($digest);
+            $path = isset($built['path']) ? (string) $built['path'] : '';
+            $dir = isset($built['dir']) ? (string) $built['dir'] : '';
+            if ($path === '' || !is_file($path)) {
+                throw new \RuntimeException('Workbook file was not written');
+            }
+            $attachments = [$path];
+        } catch (\Throwable $e) {
+            $this->logWorkbookFailure($e, $digest);
+            $this->deleteAttachment($path, $dir);
+            $path = '';
+            $dir = '';
+            $attachments = [];
         }
         $errorMessage = '';
         $listener = function ($wpError) use (&$errorMessage) {
@@ -3770,9 +3845,13 @@ class DailyBfSalesEmail {
             }
         };
         add_action('wp_mail_failed', $listener, 10, 1);
-        $to = count($emails) === 1 ? $emails[0] : array_values($emails);
-        $sent = wp_mail($to, $subject, $html, ['Content-Type: text/html; charset=UTF-8']);
-        remove_action('wp_mail_failed', $listener, 10);
+        try {
+            $to = count($emails) === 1 ? $emails[0] : array_values($emails);
+            $sent = wp_mail($to, $subject, $html, ['Content-Type: text/html; charset=UTF-8'], $attachments);
+        } finally {
+            remove_action('wp_mail_failed', $listener, 10);
+            $this->deleteAttachment($path, $dir);
+        }
         if (!$sent) {
             return ['ok' => false, 'message' => $errorMessage];
         }
@@ -4096,5 +4175,1028 @@ class DailyBfSalesEmail {
      */
     private function money($amount) {
         return number_format((float) $amount, 2, '.', '');
+    }
+
+    /**
+     * Campaign-window lines and orders for the workbook. The HTML renderer
+     * does not read this structure. Customer name is left blank: this email
+     * does not load one. Booking report emails and attendee names are not copied.
+     *
+     * @param array<string,mixed> $report
+     * @param string              $reportDate
+     * @param string              $campaignStart
+     * @param string              $couponCode
+     * @return array<string,mixed>
+     */
+    private function workbookFromReport(array $report, $reportDate, $campaignStart, $couponCode) {
+        $rows = (isset($report['data']) && is_array($report['data'])) ? $report['data'] : [];
+        $lines = [];
+        $grouped = [];
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $orderId = (int) ($row['order_id'] ?? 0);
+            if ($orderId <= 0) {
+                continue;
+            }
+            $qty = (int) ($row['line_quantity'] ?? 0);
+            if ($qty < 0) {
+                $qty = 0;
+            }
+            $type = isset($row['product_type']) ? (string) $row['product_type'] : '';
+            $sales = round($this->netIncVat($row), 2);
+            $revenue = $this->revenueIncVat($row);
+            $name = trim((string) ($row['order_item_name'] ?? ''));
+            if ($name === '') {
+                $name = trim((string) ($row['class_name'] ?? ''));
+            }
+            $couponQty = $this->couponLineQuantity($row, $couponCode, $qty);
+            $paidGmt = isset($row['date_paid_gmt']) ? (string) $row['date_paid_gmt'] : '';
+            $createdLocal = isset($row['order_date_local']) ? (string) $row['order_date_local'] : '';
+            if (!isset($grouped[$orderId])) {
+                $grouped[$orderId] = [
+                    'paid_gmt' => $paidGmt,
+                    'created_local' => $createdLocal,
+                    'revenue' => 0.0,
+                    'net_sales' => 0.0,
+                    'items' => [],
+                    'items_sold' => 0,
+                    'coupon_tokens' => [],
+                ];
+            }
+            $grouped[$orderId]['revenue'] = round((float) $grouped[$orderId]['revenue'] + $revenue, 2);
+            $grouped[$orderId]['net_sales'] = round((float) $grouped[$orderId]['net_sales'] + $sales, 2);
+            $grouped[$orderId]['items'][] = $this->productQuantityLabel($qty, $name);
+            $grouped[$orderId]['items_sold'] += $qty;
+            $this->addCouponTokens($grouped[$orderId]['coupon_tokens'], isset($row['discount_codes']) ? (string) $row['discount_codes'] : '');
+            $season = $this->seasonBucket($row, $type);
+            $lines[] = [
+                'region' => $this->regionDisplayBucket($this->regionLabel($row)),
+                'season_type' => $this->compositeLabel($season, $type),
+                'product_type' => $type,
+                'quantity' => $qty,
+                'sales' => $sales,
+                'coupon_qty' => $couponQty,
+                'order_number' => (string) $orderId,
+            ];
+        }
+        $orders = [];
+        foreach ($grouped as $orderId => $order) {
+            $facts = $this->orderFacts((int) $orderId, (string) $order['paid_gmt']);
+            $attribution = (string) $facts['attribution'];
+            if ($attribution === 'Unknown') {
+                $attribution = '';
+            }
+            $number = (string) $facts['order_number'];
+            if ($number === '') {
+                $number = (string) $orderId;
+            }
+            foreach ($lines as $index => $line) {
+                if ((string) $line['order_number'] === (string) $orderId) {
+                    $lines[$index]['order_number'] = $number;
+                }
+            }
+            $orders[] = [
+                'paid_at' => $this->zurichPaidLabel((string) $order['paid_gmt'], (string) $order['created_local']),
+                'order_number' => $number,
+                'revenue' => round((float) $order['revenue'], 2),
+                'net_sales' => round((float) $order['net_sales'], 2),
+                'status' => (string) $facts['status'],
+                'customer' => '',
+                'customer_type' => (string) $facts['customer_type'],
+                'products' => $this->joinProductLabels($order['items']),
+                'items_sold' => (int) $order['items_sold'],
+                'coupons' => implode(', ', $order['coupon_tokens']),
+                'attribution' => $attribution,
+                'language' => (string) $facts['language'],
+                'currency' => (string) $facts['currency'],
+            ];
+        }
+        usort($orders, function ($a, $b) {
+            $byTime = strcmp((string) $a['paid_at'], (string) $b['paid_at']);
+            if ($byTime !== 0) {
+                return $byTime;
+            }
+            return strcmp((string) $a['order_number'], (string) $b['order_number']);
+        });
+        return [
+            'year' => $this->workbookYear($campaignStart, $reportDate),
+            'coupon_code' => trim((string) $couponCode),
+            'lines' => $lines,
+            'orders' => $orders,
+        ];
+    }
+
+    /**
+     * Synthetic campaign lines and orders. Does not read the shop.
+     *
+     * @param array<int,array<string,mixed>> $lines
+     * @param string                         $campaignStart
+     * @param string                         $reportDate
+     * @param string                         $couponCode
+     * @return array<string,mixed>
+     */
+    private function sampleWorkbook(array $lines, $campaignStart, $reportDate, $couponCode) {
+        $outLines = [];
+        $orders = [];
+        $index = 0;
+        $languages = ['fr', 'de', 'en'];
+        foreach ($lines as $line) {
+            if (!is_array($line)) {
+                continue;
+            }
+            $qty = (int) ($line['campaign_qty'] ?? 0);
+            $sales = round((float) ($line['campaign_inc'] ?? 0), 2);
+            if ($qty <= 0 && $sales == 0.0) {
+                continue;
+            }
+            $type = (string) ($line['type'] ?? '');
+            $plural = (string) ($line['type_plural'] ?? $type);
+            $season = (string) ($line['season'] ?? '');
+            $label = trim($season . ' ' . $plural);
+            $couponQty = ($index === 0) ? $qty : 0;
+            $orderNumber = (string) (910001 + $index);
+            $name = (string) ($line['product'] ?? 'Sample');
+            $outLines[] = [
+                'region' => (string) ($line['region'] ?? ''),
+                'season_type' => $label,
+                'product_type' => $type,
+                'quantity' => $qty,
+                'sales' => $sales,
+                'coupon_qty' => $couponQty,
+                'order_number' => $orderNumber,
+            ];
+            $orders[] = [
+                'paid_at' => sprintf('2026-11-10 %02d:15', 9 + $index),
+                'order_number' => $orderNumber,
+                'revenue' => $sales,
+                'net_sales' => $sales,
+                'status' => 'Completed',
+                'customer' => ($index % 2 === 0) ? 'Sample Parent A' : 'Sample Parent B',
+                'customer_type' => ($index % 2 === 0) ? 'Returning' : 'New',
+                'products' => $this->productQuantityLabel($qty, $name),
+                'items_sold' => $qty,
+                'coupons' => $couponQty > 0 ? (string) $couponCode : '',
+                'attribution' => ($index === 0) ? 'Organic: Google' : '',
+                'language' => $languages[$index % 3],
+                'currency' => 'CHF',
+            ];
+            $index++;
+        }
+        return [
+            'year' => $this->workbookYear($campaignStart, $reportDate),
+            'coupon_code' => trim((string) $couponCode),
+            'lines' => $outLines,
+            'orders' => $orders,
+        ];
+    }
+
+    /**
+     * Incl. VAT before refunds. final_price_raw is the line after discounts
+     * and before tax; line_tax_amount is the VAT. Net sales use netIncVat(),
+     * which reduces that VAT in proportion to any refund.
+     *
+     * @param array<string,mixed> $row
+     * @return float
+     */
+    private function revenueIncVat(array $row) {
+        $final = (float) ($row['final_price_raw'] ?? 0);
+        $tax = (float) ($row['line_tax_amount'] ?? 0);
+        $amount = $final + $tax;
+        if ($amount < 0) {
+            $amount = 0.0;
+        }
+        return round($amount, 2);
+    }
+
+    /**
+     * Line quantity when this line's order applied the configured coupon.
+     *
+     * @param array<string,mixed> $row
+     * @param string              $couponCode
+     * @param int                 $qty
+     * @return int
+     */
+    private function couponLineQuantity(array $row, $couponCode, $qty) {
+        $expected = strtolower(trim((string) $couponCode));
+        if ($expected === '' || (int) $qty <= 0) {
+            return 0;
+        }
+        $tokens = [];
+        $this->addCouponTokens($tokens, isset($row['discount_codes']) ? (string) $row['discount_codes'] : '');
+        foreach ($tokens as $token) {
+            if (strtolower($token) === $expected) {
+                return (int) $qty;
+            }
+        }
+        return 0;
+    }
+
+    /**
+     * @param array<int,string> $tokens
+     * @param string            $raw
+     * @return void
+     */
+    private function addCouponTokens(array &$tokens, $raw) {
+        $seen = [];
+        foreach ($tokens as $token) {
+            $seen[strtolower((string) $token)] = true;
+        }
+        foreach (explode(',', (string) $raw) as $part) {
+            $part = trim((string) $part);
+            $key = strtolower($part);
+            if ($key === '' || isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+            $tokens[] = $part;
+        }
+    }
+
+    /**
+     * @param int    $qty
+     * @param string $name
+     * @return string
+     */
+    private function productQuantityLabel($qty, $name) {
+        $name = trim((string) $name);
+        if ($name === '') {
+            $name = 'Unknown';
+        }
+        return (int) $qty . '× ' . $name;
+    }
+
+    /**
+     * @param array<int,string> $labels
+     * @return string
+     */
+    private function joinProductLabels(array $labels) {
+        $out = [];
+        foreach ($labels as $label) {
+            $label = trim((string) $label);
+            if ($label === '') {
+                continue;
+            }
+            $out[] = $label;
+        }
+        return implode(', ', $out);
+    }
+
+    /**
+     * First year in campaign start, otherwise the report date.
+     *
+     * @param string $campaignStart
+     * @param string $reportDate
+     * @return string
+     */
+    private function workbookYear($campaignStart, $reportDate) {
+        foreach ([$campaignStart, $reportDate] as $value) {
+            if (preg_match('/^(\d{4})-\d{2}-\d{2}$/', (string) $value, $matches)) {
+                return (string) $matches[1];
+            }
+        }
+        return '';
+    }
+
+    /**
+     * @param array<string,mixed> $digest
+     * @return array{path:string,dir:string}
+     */
+    private function resolveWorkbook(array $digest) {
+        if ($this->workbookBuilder !== null) {
+            $result = call_user_func($this->workbookBuilder, $digest);
+            if (!is_string($result) || $result === '' || !is_file($result)) {
+                throw new \RuntimeException('Workbook file was not written');
+            }
+            return ['path' => $result, 'dir' => ''];
+        }
+        return $this->writeWorkbookAttachment($digest);
+    }
+
+    /**
+     * @param array<string,mixed> $digest
+     * @return array{path:string,dir:string}
+     */
+    private function writeWorkbookAttachment(array $digest) {
+        $dir = $this->makeAttachmentDirectory();
+        $path = $dir . '/' . $this->workbookFilename($digest);
+        try {
+            $this->writeWorkbook($digest, $path);
+        } catch (\Throwable $e) {
+            $this->deleteAttachment($path, $dir);
+            throw $e;
+        }
+        if (!is_file($path)) {
+            $this->deleteAttachment($path, $dir);
+            throw new \RuntimeException('Workbook file was not written');
+        }
+        return ['path' => $path, 'dir' => $dir];
+    }
+
+    /**
+     * @param array<string,mixed> $digest
+     * @return string
+     */
+    private function workbookFilename(array $digest) {
+        $date = isset($digest['report_date']) ? (string) $digest['report_date'] : '';
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) !== 1) {
+            $date = 'undated';
+        }
+        return 'intersoccer-bf-sales-' . $date . '.xlsx';
+    }
+
+    /**
+     * @return string
+     */
+    private function makeAttachmentDirectory() {
+        $parent = rtrim((string) sys_get_temp_dir(), '/');
+        if (function_exists('wp_tempnam')) {
+            $tmp = wp_tempnam('intersoccer-bf-sales');
+            if (is_string($tmp) && $tmp !== '') {
+                $dirName = dirname($tmp);
+                if ($dirName !== '' && $dirName !== '.' && is_dir($dirName)) {
+                    $parent = rtrim($dirName, '/');
+                }
+                if (is_file($tmp)) {
+                    unlink($tmp);
+                }
+            }
+        }
+        $dir = $parent . '/intersoccer-bf-sales-' . bin2hex(random_bytes(8));
+        if (!mkdir($dir, 0700, true) && !is_dir($dir)) {
+            throw new \RuntimeException('Workbook temp directory was not created');
+        }
+        return $dir;
+    }
+
+    /**
+     * @param string $path
+     * @param string $dir
+     * @return void
+     */
+    private function deleteAttachment($path, $dir) {
+        if (is_string($path) && $path !== '' && is_file($path)) {
+            unlink($path);
+        }
+        if (!is_string($dir) || $dir === '' || !is_dir($dir)) {
+            return;
+        }
+        $items = scandir($dir);
+        if (is_array($items)) {
+            foreach ($items as $item) {
+                if ($item === '.' || $item === '..') {
+                    continue;
+                }
+                $full = $dir . '/' . $item;
+                if (is_file($full)) {
+                    unlink($full);
+                }
+            }
+        }
+        rmdir($dir);
+    }
+
+    /**
+     * @param \Throwable          $e
+     * @param array<string,mixed> $digest
+     * @return void
+     */
+    private function logWorkbookFailure(\Throwable $e, array $digest) {
+        $reportDate = isset($digest['report_date']) ? (string) $digest['report_date'] : '';
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $reportDate) !== 1) {
+            $reportDate = '';
+        }
+        $detail = str_replace(["\r", "\n", "\0"], ' ', (string) $e->getMessage());
+        if (strlen($detail) > 300) {
+            $detail = substr($detail, 0, 300);
+        }
+        $redacted = preg_replace('/[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}/i', '[redacted]', $detail);
+        if (is_string($redacted)) {
+            $detail = $redacted;
+        }
+        $message = 'Daily sales workbook failed: ' . get_class($e) . ': ' . $detail . ' report_date=' . $reportDate;
+        try {
+            $this->logger->error($message, ['report_date' => $reportDate]);
+        } catch (\Throwable $ignored) {
+            error_log($message);
+        }
+    }
+
+    /**
+     * @param array<string,mixed> $digest
+     * @param string              $path
+     * @return void
+     */
+    private function writeWorkbook(array $digest, $path) {
+        if (!class_exists(\PhpOffice\PhpSpreadsheet\Spreadsheet::class)) {
+            throw new \RuntimeException('PhpSpreadsheet is not available');
+        }
+        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+        try {
+            $summary = $spreadsheet->getActiveSheet();
+            $summary->setTitle('Booking Summary');
+            $orders = $spreadsheet->createSheet();
+            $orders->setTitle('Orders');
+            $this->fillBookingSummarySheet($summary, $digest);
+            $this->fillOrdersSheet($orders, $digest);
+            $spreadsheet->setActiveSheetIndex(0);
+            $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+            $writer->save($path);
+        } finally {
+            $spreadsheet->disconnectWorksheets();
+        }
+    }
+
+    /**
+     * @param \PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet
+     * @param array<string,mixed>                           $digest
+     * @return void
+     */
+    private function fillBookingSummarySheet($sheet, array $digest) {
+        $book = $this->workbookPayload($digest);
+        $year = (string) $book['year'];
+        $title = 'Black Friday Sales';
+        if ($year !== '') {
+            $title .= ' ' . $year;
+        }
+        $this->sheetText($sheet, 'A1', $title);
+        $sheet->mergeCells('A1:F1');
+        $sheet->getStyle('A1')->getFont()->setBold(true);
+        $coupon = trim((string) $book['coupon_code']);
+        $usageHeader = ($coupon === '') ? 'Coupon Usage' : (strtoupper($coupon) . ' Usage');
+        $headers = [
+            'A' => 'Courses/Camps',
+            'B' => 'Number of bookings',
+            'C' => 'Sales Numbers',
+            'D' => $usageHeader,
+            'E' => '% of Bookings',
+            'F' => '% of Sales',
+        ];
+        foreach ($headers as $column => $header) {
+            $this->sheetText($sheet, $column . '2', $header);
+        }
+        $sheet->getStyle('A2:F2')->getFont()->setBold(true);
+        $model = $this->summaryModel($book['lines'], $book['orders']);
+        $row = 3;
+        $named = $this->summaryRegionOrder();
+        foreach ($named as $region) {
+            $block = $model['regions'][$region];
+            $row = $this->writeRegionBlock($sheet, $row, $region, $block, $model['grand']);
+        }
+        $unknown = $model['regions']['Unknown'];
+        if (!$this->bucketIsZero($unknown['total'])) {
+            $row = $this->writeRegionBlock($sheet, $row, 'Unknown', $unknown, $model['grand']);
+        }
+        $this->sheetText($sheet, 'A' . $row, 'General');
+        $row++;
+        $row = $this->writeSummaryNumbers(
+            $sheet,
+            $row,
+            'Swiss French',
+            $model['swiss_french'],
+            $model['swiss_french']['quantity'],
+            $model['grand']['quantity'],
+            $model['swiss_french']['sales'],
+            $model['grand']['sales']
+        );
+        $row = $this->writeSummaryNumbers(
+            $sheet,
+            $row,
+            'Swiss German',
+            $model['swiss_german'],
+            $model['swiss_german']['quantity'],
+            $model['grand']['quantity'],
+            $model['swiss_german']['sales'],
+            $model['grand']['sales']
+        );
+        $row = $this->writeSummaryNumbers(
+            $sheet,
+            $row,
+            'Total Products Sold (Courses/Camps)',
+            $model['course_camp'],
+            $model['course_camp']['quantity'],
+            $model['grand']['quantity'],
+            $model['course_camp']['sales'],
+            $model['grand']['sales']
+        );
+        $this->sheetText($sheet, 'A' . $row, 'Birthday Parties');
+        $this->sheetNumber($sheet, 'B' . $row, (int) $model['birthday']['quantity'], '0');
+        $this->sheetText($sheet, 'C' . $row, '-');
+        $this->sheetNumber($sheet, 'D' . $row, (int) $model['birthday']['coupon_qty'], '0');
+        $this->sheetNumber($sheet, 'E' . $row, 0, '0.0%');
+        $this->sheetNumber($sheet, 'F' . $row, 0, '0.0%');
+        $row++;
+        foreach ($model['season_totals'] as $label => $bucket) {
+            $row = $this->writeSummaryNumbers(
+                $sheet,
+                $row,
+                'TOTAL ' . $label,
+                $bucket,
+                $bucket['quantity'],
+                $model['grand']['quantity'],
+                $bucket['sales'],
+                $model['grand']['sales']
+            );
+        }
+        $orderBucket = [
+            'quantity' => (int) $model['course_camp_orders'],
+            'sales' => (float) $model['course_camp']['sales'],
+            'coupon_qty' => (int) $model['course_camp']['coupon_qty'],
+        ];
+        $row = $this->writeSummaryNumbers(
+            $sheet,
+            $row,
+            'Total orders (Courses/Camps)',
+            $orderBucket,
+            $model['course_camp']['quantity'],
+            $model['grand']['quantity'],
+            $model['course_camp']['sales'],
+            $model['grand']['sales']
+        );
+        $whole = $model['customer_whole'];
+        foreach (['NEW CUSTOMERS' => 'New', 'RETURNING CUSTOMERS' => 'Returning'] as $label => $key) {
+            $group = $model['customers'][$key];
+            $groupBucket = [
+                'quantity' => (int) $group['orders'],
+                'sales' => (float) $group['sales'],
+                'coupon_qty' => (int) $group['coupon_qty'],
+            ];
+            $row = $this->writeSummaryNumbers(
+                $sheet,
+                $row,
+                $label,
+                $groupBucket,
+                $group['orders'],
+                $whole['orders'],
+                $group['sales'],
+                $whole['sales']
+            );
+        }
+        $this->sheetWidths($sheet, [
+            'A' => 42,
+            'B' => 22,
+            'C' => 18,
+            'D' => 24,
+            'E' => 16,
+            'F' => 14,
+        ]);
+    }
+
+    /**
+     * @param \PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet
+     * @param int                                           $row
+     * @param string                                        $region
+     * @param array<string,mixed>                           $block
+     * @param array<string,mixed>                           $grand
+     * @return int
+     */
+    private function writeRegionBlock($sheet, $row, $region, array $block, array $grand) {
+        $this->sheetText($sheet, 'A' . $row, $region);
+        $row++;
+        $labels = $this->sortSeasonTypeLabels(array_keys($block['rows']));
+        $regionTotal = $block['total'];
+        foreach ($labels as $label) {
+            $bucket = $block['rows'][$label];
+            $row = $this->writeSummaryNumbers(
+                $sheet,
+                $row,
+                $label,
+                $bucket,
+                $bucket['quantity'],
+                $regionTotal['quantity'],
+                $bucket['sales'],
+                $regionTotal['sales']
+            );
+        }
+        return $this->writeSummaryNumbers(
+            $sheet,
+            $row,
+            'Total',
+            $regionTotal,
+            $regionTotal['quantity'],
+            $grand['quantity'],
+            $regionTotal['sales'],
+            $grand['sales']
+        );
+    }
+
+    /**
+     * @param \PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet
+     * @param int                                           $row
+     * @param string                                        $label
+     * @param array<string,mixed>                           $bucket
+     * @param float|int                                     $qtyPart
+     * @param float|int                                     $qtyWhole
+     * @param float|int                                     $salesPart
+     * @param float|int                                     $salesWhole
+     * @return int
+     */
+    private function writeSummaryNumbers($sheet, $row, $label, array $bucket, $qtyPart, $qtyWhole, $salesPart, $salesWhole) {
+        $this->sheetText($sheet, 'A' . $row, $label);
+        $this->sheetNumber($sheet, 'B' . $row, (int) $bucket['quantity'], '0');
+        $this->sheetNumber($sheet, 'C' . $row, round((float) $bucket['sales'], 2), '#,##0.00');
+        $this->sheetNumber($sheet, 'D' . $row, (int) $bucket['coupon_qty'], '0');
+        $this->sheetNumber($sheet, 'E' . $row, $this->share($qtyPart, $qtyWhole), '0.0%');
+        $this->sheetNumber($sheet, 'F' . $row, $this->share($salesPart, $salesWhole), '0.0%');
+        return $row + 1;
+    }
+
+    /**
+     * @param \PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet
+     * @param array<string,mixed>                           $digest
+     * @return void
+     */
+    private function fillOrdersSheet($sheet, array $digest) {
+        $book = $this->workbookPayload($digest);
+        $headers = [
+            'A' => 'Date',
+            'B' => 'Order #',
+            'C' => 'Revenue',
+            'D' => 'Status',
+            'E' => 'Customer',
+            'F' => 'Customer type',
+            'G' => 'Product(s)',
+            'H' => 'Items sold',
+            'I' => 'Coupon(s)',
+            'J' => 'Net Sales',
+            'K' => 'Attribution',
+            'L' => 'Language',
+            'M' => 'Currency',
+        ];
+        foreach ($headers as $column => $header) {
+            $this->sheetText($sheet, $column . '1', $header);
+        }
+        $sheet->getStyle('A1:M1')->getFont()->setBold(true);
+        $row = 2;
+        foreach ($book['orders'] as $order) {
+            if (!is_array($order)) {
+                continue;
+            }
+            $this->sheetZurichDate($sheet, 'A' . $row, isset($order['paid_at']) ? (string) $order['paid_at'] : '');
+            $this->sheetText($sheet, 'B' . $row, isset($order['order_number']) ? (string) $order['order_number'] : '');
+            $this->sheetNumber($sheet, 'C' . $row, round((float) ($order['revenue'] ?? 0), 2), '#,##0.00');
+            $this->sheetText($sheet, 'D' . $row, isset($order['status']) ? (string) $order['status'] : '');
+            $this->sheetText($sheet, 'E' . $row, isset($order['customer']) ? (string) $order['customer'] : '');
+            $this->sheetText($sheet, 'F' . $row, isset($order['customer_type']) ? (string) $order['customer_type'] : '');
+            $this->sheetText($sheet, 'G' . $row, isset($order['products']) ? (string) $order['products'] : '');
+            $this->sheetNumber($sheet, 'H' . $row, (int) ($order['items_sold'] ?? 0), '0');
+            $this->sheetText($sheet, 'I' . $row, isset($order['coupons']) ? (string) $order['coupons'] : '');
+            $this->sheetNumber($sheet, 'J' . $row, round((float) ($order['net_sales'] ?? 0), 2), '#,##0.00');
+            $this->sheetText($sheet, 'K' . $row, isset($order['attribution']) ? (string) $order['attribution'] : '');
+            $this->sheetText($sheet, 'L' . $row, isset($order['language']) ? (string) $order['language'] : '');
+            $this->sheetText($sheet, 'M' . $row, isset($order['currency']) ? (string) $order['currency'] : '');
+            $row++;
+        }
+        $this->sheetWidths($sheet, [
+            'A' => 20,
+            'B' => 14,
+            'C' => 14,
+            'D' => 14,
+            'E' => 20,
+            'F' => 16,
+            'G' => 36,
+            'H' => 14,
+            'I' => 18,
+            'J' => 14,
+            'K' => 22,
+            'L' => 12,
+            'M' => 12,
+        ]);
+    }
+
+    /**
+     * @param array<string,mixed> $digest
+     * @return array{year:string,coupon_code:string,lines:array<int,array<string,mixed>>,orders:array<int,array<string,mixed>>}
+     */
+    private function workbookPayload(array $digest) {
+        $book = (isset($digest['workbook']) && is_array($digest['workbook'])) ? $digest['workbook'] : [];
+        $year = isset($book['year']) ? trim((string) $book['year']) : '';
+        if ($year === '') {
+            $year = $this->workbookYear(
+                isset($digest['campaign_start']) ? (string) $digest['campaign_start'] : '',
+                isset($digest['report_date']) ? (string) $digest['report_date'] : ''
+            );
+        }
+        $coupon = isset($book['coupon_code']) ? trim((string) $book['coupon_code']) : '';
+        if ($coupon === '' && isset($digest['coupon_code'])) {
+            $coupon = trim((string) $digest['coupon_code']);
+        }
+        $lines = (isset($book['lines']) && is_array($book['lines'])) ? $book['lines'] : [];
+        $orders = (isset($book['orders']) && is_array($book['orders'])) ? $book['orders'] : [];
+        return [
+            'year' => $year,
+            'coupon_code' => $coupon,
+            'lines' => $lines,
+            'orders' => $orders,
+        ];
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $lines
+     * @param array<int,array<string,mixed>> $orders
+     * @return array<string,mixed>
+     */
+    private function summaryModel(array $lines, array $orders) {
+        $grouped = [];
+        $birthday = ['quantity' => 0, 'coupon_qty' => 0];
+        $courseCamp = ['quantity' => 0, 'sales' => 0.0, 'coupon_qty' => 0];
+        $courseCampOrders = [];
+        foreach ($lines as $line) {
+            if (!is_array($line)) {
+                continue;
+            }
+            $qty = (int) ($line['quantity'] ?? 0);
+            if ($qty < 0) {
+                $qty = 0;
+            }
+            $couponQty = (int) ($line['coupon_qty'] ?? 0);
+            if ($couponQty < 0) {
+                $couponQty = 0;
+            }
+            $sales = round((float) ($line['sales'] ?? 0), 2);
+            $type = (string) ($line['product_type'] ?? '');
+            if ($type === ProductTypeClassifierService::TYPE_BIRTHDAY) {
+                $birthday['quantity'] += $qty;
+                $birthday['coupon_qty'] += $couponQty;
+                continue;
+            }
+            $region = trim((string) ($line['region'] ?? ''));
+            if ($region === '') {
+                $region = 'Unknown';
+            }
+            $label = trim((string) ($line['season_type'] ?? ''));
+            if ($label === '') {
+                $label = 'Other';
+            }
+            if (!isset($grouped[$region])) {
+                $grouped[$region] = [];
+            }
+            if (!isset($grouped[$region][$label])) {
+                $grouped[$region][$label] = ['quantity' => 0, 'sales' => 0.0, 'coupon_qty' => 0];
+            }
+            $grouped[$region][$label]['quantity'] += $qty;
+            $grouped[$region][$label]['sales'] = round((float) $grouped[$region][$label]['sales'] + $sales, 2);
+            $grouped[$region][$label]['coupon_qty'] += $couponQty;
+            if ($type === ProductTypeClassifierService::TYPE_CAMP || $type === ProductTypeClassifierService::TYPE_COURSE) {
+                $courseCamp['quantity'] += $qty;
+                $courseCamp['sales'] = round((float) $courseCamp['sales'] + $sales, 2);
+                $courseCamp['coupon_qty'] += $couponQty;
+                $orderNumber = trim((string) ($line['order_number'] ?? ''));
+                if ($orderNumber !== '') {
+                    $courseCampOrders[$orderNumber] = true;
+                }
+            }
+        }
+        $regions = [];
+        $grandParts = [];
+        $seasonTotals = [];
+        foreach (array_merge($this->summaryRegionOrder(), ['Unknown']) as $region) {
+            $visible = [];
+            $source = isset($grouped[$region]) && is_array($grouped[$region]) ? $grouped[$region] : [];
+            foreach ($source as $label => $bucket) {
+                if (!is_array($bucket) || $this->bucketIsZero($bucket)) {
+                    continue;
+                }
+                $visible[(string) $label] = $bucket;
+                if (!isset($seasonTotals[$label])) {
+                    $seasonTotals[$label] = ['quantity' => 0, 'sales' => 0.0, 'coupon_qty' => 0];
+                }
+                $seasonTotals[$label]['quantity'] += (int) $bucket['quantity'];
+                $seasonTotals[$label]['sales'] = round((float) $seasonTotals[$label]['sales'] + (float) $bucket['sales'], 2);
+                $seasonTotals[$label]['coupon_qty'] += (int) $bucket['coupon_qty'];
+            }
+            $total = $this->sumBuckets(array_values($visible));
+            $regions[$region] = ['rows' => $visible, 'total' => $total];
+            if ($region !== 'Unknown' || !$this->bucketIsZero($total)) {
+                $grandParts[] = $total;
+            }
+        }
+        $sortedSeasons = [];
+        foreach ($this->sortSeasonTypeLabels(array_keys($seasonTotals)) as $label) {
+            $sortedSeasons[$label] = $seasonTotals[$label];
+        }
+        $customers = [
+            'New' => ['orders' => 0, 'sales' => 0.0, 'coupon_qty' => 0],
+            'Returning' => ['orders' => 0, 'sales' => 0.0, 'coupon_qty' => 0],
+        ];
+        $orderType = [];
+        foreach ($orders as $order) {
+            if (!is_array($order)) {
+                continue;
+            }
+            $type = ((string) ($order['customer_type'] ?? '')) === 'Returning' ? 'Returning' : 'New';
+            $customers[$type]['orders']++;
+            $customers[$type]['sales'] = round((float) $customers[$type]['sales'] + (float) ($order['net_sales'] ?? 0), 2);
+            $number = trim((string) ($order['order_number'] ?? ''));
+            if ($number !== '') {
+                $orderType[$number] = $type;
+            }
+        }
+        foreach ($lines as $line) {
+            if (!is_array($line)) {
+                continue;
+            }
+            $number = trim((string) ($line['order_number'] ?? ''));
+            if ($number === '' || !isset($orderType[$number])) {
+                continue;
+            }
+            $customers[$orderType[$number]]['coupon_qty'] += max(0, (int) ($line['coupon_qty'] ?? 0));
+        }
+        return [
+            'regions' => $regions,
+            'grand' => $this->sumBuckets($grandParts),
+            'birthday' => $birthday,
+            'course_camp' => $courseCamp,
+            'course_camp_orders' => count($courseCampOrders),
+            'customers' => $customers,
+            'customer_whole' => [
+                'orders' => (int) $customers['New']['orders'] + (int) $customers['Returning']['orders'],
+                'sales' => round((float) $customers['New']['sales'] + (float) $customers['Returning']['sales'], 2),
+            ],
+            'season_totals' => $sortedSeasons,
+            'swiss_french' => $this->sumBuckets([
+                $regions['Geneva/Versoix']['total'],
+                $regions['Vaud']['total'],
+            ]),
+            'swiss_german' => $this->sumBuckets([
+                $regions['Basel']['total'],
+                $regions['Zug/Cham']['total'],
+                $regions['Zurich']['total'],
+            ]),
+        ];
+    }
+
+    /**
+     * @return array<int,string>
+     */
+    private function summaryRegionOrder() {
+        return ['Geneva/Versoix', 'Vaud', 'Basel', 'Zug/Cham', 'Zurich'];
+    }
+
+    /**
+     * @param array<string,mixed> $bucket
+     * @return bool
+     */
+    private function bucketIsZero(array $bucket) {
+        return (int) ($bucket['quantity'] ?? 0) === 0
+            && (float) ($bucket['sales'] ?? 0) == 0.0
+            && (int) ($bucket['coupon_qty'] ?? 0) === 0;
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $buckets
+     * @return array{quantity:int,sales:float,coupon_qty:int}
+     */
+    private function sumBuckets(array $buckets) {
+        $total = ['quantity' => 0, 'sales' => 0.0, 'coupon_qty' => 0];
+        foreach ($buckets as $bucket) {
+            if (!is_array($bucket)) {
+                continue;
+            }
+            $total['quantity'] += (int) ($bucket['quantity'] ?? 0);
+            $total['sales'] = round((float) $total['sales'] + (float) ($bucket['sales'] ?? 0), 2);
+            $total['coupon_qty'] += (int) ($bucket['coupon_qty'] ?? 0);
+        }
+        return $total;
+    }
+
+    /**
+     * @param array<int,string> $labels
+     * @return array<int,string>
+     */
+    private function sortSeasonTypeLabels(array $labels) {
+        $labels = array_values($labels);
+        usort($labels, function ($left, $right) {
+            return strcmp($this->seasonTypeRank($left), $this->seasonTypeRank($right));
+        });
+        return $labels;
+    }
+
+    /**
+     * @param string $label
+     * @return string
+     */
+    private function seasonTypeRank($label) {
+        $label = (string) $label;
+        $seasonRank = 90;
+        $seasons = [
+            'Autumn' => 10,
+            'Winter' => 20,
+            'Spring' => 30,
+            'Easter' => 40,
+            'Summer' => 50,
+        ];
+        foreach ($seasons as $name => $rank) {
+            if (strpos($label, $name) === 0) {
+                $seasonRank = $rank;
+                break;
+            }
+        }
+        $typeRank = 9;
+        $types = [
+            'Courses' => 1,
+            'Camps' => 2,
+            'Tournaments' => 3,
+            'Birthdays' => 4,
+            'Other' => 5,
+        ];
+        foreach ($types as $name => $rank) {
+            $length = strlen($name);
+            if ($length > 0 && strlen($label) >= $length && substr($label, -$length) === $name) {
+                $typeRank = $rank;
+                break;
+            }
+        }
+        return sprintf('%02d-%d-%s', $seasonRank, $typeRank, $label);
+    }
+
+    /**
+     * @param float|int $part
+     * @param float|int $whole
+     * @return float
+     */
+    private function share($part, $whole) {
+        $whole = (float) $whole;
+        if ($whole == 0.0) {
+            return 0.0;
+        }
+        $part = (float) $part;
+        if ($part == 0.0) {
+            return 0.0;
+        }
+        return $part / $whole;
+    }
+
+    /**
+     * @param \PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet
+     * @param string                                        $cell
+     * @param string                                        $value
+     * @return void
+     */
+    private function sheetText($sheet, $cell, $value) {
+        $sheet->setCellValueExplicit($cell, (string) $value, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+    }
+
+    /**
+     * @param \PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet
+     * @param string                                        $cell
+     * @param float|int                                     $value
+     * @param string                                        $format
+     * @return void
+     */
+    private function sheetNumber($sheet, $cell, $value, $format) {
+        $sheet->setCellValueExplicit($cell, 0 + $value, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_NUMERIC);
+        $sheet->getStyle($cell)->getNumberFormat()->setFormatCode($format);
+    }
+
+    /**
+     * Europe/Zurich wall-clock time as an Excel date serial.
+     *
+     * @param \PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet
+     * @param string                                        $cell
+     * @param string                                        $text
+     * @return void
+     */
+    private function sheetZurichDate($sheet, $cell, $text) {
+        $text = trim((string) $text);
+        $dt = $this->zurichDateFromText($text);
+        if (!($dt instanceof \DateTimeImmutable)) {
+            $this->sheetText($sheet, $cell, $text);
+            return;
+        }
+        $serial = \PhpOffice\PhpSpreadsheet\Shared\Date::PHPToExcel($dt);
+        if (!is_numeric($serial)) {
+            $this->sheetText($sheet, $cell, $text);
+            return;
+        }
+        $this->sheetNumber($sheet, $cell, (float) $serial, 'yyyy-mm-dd hh:mm');
+    }
+
+    /**
+     * @param string $text
+     * @return \DateTimeImmutable|null
+     */
+    private function zurichDateFromText($text) {
+        foreach (['Y-m-d H:i:s', 'Y-m-d H:i'] as $format) {
+            $parsed = \DateTimeImmutable::createFromFormat($format, (string) $text, new \DateTimeZone(self::TIMEZONE));
+            $errors = \DateTimeImmutable::getLastErrors();
+            $clean = ($errors === false) || (is_array($errors) && empty($errors['warning_count']) && empty($errors['error_count']));
+            if ($parsed instanceof \DateTimeImmutable && $clean) {
+                return $parsed;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * @param \PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet
+     * @param array<string,float|int>                       $widths
+     * @return void
+     */
+    private function sheetWidths($sheet, array $widths) {
+        foreach ($widths as $column => $width) {
+            $sheet->getColumnDimension((string) $column)->setWidth((float) $width);
+        }
     }
 }

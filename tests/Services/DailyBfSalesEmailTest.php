@@ -58,12 +58,37 @@ namespace {
             if (!isset($GLOBALS['intersoccer_rr_bf_wp_mail_log']) || !is_array($GLOBALS['intersoccer_rr_bf_wp_mail_log'])) {
                 $GLOBALS['intersoccer_rr_bf_wp_mail_log'] = [];
             }
+            $paths = [];
+            if (is_array($attachments)) {
+                foreach ($attachments as $attachment) {
+                    if (is_string($attachment) && $attachment !== '') {
+                        $paths[] = $attachment;
+                    }
+                }
+            } elseif (is_string($attachments) && $attachments !== '') {
+                $paths[] = $attachments;
+            }
+            $copies = [];
+            foreach ($paths as $path) {
+                if (!is_file($path)) {
+                    continue;
+                }
+                $copy = sys_get_temp_dir() . '/rr-bf-xlsx-copy-' . uniqid('', true) . '.xlsx';
+                if (copy($path, $copy)) {
+                    $copies[] = $copy;
+                }
+            }
             $GLOBALS['intersoccer_rr_bf_wp_mail_log'][] = [
                 'to' => $to,
                 'subject' => (string) $subject,
                 'message' => (string) $message,
                 'headers' => $headers,
+                'attachments' => $paths,
+                'attachment_copies' => $copies,
             ];
+            if (!empty($GLOBALS['intersoccer_rr_bf_wp_mail_throw'])) {
+                throw new \RuntimeException('Mailer threw');
+            }
             if (!empty($GLOBALS['intersoccer_rr_bf_wp_mail_fail'])) {
                 $error = isset($GLOBALS['intersoccer_rr_bf_wp_mail_error'])
                     ? (string) $GLOBALS['intersoccer_rr_bf_wp_mail_error']
@@ -460,6 +485,18 @@ class DailyBfSalesEmailTest extends TestCase {
      * and this class does not install its own Monkey patches.
      */
     private function resetDailyBfIsolation(): void {
+        if (isset($GLOBALS['intersoccer_rr_bf_wp_mail_log']) && is_array($GLOBALS['intersoccer_rr_bf_wp_mail_log'])) {
+            foreach ($GLOBALS['intersoccer_rr_bf_wp_mail_log'] as $mail) {
+                if (!is_array($mail) || empty($mail['attachment_copies']) || !is_array($mail['attachment_copies'])) {
+                    continue;
+                }
+                foreach ($mail['attachment_copies'] as $copy) {
+                    if (is_string($copy) && is_file($copy)) {
+                        unlink($copy);
+                    }
+                }
+            }
+        }
         unset($GLOBALS['intersoccer_rr_bf_permalinks']);
         $resetStatics = \Closure::bind(static function () {
             self::$hooksRegistered = false;
@@ -515,6 +552,7 @@ class DailyBfSalesEmailTest extends TestCase {
         $GLOBALS['intersoccer_test_option_store'] = [];
         $GLOBALS['intersoccer_rr_bf_wp_mail_log'] = [];
         $GLOBALS['intersoccer_rr_bf_wp_mail_fail'] = false;
+        $GLOBALS['intersoccer_rr_bf_wp_mail_throw'] = false;
         $GLOBALS['intersoccer_rr_bf_wp_mail_error'] = '';
         $GLOBALS['intersoccer_rr_bf_wc_coupon_calls'] = 0;
         $GLOBALS['intersoccer_rr_bf_coupon_lookup_calls'] = 0;
@@ -3680,6 +3718,316 @@ class DailyBfSalesEmailTest extends TestCase {
         foreach ($this->wpdb->queries as $query) {
             $this->assertStringNotContainsString('intersoccer_url_coupon_allowlist', $query);
         }
+    }
+
+    public function test_sample_workbook_is_attached_and_removed_after_send(): void {
+        $service = $this->wooService();
+        $result = $service->sendSample('ops@example.com');
+        $this->assertTrue($result['ok']);
+        $this->assertCount(1, $GLOBALS['intersoccer_rr_bf_wp_mail_log']);
+        $mail = $GLOBALS['intersoccer_rr_bf_wp_mail_log'][0];
+        $this->assertCount(1, $mail['attachments']);
+        $path = (string) $mail['attachments'][0];
+        $this->assertSame('intersoccer-bf-sales-2026-11-10.xlsx', basename($path));
+        $this->assertFileDoesNotExist($path);
+        $this->assertDirectoryDoesNotExist(dirname($path));
+
+        $spreadsheet = $this->loadWorkbookCopy($mail);
+        $this->assertSame(['Booking Summary', 'Orders'], $spreadsheet->getSheetNames());
+        $summary = $spreadsheet->getSheetByName('Booking Summary');
+        $orders = $spreadsheet->getSheetByName('Orders');
+        $this->assertNotNull($summary);
+        $this->assertNotNull($orders);
+        $this->assertContains('A1:F1', array_values($summary->getMergeCells()));
+        $this->assertSame('Black Friday Sales 2026', (string) $summary->getCell('A1')->getValue());
+        $this->assertSame('Courses/Camps', (string) $summary->getCell('A2')->getValue());
+        $this->assertSame('Number of bookings', (string) $summary->getCell('B2')->getValue());
+        $this->assertSame('Sales Numbers', (string) $summary->getCell('C2')->getValue());
+        $this->assertSame('SAMPLE-CODE Usage', (string) $summary->getCell('D2')->getValue());
+        $this->assertSame('% of Bookings', (string) $summary->getCell('E2')->getValue());
+        $this->assertSame('% of Sales', (string) $summary->getCell('F2')->getValue());
+
+        $column = $this->columnA($summary);
+        $this->assertNotContains('Unknown', $column);
+        $geneva = $this->rowIndex($column, 'Geneva/Versoix');
+        $genevaTotal = $this->rowIndex($column, 'Total', $geneva + 1);
+        $vaud = $this->rowIndex($column, 'Vaud', $genevaTotal + 1);
+        $this->assertGreaterThan($genevaTotal, $vaud);
+        $autumn = $this->rowIndex($column, 'Autumn Courses', $geneva + 1);
+        $winter = $this->rowIndex($column, 'Winter Camps', $autumn + 1);
+        $this->assertLessThan($genevaTotal, $winter);
+        $this->assertNumericCell($summary, 'B' . $winter, 5, '0');
+        $this->assertNumericCell($summary, 'C' . $winter, 300, '#,##0.00');
+        $this->assertNumericCell($summary, 'D' . $winter, 5, '0');
+        $this->assertNumericCell($summary, 'E' . $winter, 5 / 7, '0.0%');
+        $this->assertNumericCell($summary, 'F' . $winter, 300 / 380, '0.0%');
+        $this->assertNumericCell($summary, 'B' . $genevaTotal, 7, '0');
+        $this->assertNumericCell($summary, 'C' . $genevaTotal, 380, '#,##0.00');
+        $this->assertNumericCell($summary, 'E' . $genevaTotal, 7 / 30, '0.0%');
+        $this->assertNumericCell($summary, 'F' . $genevaTotal, 380 / 1584, '0.0%');
+
+        $french = $this->rowIndex($column, 'Swiss French');
+        $german = $this->rowIndex($column, 'Swiss German', $french + 1);
+        $this->assertNumericCell($summary, 'B' . $french, 12, '0');
+        $this->assertNumericCell($summary, 'C' . $french, 730, '#,##0.00');
+        $this->assertNumericCell($summary, 'B' . $german, 18, '0');
+        $this->assertNumericCell($summary, 'C' . $german, 854, '#,##0.00');
+
+        $products = $this->rowIndex($column, 'Total Products Sold (Courses/Camps)');
+        $this->assertNumericCell($summary, 'B' . $products, 28, '0');
+        $this->assertNumericCell($summary, 'C' . $products, 1488, '#,##0.00');
+        $birthday = $this->rowIndex($column, 'Birthday Parties', $products + 1);
+        $this->assertNumericCell($summary, 'B' . $birthday, 1, '0');
+        $this->assertSame('s', $summary->getCell('C' . $birthday)->getDataType());
+        $this->assertSame('-', (string) $summary->getCell('C' . $birthday)->getValue());
+        $tournaments = $this->rowIndex($column, 'TOTAL Summer Tournaments');
+        $this->assertNumericCell($summary, 'B' . $tournaments, 2, '0');
+        $this->assertNumericCell($summary, 'C' . $tournaments, 96, '#,##0.00');
+        $orderTotal = $this->rowIndex($column, 'Total orders (Courses/Camps)');
+        $this->assertNumericCell($summary, 'B' . $orderTotal, 8, '0');
+        $returning = $this->rowIndex($column, 'RETURNING CUSTOMERS');
+        $newCustomers = $this->rowIndex($column, 'NEW CUSTOMERS');
+        $this->assertNumericCell($summary, 'B' . $returning, 5, '0');
+        $this->assertNumericCell($summary, 'C' . $returning, 925, '#,##0.00');
+        $this->assertNumericCell($summary, 'E' . $returning, 0.5, '0.0%');
+        $this->assertNumericCell($summary, 'B' . $newCustomers, 5, '0');
+        $this->assertNumericCell($summary, 'C' . $newCustomers, 694, '#,##0.00');
+
+        $this->assertSame('910001', (string) $orders->getCell('B2')->getValue());
+        $this->assertNumericCell($orders, 'C2', 300, '#,##0.00');
+        $this->assertNumericCell($orders, 'J2', 300, '#,##0.00');
+        $this->assertSame('n', $orders->getCell('A2')->getDataType());
+        $this->assertSame('yyyy-mm-dd hh:mm', $orders->getStyle('A2')->getNumberFormat()->getFormatCode());
+        $this->assertSame('Completed', (string) $orders->getCell('D2')->getValue());
+        $this->assertSame('Sample Parent A', (string) $orders->getCell('E2')->getValue());
+        $this->assertSame('Returning', (string) $orders->getCell('F2')->getValue());
+        $this->assertSame('5× Sample Camp A', (string) $orders->getCell('G2')->getValue());
+        $this->assertNumericCell($orders, 'H2', 5, '0');
+        $this->assertSame('sample-code', (string) $orders->getCell('I2')->getValue());
+        $this->assertSame('Organic: Google', (string) $orders->getCell('K2')->getValue());
+        $this->assertSame('fr', (string) $orders->getCell('L2')->getValue());
+        $this->assertSame('CHF', (string) $orders->getCell('M2')->getValue());
+        $this->assertSame('Sample Parent B', (string) $orders->getCell('E3')->getValue());
+        $this->assertSame('', (string) $orders->getCell('K3')->getValue());
+
+        $blob = $this->sheetTextBlob($summary) . $this->sheetTextBlob($orders);
+        $this->assertStringNotContainsString('@', $blob);
+        $this->assertStringNotContainsString('ex VAT', $blob);
+        $this->assertStringNotContainsString('#DIV/0!', $blob);
+        $spreadsheet->disconnectWorksheets();
+    }
+
+    public function test_workbook_year_is_derived_and_an_empty_digest_does_not_divide_by_zero(): void {
+        $service = $this->wooService();
+        $path = sys_get_temp_dir() . '/rr-bf-empty-' . uniqid('', true) . '.xlsx';
+        $method = new \ReflectionMethod(DailyBfSalesEmail::class, 'writeWorkbook');
+        $method->setAccessible(true);
+        $method->invoke($service, [
+            'report_date' => '2026-12-31',
+            'campaign_start' => '2031-04-01',
+            'coupon_code' => '',
+        ], $path);
+        $this->assertFileExists($path);
+        $spreadsheet = \PhpOffice\PhpSpreadsheet\IOFactory::load($path);
+        $summary = $spreadsheet->getSheet(0);
+        $this->assertSame('Black Friday Sales 2031', (string) $summary->getCell('A1')->getValue());
+        $this->assertSame('Coupon Usage', (string) $summary->getCell('D2')->getValue());
+        $column = $this->columnA($summary);
+        $genevaTotal = $this->rowIndex($column, 'Total', $this->rowIndex($column, 'Geneva/Versoix') + 1);
+        $this->assertNumericCell($summary, 'B' . $genevaTotal, 0, '0');
+        $this->assertNumericCell($summary, 'E' . $genevaTotal, 0, '0.0%');
+        $this->assertNumericCell($summary, 'F' . $genevaTotal, 0, '0.0%');
+        $birthday = $this->rowIndex($column, 'Birthday Parties');
+        $this->assertSame('-', (string) $summary->getCell('C' . $birthday)->getValue());
+        $this->assertNumericCell($summary, 'B' . $this->rowIndex($column, 'NEW CUSTOMERS'), 0, '0');
+        $this->assertNumericCell($summary, 'E' . $this->rowIndex($column, 'RETURNING CUSTOMERS'), 0, '0.0%');
+        $blob = $this->sheetTextBlob($summary) . $this->sheetTextBlob($spreadsheet->getSheet(1));
+        $this->assertStringNotContainsString('#DIV/0!', $blob);
+        $this->assertStringNotContainsString('2026', (string) $summary->getCell('A1')->getValue());
+        $spreadsheet->disconnectWorksheets();
+        unlink($path);
+
+        $reportPath = sys_get_temp_dir() . '/rr-bf-year-' . uniqid('', true) . '.xlsx';
+        $method->invoke($service, [
+            'report_date' => '2024-02-03',
+        ], $reportPath);
+        $yearBook = \PhpOffice\PhpSpreadsheet\IOFactory::load($reportPath);
+        $this->assertSame('Black Friday Sales 2024', (string) $yearBook->getSheet(0)->getCell('A1')->getValue());
+        $yearBook->disconnectWorksheets();
+        unlink($reportPath);
+    }
+
+    public function test_live_order_row_omits_names_and_keeps_incl_vat_amounts_distinct(): void {
+        $service = $this->wooService();
+        $build = new \ReflectionMethod(DailyBfSalesEmail::class, 'workbookFromReport');
+        $build->setAccessible(true);
+        $book = $build->invoke($service, [
+            'data' => [[
+                'order_id' => 42,
+                'line_quantity' => 2,
+                'product_type' => 'Camp',
+                'order_item_name' => 'Sample Camp',
+                'net_ex_vat' => 8,
+                'final_price_raw' => 10,
+                'line_tax_amount' => 0.77,
+                'reimbursement_raw' => 2,
+                'discount_codes' => 'sample-code',
+                'date_paid_gmt' => (string) $this->unix('2026-11-10 10:00:00'),
+                'order_date_local' => '2026-11-10 11:00:00',
+                'booker_email' => 'hidden@example.test',
+                'attendee_name' => 'Hidden Child',
+                'line_meta' => [
+                    'Season' => 'Winter',
+                    '_intersoccer_canonical_canton' => 'geneva',
+                ],
+            ]],
+        ], '2026-11-10', '2030-01-01', 'sample-code');
+        $path = sys_get_temp_dir() . '/rr-bf-live-' . uniqid('', true) . '.xlsx';
+        $write = new \ReflectionMethod(DailyBfSalesEmail::class, 'writeWorkbook');
+        $write->setAccessible(true);
+        $write->invoke($service, [
+            'report_date' => '2026-11-10',
+            'campaign_start' => '2030-01-01',
+            'workbook' => $book,
+        ], $path);
+        $spreadsheet = \PhpOffice\PhpSpreadsheet\IOFactory::load($path);
+        $summary = $spreadsheet->getSheetByName('Booking Summary');
+        $orders = $spreadsheet->getSheetByName('Orders');
+        $this->assertSame('Black Friday Sales 2030', (string) $summary->getCell('A1')->getValue());
+        $this->assertSame('42', (string) $orders->getCell('B2')->getValue());
+        $this->assertSame('', (string) $orders->getCell('E2')->getValue());
+        $this->assertSame('2× Sample Camp', (string) $orders->getCell('G2')->getValue());
+        $this->assertNumericCell($orders, 'H2', 2, '0');
+        $this->assertNumericCell($orders, 'C2', 10.77, '#,##0.00');
+        $this->assertNumericCell($orders, 'J2', 8.62, '#,##0.00');
+        $this->assertSame('n', $orders->getCell('A2')->getDataType());
+        $column = $this->columnA($summary);
+        $winter = $this->rowIndex($column, 'Winter Camps');
+        $this->assertNumericCell($summary, 'B' . $winter, 2, '0');
+        $this->assertNumericCell($summary, 'D' . $winter, 2, '0');
+        $blob = $this->sheetTextBlob($summary) . $this->sheetTextBlob($orders);
+        $this->assertStringNotContainsString('hidden@example.test', $blob);
+        $this->assertStringNotContainsString('Hidden Child', $blob);
+        $this->assertStringNotContainsString('@', $blob);
+        $spreadsheet->disconnectWorksheets();
+        unlink($path);
+    }
+
+    public function test_workbook_failure_still_sends_html_and_logs_no_customer_data(): void {
+        $logger = new DailyBfSalesEmailCapturingLogger();
+        $service = new DailyBfSalesEmail($logger, null, null, new \DateTimeZone('Europe/Zurich'), static function () {
+            throw new \RuntimeException('Workbook build failed');
+        });
+        $result = $service->sendSample('ops@example.com');
+        $this->assertTrue($result['ok']);
+        $this->assertSame('sample_sent', $result['code']);
+        $mail = $GLOBALS['intersoccer_rr_bf_wp_mail_log'][0];
+        $this->assertSame([], $mail['attachments']);
+        $this->assertStringContainsString('Sample Camp A', $mail['message']);
+        $this->assertStringContainsString('ops@example.com', (string) $mail['to']);
+        $blob = (string) json_encode($logger->entries);
+        $this->assertStringContainsString('RuntimeException', $blob);
+        $this->assertStringContainsString('Workbook build failed', $blob);
+        $this->assertStringContainsString('2026-11-10', $blob);
+        $this->assertStringNotContainsString('Sample Parent', $blob);
+        $this->assertStringNotContainsString('Sample Camp', $blob);
+        $this->assertStringNotContainsString('@', $blob);
+        $this->assertStringNotContainsString('example.com', $blob);
+        $this->assertStringNotContainsString('example.test', $blob);
+    }
+
+    public function test_attachment_is_removed_after_a_failed_send_and_when_mail_throws(): void {
+        $service = $this->wooService();
+        $GLOBALS['intersoccer_rr_bf_wp_mail_fail'] = true;
+        $failed = $service->sendSample('ops@example.com');
+        $this->assertFalse($failed['ok']);
+        $failedMail = $GLOBALS['intersoccer_rr_bf_wp_mail_log'][0];
+        $this->assertFileDoesNotExist($failedMail['attachments'][0]);
+        $this->assertDirectoryDoesNotExist(dirname($failedMail['attachments'][0]));
+        $this->assertFileExists($failedMail['attachment_copies'][0]);
+
+        $GLOBALS['intersoccer_rr_bf_wp_mail_log'] = [];
+        $GLOBALS['intersoccer_rr_bf_wp_mail_fail'] = false;
+        $GLOBALS['intersoccer_rr_bf_wp_mail_throw'] = true;
+        try {
+            $service->sendSample('ops@example.com');
+            $this->fail('The mailer exception should leave deliver.');
+        } catch (\RuntimeException $e) {
+            $this->assertSame('Mailer threw', $e->getMessage());
+        }
+        $thrown = $GLOBALS['intersoccer_rr_bf_wp_mail_log'][0];
+        $this->assertFileDoesNotExist($thrown['attachments'][0]);
+        $this->assertDirectoryDoesNotExist(dirname($thrown['attachments'][0]));
+    }
+
+    public function test_test_send_attaches_the_workbook(): void {
+        $service = $this->enabledService($this->novemberCoupon(), 'list@example.test');
+        $this->seedCatalogue();
+        $result = $service->sendTest('ops@example.com', $this->zurich('2026-11-29 08:00:00'));
+        $this->assertTrue($result['ok']);
+        $this->assertSame('test_sent', $result['code']);
+        $mail = $GLOBALS['intersoccer_rr_bf_wp_mail_log'][0];
+        $this->assertStringStartsWith('[TEST] ', $mail['subject']);
+        $this->assertCount(1, $mail['attachments']);
+        $this->assertSame('intersoccer-bf-sales-2026-11-28.xlsx', basename((string) $mail['attachments'][0]));
+        $this->assertFileDoesNotExist($mail['attachments'][0]);
+        $spreadsheet = $this->loadWorkbookCopy($mail);
+        $this->assertSame(['Booking Summary', 'Orders'], $spreadsheet->getSheetNames());
+        $spreadsheet->disconnectWorksheets();
+    }
+
+    private function loadWorkbookCopy(array $mail): \PhpOffice\PhpSpreadsheet\Spreadsheet {
+        $this->assertNotEmpty($mail['attachment_copies']);
+        $copy = (string) $mail['attachment_copies'][0];
+        $this->assertFileExists($copy);
+        return \PhpOffice\PhpSpreadsheet\IOFactory::load($copy);
+    }
+
+    /**
+     * @return array<int,string>
+     */
+    private function columnA(\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet): array {
+        $values = [];
+        $highest = (int) $sheet->getHighestDataRow();
+        for ($row = 1; $row <= $highest; $row++) {
+            $values[$row] = (string) $sheet->getCell('A' . $row)->getValue();
+        }
+        return $values;
+    }
+
+    /**
+     * @param array<int,string> $column
+     */
+    private function rowIndex(array $column, string $label, int $start = 1): int {
+        foreach ($column as $row => $value) {
+            if ((int) $row < $start) {
+                continue;
+            }
+            if ($value === $label) {
+                return (int) $row;
+            }
+        }
+        $this->fail('Missing row ' . $label);
+    }
+
+    private function assertNumericCell(\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet, string $cell, float $expected, string $format): void {
+        $value = $sheet->getCell($cell);
+        $this->assertSame('n', $value->getDataType(), $cell);
+        $this->assertEqualsWithDelta($expected, (float) $value->getValue(), 0.000001, $cell);
+        $this->assertSame($format, $sheet->getStyle($cell)->getNumberFormat()->getFormatCode(), $cell);
+    }
+
+    private function sheetTextBlob(\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet): string {
+        $blob = '';
+        $highestRow = (int) $sheet->getHighestDataRow();
+        $highestColumn = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::columnIndexFromString($sheet->getHighestDataColumn());
+        for ($row = 1; $row <= $highestRow; $row++) {
+            for ($column = 1; $column <= $highestColumn; $column++) {
+                $letter = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($column);
+                $blob .= '|' . (string) $sheet->getCell($letter . $row)->getFormattedValue();
+            }
+        }
+        return $blob;
     }
 
     private function loadHposClassesWithUsageOff(): void {
