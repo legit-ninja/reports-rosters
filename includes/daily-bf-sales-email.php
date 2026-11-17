@@ -4311,15 +4311,19 @@ class DailyBfSalesEmail {
     }
 
     /**
-     * Quote a display name for a From header. Backslashes are escaped first.
+     * Display name for a From header. Quotes and backslashes are removed,
+     * then leftover runs of spaces are collapsed and the result is trimmed.
      *
-     * @param string $name
+     * @param mixed $value
      * @return string
      */
-    private function quoteSenderName($name) {
-        $name = str_replace('\\', '\\\\', (string) $name);
-        $name = str_replace('"', '\\"', $name);
-        return '"' . $name . '"';
+    private function senderDisplayName($value) {
+        $name = str_replace(['"', '\\'], '', $this->cleanSenderName($value));
+        $collapsed = preg_replace('/ {2,}/', ' ', $name);
+        if (!is_string($collapsed)) {
+            $collapsed = $name;
+        }
+        return trim($collapsed);
     }
 
     /**
@@ -4350,19 +4354,19 @@ class DailyBfSalesEmail {
         $headers = ['Content-Type: text/html; charset=UTF-8'];
         $from = $this->validHeaderEmail(isset($settings['from_email']) ? $settings['from_email'] : '');
         if ($from !== '') {
-            $name = $this->cleanSenderName(isset($settings['from_name']) ? $settings['from_name'] : '');
+            $name = $this->senderDisplayName(isset($settings['from_name']) ? $settings['from_name'] : '');
             if ($name === '') {
                 $site = function_exists('get_bloginfo') ? (string) get_bloginfo('name') : '';
                 if (function_exists('apply_filters')) {
                     $filtered = apply_filters('wp_mail_from_name', $site);
                     $site = is_string($filtered) ? $filtered : '';
                 }
-                $name = $this->cleanSenderName($site);
+                $name = $this->senderDisplayName($site);
             }
             if ($name === '') {
                 $headers[] = 'From: ' . $from;
             } else {
-                $headers[] = 'From: ' . $this->quoteSenderName($name) . ' <' . $from . '>';
+                $headers[] = 'From: "' . $name . '" <' . $from . '>';
             }
         }
         $reply = $this->validHeaderEmail(isset($settings['reply_to']) ? $settings['reply_to'] : '');

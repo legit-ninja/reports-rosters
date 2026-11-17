@@ -4174,7 +4174,7 @@ class DailyBfSalesEmailTest extends TestCase {
         }
     }
 
-    public function test_from_display_name_quotes_and_escapes_quotes_and_backslashes(): void {
+    public function test_from_display_name_drops_quotes_and_backslashes(): void {
         $service = $this->enabledService($this->novemberCoupon(), 'ops@example.com');
         $quoted = $service->handleAdminPost($this->senderPost('Sample "Desk" Team', 'sender@example.test', ''));
         $this->assertTrue($quoted['ok']);
@@ -4183,7 +4183,7 @@ class DailyBfSalesEmailTest extends TestCase {
         $this->assertSame(
             [
                 'Content-Type: text/html; charset=UTF-8',
-                'From: "Sample \\"Desk\\" Team" <sender@example.test>',
+                'From: "Sample Desk Team" <sender@example.test>',
             ],
             $GLOBALS['intersoccer_rr_bf_wp_mail_log'][0]['headers']
         );
@@ -4194,10 +4194,58 @@ class DailyBfSalesEmailTest extends TestCase {
         $this->assertSame(
             [
                 'Content-Type: text/html; charset=UTF-8',
-                'From: "Sample \\\\ Desk" <sender@example.test>',
+                'From: "Sample Desk" <sender@example.test>',
             ],
             $GLOBALS['intersoccer_rr_bf_wp_mail_log'][1]['headers']
         );
+
+        $GLOBALS['intersoccer_test_apply_filters_callback'] = static function ($hook, $value) {
+            if ($hook === 'wp_mail_from_name') {
+                return '';
+            }
+            return $value;
+        };
+        try {
+            $blank = $service->handleAdminPost($this->senderPost('""', 'sender@example.test', ''));
+            $this->assertTrue($blank['ok']);
+            $plain = $service->sendTest('ops@example.com', $this->zurich('2026-11-29 08:00:00'));
+            $this->assertTrue($plain['ok']);
+            $this->assertSame(
+                [
+                    'Content-Type: text/html; charset=UTF-8',
+                    'From: sender@example.test',
+                ],
+                $GLOBALS['intersoccer_rr_bf_wp_mail_log'][2]['headers']
+            );
+            $spaces = $service->handleAdminPost($this->senderPost('" "', 'sender@example.test', ''));
+            $this->assertTrue($spaces['ok']);
+            $spaced = $service->sendTest('ops@example.com', $this->zurich('2026-11-29 08:00:00'));
+            $this->assertTrue($spaced['ok']);
+            $this->assertSame(
+                [
+                    'Content-Type: text/html; charset=UTF-8',
+                    'From: sender@example.test',
+                ],
+                $GLOBALS['intersoccer_rr_bf_wp_mail_log'][3]['headers']
+            );
+            $GLOBALS['intersoccer_test_apply_filters_callback'] = static function ($hook, $value) {
+                if ($hook === 'wp_mail_from_name') {
+                    return 'Filtered "Office"';
+                }
+                return $value;
+            };
+            $fallback = $service->sendTest('ops@example.com', $this->zurich('2026-11-29 08:00:00'));
+            $this->assertTrue($fallback['ok']);
+            $this->assertSame(
+                [
+                    'Content-Type: text/html; charset=UTF-8',
+                    'From: "Filtered Office" <sender@example.test>',
+                ],
+                $GLOBALS['intersoccer_rr_bf_wp_mail_log'][4]['headers']
+            );
+        } finally {
+            unset($GLOBALS['intersoccer_test_apply_filters_callback']);
+        }
     }
 
     public function test_invalid_sender_emails_are_not_saved_and_raise_a_notice(): void {
