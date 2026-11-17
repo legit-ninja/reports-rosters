@@ -2091,7 +2091,7 @@ class DailyBfSalesEmailTest extends TestCase {
         $this->assertSame(0, (int) ($api['wc_get_product'] ?? 0));
         $this->assertSame(0, (int) ($api['get_post_meta'] ?? 0));
         $this->assertSame(0, (int) ($shop['get_posts'] ?? 0));
-        $this->assertSame(0, (int) ($shop['get_option'] ?? 0));
+        $this->assertSame(1, (int) ($shop['get_option'] ?? 0));
         $this->assertSame(0, $couponCalls);
         $this->assertSame(0, $couponLookups);
         $this->assertSame(0, $dbCalls);
@@ -2108,6 +2108,7 @@ class DailyBfSalesEmailTest extends TestCase {
         $this->assertStringNotContainsString('Should Not Load', $mail['message']);
         $this->assertStringNotContainsString('page=intersoccer-reports', $mail['message']);
         $this->assertStringStartsWith('[SAMPLE] ', $mail['subject']);
+        $this->assertSame(['Content-Type: text/html; charset=UTF-8'], $mail['headers']);
     }
 
     public function test_sample_body_is_the_shared_renderer_plus_banner(): void {
@@ -2344,6 +2345,9 @@ class DailyBfSalesEmailTest extends TestCase {
         $this->assertSame('', $settings['campaign_start']);
         $this->assertSame(3, $settings['low_booking_threshold']);
         $this->assertSame(3, DailyBfSalesEmail::DEFAULT_LOW_BOOKING_THRESHOLD);
+        $this->assertSame('', $settings['from_name']);
+        $this->assertSame('', $settings['from_email']);
+        $this->assertSame('', $settings['reply_to']);
     }
 
     public function test_low_and_zero_bookings_use_the_threshold_and_the_2027_scope(): void {
@@ -3974,6 +3978,196 @@ class DailyBfSalesEmailTest extends TestCase {
         $spreadsheet = $this->loadWorkbookCopy($mail);
         $this->assertSame(['Booking Summary', 'Orders'], $spreadsheet->getSheetNames());
         $spreadsheet->disconnectWorksheets();
+    }
+
+    public function test_sender_headers_are_shared_by_scheduled_test_and_sample_sends(): void {
+        $service = $this->enabledService($this->novemberCoupon(), 'ops@example.com');
+        $saved = $service->handleAdminPost($this->senderPost('Sample Office', 'desk@example.com', 'reply@example.test'));
+        $this->assertTrue($saved['ok']);
+        $this->assertSame('Sample Office', $service->settings()['from_name']);
+        $this->assertSame('desk@example.com', $service->settings()['from_email']);
+        $this->assertSame('reply@example.test', $service->settings()['reply_to']);
+        ob_start();
+        $service->renderPage();
+        $page = (string) ob_get_clean();
+        $sendTo = strpos($page, 'for="bf_recipients"');
+        $fromName = strpos($page, 'for="bf_from_name"');
+        $fromEmail = strpos($page, 'for="bf_from_email"');
+        $replyTo = strpos($page, 'for="bf_reply_to"');
+        $this->assertNotFalse($sendTo);
+        $this->assertGreaterThan($sendTo, $fromName);
+        $this->assertGreaterThan($fromName, $fromEmail);
+        $this->assertGreaterThan($fromEmail, $replyTo);
+        $this->assertStringContainsString('>From name<', $page);
+        $this->assertStringContainsString('>From email<', $page);
+        $this->assertStringContainsString('>Reply-To email<', $page);
+
+        $expected = [
+            'Content-Type: text/html; charset=UTF-8',
+            'From: Sample Office <desk@example.com>',
+            'Reply-To: <reply@example.test>',
+        ];
+        $this->assertSame('sent', $service->runScheduled($this->zurich('2026-11-29 08:00:00')));
+        $this->assertSame($expected, $GLOBALS['intersoccer_rr_bf_wp_mail_log'][0]['headers']);
+        $test = $service->sendTest('ops@example.com', $this->zurich('2026-11-29 08:00:00'));
+        $this->assertTrue($test['ok']);
+        $this->assertSame($expected, $GLOBALS['intersoccer_rr_bf_wp_mail_log'][1]['headers']);
+        $sample = $service->sendSample('ops@example.com');
+        $this->assertTrue($sample['ok']);
+        $this->assertSame($expected, $GLOBALS['intersoccer_rr_bf_wp_mail_log'][2]['headers']);
+    }
+
+    public function test_blank_sender_fields_leave_only_the_content_type_header(): void {
+        $service = $this->enabledService($this->novemberCoupon(), 'ops@example.com');
+        $this->assertSame('sent', $service->runScheduled($this->zurich('2026-11-29 08:00:00')));
+        $this->assertSame(
+            ['Content-Type: text/html; charset=UTF-8'],
+            $GLOBALS['intersoccer_rr_bf_wp_mail_log'][0]['headers']
+        );
+    }
+
+    public function test_blank_from_name_uses_the_filtered_site_name_then_the_address(): void {
+        $service = $this->enabledService($this->novemberCoupon(), 'ops@example.com');
+        $saved = $service->handleAdminPost($this->senderPost('', 'desk@example.com', ''));
+        $this->assertTrue($saved['ok']);
+        $GLOBALS['intersoccer_test_apply_filters_callback'] = static function ($hook, $value) {
+            if ($hook === 'wp_mail_from_name') {
+                return 'Filtered Office';
+            }
+            return $value;
+        };
+        try {
+            $named = $service->sendTest('ops@example.com', $this->zurich('2026-11-29 08:00:00'));
+            $this->assertTrue($named['ok']);
+            $this->assertSame(
+                [
+                    'Content-Type: text/html; charset=UTF-8',
+                    'From: Filtered Office <desk@example.com>',
+                ],
+                $GLOBALS['intersoccer_rr_bf_wp_mail_log'][0]['headers']
+            );
+            $GLOBALS['intersoccer_test_apply_filters_callback'] = static function ($hook, $value) {
+                if ($hook === 'wp_mail_from_name') {
+                    return '';
+                }
+                return $value;
+            };
+            $plain = $service->sendTest('ops@example.com', $this->zurich('2026-11-29 08:00:00'));
+            $this->assertTrue($plain['ok']);
+            $this->assertSame(
+                [
+                    'Content-Type: text/html; charset=UTF-8',
+                    'From: desk@example.com',
+                ],
+                $GLOBALS['intersoccer_rr_bf_wp_mail_log'][1]['headers']
+            );
+        } finally {
+            unset($GLOBALS['intersoccer_test_apply_filters_callback']);
+        }
+    }
+
+    public function test_invalid_sender_emails_are_not_saved_and_raise_a_notice(): void {
+        $service = $this->enabledService($this->novemberCoupon(), 'ops@example.com');
+        $first = $service->handleAdminPost($this->senderPost('Sample Office', 'desk@example.com', 'reply@example.test'));
+        $this->assertTrue($first['ok']);
+        $rejected = $service->handleAdminPost($this->senderPost('Sample Office', 'not-an-email', 'also bad'));
+        $this->assertFalse($rejected['ok']);
+        $this->assertSame('invalid_sender', $rejected['code']);
+        $this->assertStringContainsString('From email', $rejected['message']);
+        $this->assertStringContainsString('Reply-To email', $rejected['message']);
+        $this->assertStringNotContainsString('not-an-email', $rejected['message']);
+        $this->assertStringNotContainsString('also bad', $rejected['message']);
+        $this->assertSame('desk@example.com', $service->settings()['from_email']);
+        $this->assertSame('reply@example.test', $service->settings()['reply_to']);
+
+        $_GET['bf_notice'] = $rejected['code'];
+        $_GET['bf_detail'] = $rejected['message'];
+        ob_start();
+        $service->renderPage();
+        $html = (string) ob_get_clean();
+        unset($_GET['bf_notice'], $_GET['bf_detail']);
+        $this->assertStringContainsString('notice-error', $html);
+        $this->assertStringContainsString('From email', $html);
+        $this->assertStringContainsString('Reply-To email', $html);
+        $this->assertStringNotContainsString('not-an-email', $html);
+        $this->assertStringNotContainsString('also bad', $html);
+
+        $cleared = $service->handleAdminPost($this->senderPost('Sample Office', '', ''));
+        $this->assertTrue($cleared['ok']);
+        $this->assertSame('', $service->settings()['from_email']);
+        $this->assertSame('', $service->settings()['reply_to']);
+        $emptyPrevious = $service->handleAdminPost($this->senderPost('Sample Office', 'not-an-email', 'also bad'));
+        $this->assertSame('invalid_sender', $emptyPrevious['code']);
+        $this->assertSame('', $service->settings()['from_email']);
+        $this->assertSame('', $service->settings()['reply_to']);
+
+        $stored = $GLOBALS['intersoccer_test_option_store'][DailyBfSalesEmail::OPTION_SETTINGS];
+        $stored['from_email'] = 'not-an-email';
+        $stored['reply_to'] = 'reply@example.test';
+        $GLOBALS['intersoccer_test_option_store'][DailyBfSalesEmail::OPTION_SETTINGS] = $stored;
+        $ignored = $service->sendTest('ops@example.com', $this->zurich('2026-11-29 08:00:00'));
+        $this->assertTrue($ignored['ok']);
+        $this->assertSame(
+            [
+                'Content-Type: text/html; charset=UTF-8',
+                'Reply-To: <reply@example.test>',
+            ],
+            $GLOBALS['intersoccer_rr_bf_wp_mail_log'][0]['headers']
+        );
+    }
+
+    public function test_sender_control_characters_do_not_add_header_lines(): void {
+        $service = $this->enabledService($this->novemberCoupon(), 'ops@example.com');
+        $saved = $service->handleAdminPost($this->senderPost(
+            "Sample Office\r\nBcc: injected@example.com",
+            "desk@example.com\r\nBcc: injected@example.com",
+            'reply@example.test'
+        ));
+        $this->assertFalse($saved['ok']);
+        $this->assertStringContainsString('From email', $saved['message']);
+        $this->assertStringNotContainsString('injected@example.com', $saved['message']);
+        $this->assertStringNotContainsString("\r", $service->settings()['from_name']);
+        $this->assertStringNotContainsString("\n", $service->settings()['from_name']);
+        $this->assertSame('', $service->settings()['from_email']);
+
+        $stored = $GLOBALS['intersoccer_test_option_store'][DailyBfSalesEmail::OPTION_SETTINGS];
+        $stored['from_name'] = "Sample Office\r\nBcc: injected@example.com";
+        $stored['from_email'] = 'desk@example.com';
+        $stored['reply_to'] = "reply@example.test\r\nBcc: injected@example.com";
+        $GLOBALS['intersoccer_test_option_store'][DailyBfSalesEmail::OPTION_SETTINGS] = $stored;
+        $sent = $service->sendTest('ops@example.com', $this->zurich('2026-11-29 08:00:00'));
+        $this->assertTrue($sent['ok']);
+        $headers = $GLOBALS['intersoccer_rr_bf_wp_mail_log'][0]['headers'];
+        $this->assertSame(
+            [
+                'Content-Type: text/html; charset=UTF-8',
+                'From: Sample OfficeBcc: injected@example.com <desk@example.com>',
+            ],
+            $headers
+        );
+        foreach ($headers as $header) {
+            $this->assertStringNotContainsString("\r", $header);
+            $this->assertStringNotContainsString("\n", $header);
+            $this->assertStringNotContainsString("\0", $header);
+        }
+    }
+
+    /**
+     * @return array<string,string>
+     */
+    private function senderPost(string $name, string $from, string $reply): array {
+        return [
+            'bf_save' => '1',
+            '_wpnonce' => 'test',
+            'bf_enabled' => '1',
+            'bf_recipients' => 'ops@example.com',
+            'bf_send_time' => '08:00',
+            'bf_coupon_code' => 'BF',
+            'bf_campaign_start' => '2026-11-28',
+            'bf_from_name' => $name,
+            'bf_from_email' => $from,
+            'bf_reply_to' => $reply,
+        ];
     }
 
     private function loadWorkbookCopy(array $mail): \PhpOffice\PhpSpreadsheet\Spreadsheet {

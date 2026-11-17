@@ -23,6 +23,8 @@
  * and one row per paid order in the campaign window. Workbook amounts are
  * CHF incl. VAT. If that file cannot be built, the HTML message is still
  * sent without the attachment.
+ * From name, From email, and Reply-To email are optional. Blank values
+ * leave the site default sender and add no Reply-To header.
  *
  * Paid totals count processing and completed orders whose paid date falls in
  * the Europe/Zurich window. On-hold orders are counted separately by the date
@@ -553,6 +555,18 @@ class DailyBfSalesEmail {
         echo '<tr><th scope="row"><label for="bf_recipients">Send to</label></th><td>';
         echo '<textarea name="bf_recipients" id="bf_recipients" rows="3" cols="50" class="large-text">' . esc_html($settings['recipients']) . '</textarea>';
         echo '<p class="description">Comma-separated email addresses. Empty entries are skipped. Invalid addresses are dropped, and the email sends to the valid ones. Nothing is sent when no valid address remains.</p>';
+        echo '</td></tr>';
+        echo '<tr><th scope="row"><label for="bf_from_name">From name</label></th><td>';
+        echo '<input type="text" name="bf_from_name" id="bf_from_name" value="' . esc_attr($settings['from_name']) . '" class="regular-text" />';
+        echo '<p class="description">Optional. Used with From email. Leave it empty to use the site name. Leave From email empty to keep the site default sender.</p>';
+        echo '</td></tr>';
+        echo '<tr><th scope="row"><label for="bf_from_email">From email</label></th><td>';
+        echo '<input type="text" name="bf_from_email" id="bf_from_email" value="' . esc_attr($settings['from_email']) . '" class="regular-text" />';
+        echo '<p class="description">Optional. When this is a valid email, the message is sent from this address. Leave it empty to keep the site default sender.</p>';
+        echo '</td></tr>';
+        echo '<tr><th scope="row"><label for="bf_reply_to">Reply-To email</label></th><td>';
+        echo '<input type="text" name="bf_reply_to" id="bf_reply_to" value="' . esc_attr($settings['reply_to']) . '" class="regular-text" />';
+        echo '<p class="description">Optional. When this is a valid email, replies go to this address. Leave it empty to send no Reply-To header.</p>';
         echo '</td></tr>';
         echo '<tr><th scope="row"><label for="bf_send_time">Send time</label></th><td>';
         echo '<input type="text" name="bf_send_time" id="bf_send_time" value="' . esc_attr($settings['send_time']) . '" pattern="[0-2][0-9]:[0-5][0-9]" />';
@@ -1324,7 +1338,7 @@ class DailyBfSalesEmail {
     }
 
     /**
-     * @return array{enabled:bool,recipients:string,send_time:string,coupon_code:string,low_booking_threshold:int,campaign_start:string}
+     * @return array{enabled:bool,recipients:string,send_time:string,coupon_code:string,low_booking_threshold:int,campaign_start:string,from_name:string,from_email:string,reply_to:string}
      */
     public function settings() {
         $stored = get_option(self::OPTION_SETTINGS, []);
@@ -1349,6 +1363,9 @@ class DailyBfSalesEmail {
             'low_booking_threshold' => array_key_exists('low_booking_threshold', $stored)
                 ? self::normalizeLowBookingThreshold($stored['low_booking_threshold'])
                 : self::DEFAULT_LOW_BOOKING_THRESHOLD,
+            'from_name' => $this->cleanSenderName(isset($stored['from_name']) ? $stored['from_name'] : ''),
+            'from_email' => trim($this->stripHeaderControls(isset($stored['from_email']) ? (string) $stored['from_email'] : '')),
+            'reply_to' => trim($this->stripHeaderControls(isset($stored['reply_to']) ? (string) $stored['reply_to'] : '')),
         ];
     }
 
@@ -1433,6 +1450,7 @@ class DailyBfSalesEmail {
         $threshold = self::normalizeLowBookingThreshold(
             array_key_exists('bf_low_booking_threshold', $post) ? $post['bf_low_booking_threshold'] : null
         );
+        $sender = $this->senderFieldsFromPost($post, $this->settings());
         $settings = [
             'enabled' => !empty($post['bf_enabled']),
             'low_booking_threshold' => $threshold,
@@ -1440,39 +1458,118 @@ class DailyBfSalesEmail {
             'send_time' => $sendTime,
             'coupon_code' => $code,
             'campaign_start' => $campaignStart,
+            'from_name' => $sender['from_name'],
+            'from_email' => $sender['from_email'],
+            'reply_to' => $sender['reply_to'],
         ];
         update_option(self::OPTION_SETTINGS, $settings, false);
         self::syncScheduleToValue($settings);
+        $senderNotice = $sender['notice'];
         if (!$parsedRecipients['ok'] && $parsedRecipients['reason'] === 'empty_recipients') {
-            return [
-                'ok' => false,
-                'code' => 'empty_recipients',
-                'message' => 'The Send to list is empty, so nothing will be sent.',
-            ];
+            return $this->finishSettingsSave(false, 'empty_recipients', 'The Send to list is empty, so nothing will be sent.', $senderNotice);
         }
         if (!$parsedRecipients['ok']) {
             $message = 'No valid email address remains, so nothing will be sent.';
             if ($droppedNotice !== []) {
                 $message .= ' Removed: ' . implode(', ', $droppedNotice);
             }
-            return [
-                'ok' => false,
-                'code' => 'invalid_recipient',
-                'message' => $message,
-            ];
+            return $this->finishSettingsSave(false, 'invalid_recipient', $message, $senderNotice);
         }
         if ($droppedNotice !== []) {
-            return [
-                'ok' => true,
-                'code' => 'saved',
-                'message' => 'Settings saved. Removed invalid addresses: ' . implode(', ', $droppedNotice),
-            ];
+            return $this->finishSettingsSave(
+                true,
+                'saved',
+                'Settings saved. Removed invalid addresses: ' . implode(', ', $droppedNotice),
+                $senderNotice
+            );
+        }
+        return $this->finishSettingsSave(true, 'saved', 'Settings saved.', $senderNotice);
+    }
+
+    /**
+     * An invalid address keeps the previous valid value, or blank when the
+     * previous value is also invalid. The notice names the field and does
+     * not include the rejected text.
+     *
+     * @param array<string,mixed> $post
+     * @param array<string,mixed> $previous
+     * @return array{from_name:string,from_email:string,reply_to:string,notice:string}
+     */
+    private function senderFieldsFromPost(array $post, array $previous) {
+        $notices = [];
+        return [
+            'from_name' => $this->cleanSenderName(isset($post['bf_from_name']) ? $post['bf_from_name'] : ''),
+            'from_email' => $this->storedEmailField(
+                isset($post['bf_from_email']) ? $post['bf_from_email'] : '',
+                isset($previous['from_email']) ? $previous['from_email'] : '',
+                'From email',
+                $notices
+            ),
+            'reply_to' => $this->storedEmailField(
+                isset($post['bf_reply_to']) ? $post['bf_reply_to'] : '',
+                isset($previous['reply_to']) ? $previous['reply_to'] : '',
+                'Reply-To email',
+                $notices
+            ),
+            'notice' => implode(' ', $notices),
+        ];
+    }
+
+    /**
+     * @param mixed             $raw
+     * @param mixed             $previous
+     * @param string            $label
+     * @param array<int,string> $notices
+     * @return string
+     */
+    private function storedEmailField($raw, $previous, $label, array &$notices) {
+        $clean = trim($this->stripHeaderControls((string) $raw));
+        if ($clean === '') {
+            return '';
+        }
+        $valid = $this->validHeaderEmail($clean);
+        if ($valid !== '') {
+            return $valid;
+        }
+        $notices[] = $label . ' is not a valid email address, so it was not saved. The previous value was kept.';
+        return $this->validHeaderEmail($previous);
+    }
+
+    /**
+     * @param bool   $ok
+     * @param string $code
+     * @param string $message
+     * @param string $senderNotice
+     * @return array{ok:bool,code:string,message:string}
+     */
+    private function finishSettingsSave($ok, $code, $message, $senderNotice) {
+        $senderNotice = trim((string) $senderNotice);
+        if ($senderNotice !== '' && $ok) {
+            $ok = false;
+            $code = 'invalid_sender';
         }
         return [
-            'ok' => true,
-            'code' => 'saved',
-            'message' => 'Settings saved.',
+            'ok' => $ok,
+            'code' => $code,
+            'message' => $this->withSenderNotice($message, $senderNotice),
         ];
+    }
+
+    /**
+     * @param string $message
+     * @param string $notice
+     * @return string
+     */
+    private function withSenderNotice($message, $notice) {
+        $notice = trim((string) $notice);
+        if ($notice === '') {
+            return (string) $message;
+        }
+        $message = trim((string) $message);
+        if ($message === '') {
+            return $notice;
+        }
+        return $message . ' ' . $notice;
     }
 
     /**
@@ -3847,7 +3944,7 @@ class DailyBfSalesEmail {
         add_action('wp_mail_failed', $listener, 10, 1);
         try {
             $to = count($emails) === 1 ? $emails[0] : array_values($emails);
-            $sent = wp_mail($to, $subject, $html, ['Content-Type: text/html; charset=UTF-8'], $attachments);
+            $sent = wp_mail($to, $subject, $html, $this->mailHeaders(), $attachments);
         } finally {
             remove_action('wp_mail_failed', $listener, 10);
             $this->deleteAttachment($path, $dir);
@@ -4167,6 +4264,77 @@ class DailyBfSalesEmail {
      */
     private function stripHeaderBreaks($value) {
         return str_replace(["\r", "\n", "\0"], '', (string) $value);
+    }
+
+    /**
+     * @param string $value
+     * @return string
+     */
+    private function stripHeaderControls($value) {
+        $stripped = preg_replace('/[\x00-\x1F\x7F]/', '', (string) $value);
+        return is_string($stripped) ? $stripped : '';
+    }
+
+    /**
+     * @param mixed $value
+     * @return string
+     */
+    private function cleanSenderName($value) {
+        $name = $this->stripHeaderControls((string) $value);
+        if (function_exists('sanitize_text_field')) {
+            $name = sanitize_text_field($name);
+        }
+        return trim($this->stripHeaderControls((string) $name));
+    }
+
+    /**
+     * @param mixed $email
+     * @return string
+     */
+    private function validHeaderEmail($email) {
+        $email = trim($this->stripHeaderControls((string) $email));
+        if ($email === '' || !function_exists('is_email')) {
+            return '';
+        }
+        $checked = is_email($email);
+        if (!is_string($checked) || $checked === '') {
+            return '';
+        }
+        return trim($this->stripHeaderControls($checked));
+    }
+
+    /**
+     * Content-Type stays first. From and Reply-To are added only for valid
+     * addresses. A blank From name uses the filtered site name, then the
+     * plain address when that name is empty.
+     *
+     * @return array<int,string>
+     */
+    private function mailHeaders() {
+        $settings = $this->settings();
+        $headers = ['Content-Type: text/html; charset=UTF-8'];
+        $from = $this->validHeaderEmail(isset($settings['from_email']) ? $settings['from_email'] : '');
+        if ($from !== '') {
+            $name = $this->cleanSenderName(isset($settings['from_name']) ? $settings['from_name'] : '');
+            if ($name === '') {
+                $site = function_exists('get_bloginfo') ? (string) get_bloginfo('name') : '';
+                if (function_exists('apply_filters')) {
+                    $filtered = apply_filters('wp_mail_from_name', $site);
+                    $site = is_string($filtered) ? $filtered : '';
+                }
+                $name = $this->cleanSenderName($site);
+            }
+            if ($name === '') {
+                $headers[] = 'From: ' . $from;
+            } else {
+                $headers[] = 'From: ' . $name . ' <' . $from . '>';
+            }
+        }
+        $reply = $this->validHeaderEmail(isset($settings['reply_to']) ? $settings['reply_to'] : '');
+        if ($reply !== '') {
+            $headers[] = 'Reply-To: <' . $reply . '>';
+        }
+        return $headers;
     }
 
     /**
