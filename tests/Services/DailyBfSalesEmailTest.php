@@ -3789,6 +3789,12 @@ class DailyBfSalesEmailTest extends TestCase {
         $this->assertNumericCell($summary, 'C' . $tournaments, 96, '#,##0.00');
         $orderTotal = $this->rowIndex($column, 'Total orders (Courses/Camps)');
         $this->assertNumericCell($summary, 'B' . $orderTotal, 8, '0');
+        $this->assertNumericCell($summary, 'C' . $orderTotal, 1488, '#,##0.00');
+        $this->assertNumericCell($summary, 'D' . $orderTotal, 1, '0');
+        $this->assertSame('s', $summary->getCell('E' . $orderTotal)->getDataType());
+        $this->assertSame('-', (string) $summary->getCell('E' . $orderTotal)->getValue());
+        $this->assertSame('s', $summary->getCell('F' . $orderTotal)->getDataType());
+        $this->assertSame('-', (string) $summary->getCell('F' . $orderTotal)->getValue());
         $returning = $this->rowIndex($column, 'RETURNING CUSTOMERS');
         $newCustomers = $this->rowIndex($column, 'NEW CUSTOMERS');
         $this->assertNumericCell($summary, 'B' . $returning, 5, '0');
@@ -3861,31 +3867,115 @@ class DailyBfSalesEmailTest extends TestCase {
         unlink($reportPath);
     }
 
-    public function test_live_order_row_omits_names_and_keeps_incl_vat_amounts_distinct(): void {
+    public function test_live_order_row_uses_billing_names_and_keeps_incl_vat_amounts_distinct(): void {
         $service = $this->wooService();
+        global $intersoccer_test_wc_get_order_callback;
+        $GLOBALS['intersoccer_test_wc_get_order_call_count'] = 0;
+        $intersoccer_test_wc_get_order_callback = static function ($orderId) {
+            $orderId = (int) $orderId;
+            return new class($orderId) {
+                /** @var int */
+                private $id;
+
+                public function __construct($id) {
+                    $this->id = (int) $id;
+                }
+
+                public function get_order_number() {
+                    return (string) $this->id;
+                }
+
+                public function get_status() {
+                    return 'completed';
+                }
+
+                public function get_currency() {
+                    return 'CHF';
+                }
+
+                public function is_returning_customer() {
+                    return $this->id === 42;
+                }
+
+                public function get_billing_first_name() {
+                    if ($this->id === 42) {
+                        return '  Sample ';
+                    }
+                    return '   ';
+                }
+
+                public function get_billing_last_name() {
+                    if ($this->id === 42) {
+                        return ' Parent A  ';
+                    }
+                    return '  ';
+                }
+
+                public function get_meta($key, $single = true) {
+                    return '';
+                }
+            };
+        };
         $build = new \ReflectionMethod(DailyBfSalesEmail::class, 'workbookFromReport');
         $build->setAccessible(true);
         $book = $build->invoke($service, [
-            'data' => [[
-                'order_id' => 42,
-                'line_quantity' => 2,
-                'product_type' => 'Camp',
-                'order_item_name' => 'Sample Camp',
-                'net_ex_vat' => 8,
-                'final_price_raw' => 10,
-                'line_tax_amount' => 0.77,
-                'reimbursement_raw' => 2,
-                'discount_codes' => 'sample-code',
-                'date_paid_gmt' => (string) $this->unix('2026-11-10 10:00:00'),
-                'order_date_local' => '2026-11-10 11:00:00',
-                'booker_email' => 'hidden@example.test',
-                'attendee_name' => 'Hidden Child',
-                'line_meta' => [
-                    'Season' => 'Winter',
-                    '_intersoccer_canonical_canton' => 'geneva',
+            'data' => [
+                [
+                    'order_id' => 42,
+                    'line_quantity' => 2,
+                    'product_type' => 'Camp',
+                    'order_item_name' => 'Sample Camp',
+                    'net_ex_vat' => 8,
+                    'final_price_raw' => 10,
+                    'line_tax_amount' => 0.77,
+                    'reimbursement_raw' => 2,
+                    'discount_codes' => 'sample-code',
+                    'date_paid_gmt' => (string) $this->unix('2026-11-10 10:00:00'),
+                    'order_date_local' => '2026-11-10 11:00:00',
+                    'booker_email' => 'hidden@example.test',
+                    'attendee_name' => 'Hidden Child',
+                    'line_meta' => [
+                        'Season' => 'Winter',
+                        '_intersoccer_canonical_canton' => 'geneva',
+                    ],
                 ],
-            ]],
+                [
+                    'order_id' => 42,
+                    'line_quantity' => 3,
+                    'product_type' => 'Camp',
+                    'order_item_name' => 'Sample Camp Extra',
+                    'net_ex_vat' => 3,
+                    'final_price_raw' => 3,
+                    'line_tax_amount' => 0,
+                    'reimbursement_raw' => 0,
+                    'discount_codes' => 'sample-code',
+                    'date_paid_gmt' => (string) $this->unix('2026-11-10 10:00:00'),
+                    'order_date_local' => '2026-11-10 11:00:00',
+                    'line_meta' => [
+                        'Season' => 'Winter',
+                        '_intersoccer_canonical_canton' => 'geneva',
+                    ],
+                ],
+                [
+                    'order_id' => 43,
+                    'line_quantity' => 1,
+                    'product_type' => 'Course',
+                    'order_item_name' => 'Sample Course',
+                    'net_ex_vat' => 4,
+                    'final_price_raw' => 4,
+                    'line_tax_amount' => 0,
+                    'reimbursement_raw' => 0,
+                    'discount_codes' => '',
+                    'date_paid_gmt' => (string) $this->unix('2026-11-10 12:00:00'),
+                    'order_date_local' => '2026-11-10 13:00:00',
+                    'line_meta' => [
+                        'Season' => 'Spring',
+                        '_intersoccer_canonical_canton' => 'zurich',
+                    ],
+                ],
+            ],
         ], '2026-11-10', '2030-01-01', 'sample-code');
+        $this->assertSame(2, (int) $GLOBALS['intersoccer_test_wc_get_order_call_count']);
         $path = sys_get_temp_dir() . '/rr-bf-live-' . uniqid('', true) . '.xlsx';
         $write = new \ReflectionMethod(DailyBfSalesEmail::class, 'writeWorkbook');
         $write->setAccessible(true);
@@ -3899,20 +3989,30 @@ class DailyBfSalesEmailTest extends TestCase {
         $orders = $spreadsheet->getSheetByName('Orders');
         $this->assertSame('Black Friday Sales 2030', (string) $summary->getCell('A1')->getValue());
         $this->assertSame('42', (string) $orders->getCell('B2')->getValue());
-        $this->assertSame('', (string) $orders->getCell('E2')->getValue());
-        $this->assertSame('2× Sample Camp', (string) $orders->getCell('G2')->getValue());
-        $this->assertNumericCell($orders, 'H2', 2, '0');
-        $this->assertNumericCell($orders, 'C2', 10.77, '#,##0.00');
-        $this->assertNumericCell($orders, 'J2', 8.62, '#,##0.00');
+        $this->assertSame('Sample Parent A', (string) $orders->getCell('E2')->getValue());
+        $this->assertSame('43', (string) $orders->getCell('B3')->getValue());
+        $this->assertSame('', (string) $orders->getCell('E3')->getValue());
+        $this->assertSame('2× Sample Camp, 3× Sample Camp Extra', (string) $orders->getCell('G2')->getValue());
+        $this->assertNumericCell($orders, 'H2', 5, '0');
+        $this->assertNumericCell($orders, 'C2', 13.77, '#,##0.00');
+        $this->assertNumericCell($orders, 'J2', 11.62, '#,##0.00');
         $this->assertSame('n', $orders->getCell('A2')->getDataType());
         $column = $this->columnA($summary);
         $winter = $this->rowIndex($column, 'Winter Camps');
-        $this->assertNumericCell($summary, 'B' . $winter, 2, '0');
-        $this->assertNumericCell($summary, 'D' . $winter, 2, '0');
+        $this->assertNumericCell($summary, 'B' . $winter, 5, '0');
+        $this->assertNumericCell($summary, 'D' . $winter, 5, '0');
+        $orderTotal = $this->rowIndex($column, 'Total orders (Courses/Camps)');
+        $this->assertNumericCell($summary, 'B' . $orderTotal, 2, '0');
+        $this->assertNumericCell($summary, 'C' . $orderTotal, 15.62, '#,##0.00');
+        $this->assertNumericCell($summary, 'D' . $orderTotal, 1, '0');
+        $this->assertSame('-', (string) $summary->getCell('E' . $orderTotal)->getValue());
+        $this->assertSame('-', (string) $summary->getCell('F' . $orderTotal)->getValue());
         $blob = $this->sheetTextBlob($summary) . $this->sheetTextBlob($orders);
         $this->assertStringNotContainsString('hidden@example.test', $blob);
         $this->assertStringNotContainsString('Hidden Child', $blob);
         $this->assertStringNotContainsString('@', $blob);
+        $logged = (string) json_encode($this->logger->entries);
+        $this->assertStringNotContainsString('Sample Parent', $logged);
         $spreadsheet->disconnectWorksheets();
         unlink($path);
     }

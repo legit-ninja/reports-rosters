@@ -2673,7 +2673,7 @@ class DailyBfSalesEmail {
     /**
      * @param int    $orderId
      * @param string $paidGmt
-     * @return array{order_number:string,customer_type:string,attribution:string,language:string,status:string,currency:string}
+     * @return array{order_number:string,customer_type:string,attribution:string,language:string,status:string,currency:string,customer:string}
      */
     private function orderFacts($orderId, $paidGmt) {
         $order = null;
@@ -2698,7 +2698,30 @@ class DailyBfSalesEmail {
             'language' => $this->orderLanguageLabel($order, (int) $orderId),
             'status' => $this->orderStatusLabel($order),
             'currency' => $this->orderCurrency($order),
+            'customer' => $this->orderCustomerName($order),
         ];
+    }
+
+    /**
+     * Billing first and last name from the order already loaded above.
+     * Blank when neither name is set. Not written to the log.
+     *
+     * @param object|null $order
+     * @return string
+     */
+    private function orderCustomerName($order) {
+        if (!is_object($order)) {
+            return '';
+        }
+        $first = '';
+        $last = '';
+        if (method_exists($order, 'get_billing_first_name')) {
+            $first = trim((string) $order->get_billing_first_name());
+        }
+        if (method_exists($order, 'get_billing_last_name')) {
+            $last = trim((string) $order->get_billing_last_name());
+        }
+        return trim($first . ' ' . $last);
     }
 
     /**
@@ -4347,8 +4370,9 @@ class DailyBfSalesEmail {
 
     /**
      * Campaign-window lines and orders for the workbook. The HTML renderer
-     * does not read this structure. Customer name is left blank: this email
-     * does not load one. Booking report emails and attendee names are not copied.
+     * does not read this structure. The customer cell uses the billing name
+     * from the order already loaded for status and currency. Booking report
+     * emails and attendee names are not copied.
      *
      * @param array<string,mixed> $report
      * @param string              $reportDate
@@ -4431,7 +4455,7 @@ class DailyBfSalesEmail {
                 'revenue' => round((float) $order['revenue'], 2),
                 'net_sales' => round((float) $order['net_sales'], 2),
                 'status' => (string) $facts['status'],
-                'customer' => '',
+                'customer' => (string) $facts['customer'],
                 'customer_type' => (string) $facts['customer_type'],
                 'products' => $this->joinProductLabels($order['items']),
                 'items_sold' => (int) $order['items_sold'],
@@ -4867,21 +4891,13 @@ class DailyBfSalesEmail {
                 $model['grand']['sales']
             );
         }
-        $orderBucket = [
-            'quantity' => (int) $model['course_camp_orders'],
-            'sales' => (float) $model['course_camp']['sales'],
-            'coupon_qty' => (int) $model['course_camp']['coupon_qty'],
-        ];
-        $row = $this->writeSummaryNumbers(
-            $sheet,
-            $row,
-            'Total orders (Courses/Camps)',
-            $orderBucket,
-            $model['course_camp']['quantity'],
-            $model['grand']['quantity'],
-            $model['course_camp']['sales'],
-            $model['grand']['sales']
-        );
+        $this->sheetText($sheet, 'A' . $row, 'Total orders (Courses/Camps)');
+        $this->sheetNumber($sheet, 'B' . $row, (int) $model['course_camp_orders'], '0');
+        $this->sheetNumber($sheet, 'C' . $row, round((float) $model['course_camp']['sales'], 2), '#,##0.00');
+        $this->sheetNumber($sheet, 'D' . $row, (int) $model['course_camp_coupon_orders'], '0');
+        $this->sheetText($sheet, 'E' . $row, '-');
+        $this->sheetText($sheet, 'F' . $row, '-');
+        $row++;
         $whole = $model['customer_whole'];
         foreach (['NEW CUSTOMERS' => 'New', 'RETURNING CUSTOMERS' => 'Returning'] as $label => $key) {
             $group = $model['customers'][$key];
@@ -5070,6 +5086,7 @@ class DailyBfSalesEmail {
         $birthday = ['quantity' => 0, 'coupon_qty' => 0];
         $courseCamp = ['quantity' => 0, 'sales' => 0.0, 'coupon_qty' => 0];
         $courseCampOrders = [];
+        $courseCampCouponOrders = [];
         foreach ($lines as $line) {
             if (!is_array($line)) {
                 continue;
@@ -5113,6 +5130,9 @@ class DailyBfSalesEmail {
                 $orderNumber = trim((string) ($line['order_number'] ?? ''));
                 if ($orderNumber !== '') {
                     $courseCampOrders[$orderNumber] = true;
+                    if ($couponQty > 0) {
+                        $courseCampCouponOrders[$orderNumber] = true;
+                    }
                 }
             }
         }
@@ -5177,6 +5197,7 @@ class DailyBfSalesEmail {
             'birthday' => $birthday,
             'course_camp' => $courseCamp,
             'course_camp_orders' => count($courseCampOrders),
+            'course_camp_coupon_orders' => count($courseCampCouponOrders),
             'customers' => $customers,
             'customer_whole' => [
                 'orders' => (int) $customers['New']['orders'] + (int) $customers['Returning']['orders'],
