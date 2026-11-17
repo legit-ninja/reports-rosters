@@ -3784,6 +3784,10 @@ class DailyBfSalesEmailTest extends TestCase {
         $this->assertNumericCell($summary, 'B' . $birthday, 1, '0');
         $this->assertSame('s', $summary->getCell('C' . $birthday)->getDataType());
         $this->assertSame('-', (string) $summary->getCell('C' . $birthday)->getValue());
+        $this->assertSame('s', $summary->getCell('E' . $birthday)->getDataType());
+        $this->assertSame('-', (string) $summary->getCell('E' . $birthday)->getValue());
+        $this->assertSame('s', $summary->getCell('F' . $birthday)->getDataType());
+        $this->assertSame('-', (string) $summary->getCell('F' . $birthday)->getValue());
         $tournaments = $this->rowIndex($column, 'TOTAL Summer Tournaments');
         $this->assertNumericCell($summary, 'B' . $tournaments, 2, '0');
         $this->assertNumericCell($summary, 'C' . $tournaments, 96, '#,##0.00');
@@ -3849,6 +3853,10 @@ class DailyBfSalesEmailTest extends TestCase {
         $this->assertNumericCell($summary, 'F' . $genevaTotal, 0, '0.0%');
         $birthday = $this->rowIndex($column, 'Birthday Parties');
         $this->assertSame('-', (string) $summary->getCell('C' . $birthday)->getValue());
+        $this->assertSame('s', $summary->getCell('E' . $birthday)->getDataType());
+        $this->assertSame('-', (string) $summary->getCell('E' . $birthday)->getValue());
+        $this->assertSame('s', $summary->getCell('F' . $birthday)->getDataType());
+        $this->assertSame('-', (string) $summary->getCell('F' . $birthday)->getValue());
         $this->assertNumericCell($summary, 'B' . $this->rowIndex($column, 'NEW CUSTOMERS'), 0, '0');
         $this->assertNumericCell($summary, 'E' . $this->rowIndex($column, 'RETURNING CUSTOMERS'), 0, '0.0%');
         $blob = $this->sheetTextBlob($summary) . $this->sheetTextBlob($spreadsheet->getSheet(1));
@@ -4104,7 +4112,7 @@ class DailyBfSalesEmailTest extends TestCase {
 
         $expected = [
             'Content-Type: text/html; charset=UTF-8',
-            'From: Sample Office <desk@example.com>',
+            'From: "Sample Office" <desk@example.com>',
             'Reply-To: <reply@example.test>',
         ];
         $this->assertSame('sent', $service->runScheduled($this->zurich('2026-11-29 08:00:00')));
@@ -4142,7 +4150,7 @@ class DailyBfSalesEmailTest extends TestCase {
             $this->assertSame(
                 [
                     'Content-Type: text/html; charset=UTF-8',
-                    'From: Filtered Office <desk@example.com>',
+                    'From: "Filtered Office" <desk@example.com>',
                 ],
                 $GLOBALS['intersoccer_rr_bf_wp_mail_log'][0]['headers']
             );
@@ -4164,6 +4172,32 @@ class DailyBfSalesEmailTest extends TestCase {
         } finally {
             unset($GLOBALS['intersoccer_test_apply_filters_callback']);
         }
+    }
+
+    public function test_from_display_name_quotes_and_escapes_quotes_and_backslashes(): void {
+        $service = $this->enabledService($this->novemberCoupon(), 'ops@example.com');
+        $quoted = $service->handleAdminPost($this->senderPost('Sample "Desk" Team', 'sender@example.test', ''));
+        $this->assertTrue($quoted['ok']);
+        $sent = $service->sendTest('ops@example.com', $this->zurich('2026-11-29 08:00:00'));
+        $this->assertTrue($sent['ok']);
+        $this->assertSame(
+            [
+                'Content-Type: text/html; charset=UTF-8',
+                'From: "Sample \\"Desk\\" Team" <sender@example.test>',
+            ],
+            $GLOBALS['intersoccer_rr_bf_wp_mail_log'][0]['headers']
+        );
+        $slashed = $service->handleAdminPost($this->senderPost('Sample \\ Desk', 'sender@example.test', ''));
+        $this->assertTrue($slashed['ok']);
+        $again = $service->sendTest('ops@example.com', $this->zurich('2026-11-29 08:00:00'));
+        $this->assertTrue($again['ok']);
+        $this->assertSame(
+            [
+                'Content-Type: text/html; charset=UTF-8',
+                'From: "Sample \\\\ Desk" <sender@example.test>',
+            ],
+            $GLOBALS['intersoccer_rr_bf_wp_mail_log'][1]['headers']
+        );
     }
 
     public function test_invalid_sender_emails_are_not_saved_and_raise_a_notice(): void {
@@ -4241,7 +4275,7 @@ class DailyBfSalesEmailTest extends TestCase {
         $this->assertSame(
             [
                 'Content-Type: text/html; charset=UTF-8',
-                'From: Sample OfficeBcc: injected@example.com <desk@example.com>',
+                'From: "Sample OfficeBcc: injected@example.com" <desk@example.com>',
             ],
             $headers
         );

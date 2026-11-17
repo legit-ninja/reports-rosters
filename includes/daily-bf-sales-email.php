@@ -4311,6 +4311,18 @@ class DailyBfSalesEmail {
     }
 
     /**
+     * Quote a display name for a From header. Backslashes are escaped first.
+     *
+     * @param string $name
+     * @return string
+     */
+    private function quoteSenderName($name) {
+        $name = str_replace('\\', '\\\\', (string) $name);
+        $name = str_replace('"', '\\"', $name);
+        return '"' . $name . '"';
+    }
+
+    /**
      * @param mixed $email
      * @return string
      */
@@ -4350,7 +4362,7 @@ class DailyBfSalesEmail {
             if ($name === '') {
                 $headers[] = 'From: ' . $from;
             } else {
-                $headers[] = 'From: ' . $name . ' <' . $from . '>';
+                $headers[] = 'From: ' . $this->quoteSenderName($name) . ' <' . $from . '>';
             }
         }
         $reply = $this->validHeaderEmail(isset($settings['reply_to']) ? $settings['reply_to'] : '');
@@ -4876,8 +4888,8 @@ class DailyBfSalesEmail {
         $this->sheetNumber($sheet, 'B' . $row, (int) $model['birthday']['quantity'], '0');
         $this->sheetText($sheet, 'C' . $row, '-');
         $this->sheetNumber($sheet, 'D' . $row, (int) $model['birthday']['coupon_qty'], '0');
-        $this->sheetNumber($sheet, 'E' . $row, 0, '0.0%');
-        $this->sheetNumber($sheet, 'F' . $row, 0, '0.0%');
+        $this->sheetText($sheet, 'E' . $row, '-');
+        $this->sheetText($sheet, 'F' . $row, '-');
         $row++;
         foreach ($model['season_totals'] as $label => $bucket) {
             $row = $this->writeSummaryNumbers(
