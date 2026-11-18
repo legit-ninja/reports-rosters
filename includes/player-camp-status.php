@@ -193,9 +193,11 @@ function intersoccer_player_camp_status_filter_roster_rows(array $rows, $year, $
 
 		$season = (string) ($row['season'] ?? '');
 		if ($year !== '') {
-			$season_year = function_exists('intersoccer_extract_year_from_season')
-				? intersoccer_extract_year_from_season($season)
-				: null;
+			$season_year = function_exists('intersoccer_resolve_program_year')
+				? intersoccer_resolve_program_year($row, 0, 0, $season)
+				: (function_exists('intersoccer_extract_year_from_season')
+					? intersoccer_extract_year_from_season($season)
+					: null);
 			if ($season_year === null && $season !== '' && strpos($season, $year) !== false) {
 				$season_year = (int) $year;
 			}

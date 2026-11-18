@@ -2336,7 +2336,12 @@ if (!function_exists('intersoccer_roster_resolve_listing_year')) {
      * @return int|null
      */
     function intersoccer_roster_resolve_listing_year(array $row) {
-        if (function_exists('intersoccer_extract_year_from_season')) {
+        if (function_exists('intersoccer_resolve_program_year')) {
+            $year = intersoccer_resolve_program_year($row, 0, 0, (string) ($row['season'] ?? ''));
+            if ($year !== null) {
+                return (int) $year;
+            }
+        } elseif (function_exists('intersoccer_extract_year_from_season')) {
             $year = intersoccer_extract_year_from_season((string) ($row['season'] ?? ''));
             if ($year !== null) {
                 return (int) $year;
@@ -2387,11 +2392,13 @@ if (!function_exists('intersoccer_roster_listing_season_filter_matches')) {
             return intersoccer_roster_course_season_filter_matches($group, $filter_season);
         }
 
-        if (!function_exists('intersoccer_extract_year_from_season')) {
+        if (!function_exists('intersoccer_extract_year_from_season') && !function_exists('intersoccer_resolve_program_year')) {
             return strcasecmp($season, $filter_season) === 0;
         }
 
-        $filter_year = intersoccer_extract_year_from_season($filter_season);
+        $filter_year = function_exists('intersoccer_resolve_program_year')
+            ? intersoccer_resolve_program_year([], 0, 0, $filter_season)
+            : intersoccer_extract_year_from_season($filter_season);
         if ($filter_year === null) {
             return strcasecmp($season, $filter_season) === 0;
         }
@@ -4018,10 +4025,23 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
             
             // If the date doesn't have a year, try to extract it from the season
             if (!preg_match('/\d{4}/', $tournament_date)) {
-                // No year in date string, try to extract from season
-                // Handle French season names: "Automne 2025", "Printemps 2025", etc.
-                if (preg_match('/(\d{4})/', $season, $matches)) {
+                // No year in the date string. Program Year, then Season text.
+                $year = null;
+                if (function_exists('intersoccer_resolve_program_year')) {
+                    $resolved_year = intersoccer_resolve_program_year(
+                        $item_meta,
+                        (int) $variation_id,
+                        (int) $product_id,
+                        (string) $season
+                    );
+                    if ($resolved_year !== null) {
+                        $year = (string) $resolved_year;
+                    }
+                }
+                if ($year === null && preg_match('/(\d{4})/', $season, $matches)) {
                     $year = $matches[1];
+                }
+                if ($year !== null) {
                     // Try different formats: with day name, without day name
                     if (preg_match('/^[A-Z][a-z]+\s+\d+\s+[A-Za-zàâäéèêëïîôùûüÿç]+$/', $tournament_date)) {
                         // Format: "Dimanche 14 décembre" - add year at the end
@@ -5721,6 +5741,18 @@ if (!function_exists('intersoccer_event_signature_from_event_data')) {
         if (!function_exists('intersoccer_normalize_event_data_for_signature')
             || !function_exists('intersoccer_generate_event_signature')) {
             return '';
+        }
+        $original_season = (string) ($event_data['season'] ?? '');
+        $original_has_year = false;
+        if (function_exists('intersoccer_extract_year_from_season')) {
+            $original_has_year = intersoccer_extract_year_from_season($original_season) !== null;
+        } elseif ($original_season !== '' && preg_match('/(\d{4})/', $original_season)) {
+            $original_has_year = true;
+        }
+        if ($original_has_year) {
+            // Kept off the hashed component list. Stops a later term-name
+            // normalization from looking yearless and appending program_year.
+            $event_data['signature_omit_program_year'] = 1;
         }
         $event_data = intersoccer_roster_apply_signature_date_fields($event_data);
         $normalized = intersoccer_normalize_event_data_for_signature($event_data);
@@ -7541,14 +7573,426 @@ if (!function_exists('intersoccer_reports_sql_in_placeholders')) {
     }
 }
 
+if (!function_exists('intersoccer_program_year_order_meta_keys')) {
+    /**
+     * Order-item meta keys that may hold the program year.
+     *
+     * Order follows the Product Variations registry: human label "Year", taxonomy
+     * keys, the attribute label "Program Year", then localized labels (registry
+     * legacy list when PV is loaded, plus the FR/DE labels RR already stores).
+     *
+     * @return string[]
+     */
+    function intersoccer_program_year_order_meta_keys() {
+        $keys = [
+            'Year',
+            'program_year',
+            'pa_program-year',
+            'attribute_pa_program-year',
+            'Program Year',
+            'Année',
+            'Jahr',
+        ];
+        if (function_exists('intersoccer_reports_attr_order_meta_label')) {
+            $label = trim((string) intersoccer_reports_attr_order_meta_label('program-year'));
+            if ($label !== '') {
+                $keys[] = $label;
+            }
+        }
+        if (function_exists('intersoccer_reports_attr_legacy_order_meta_labels')) {
+            foreach ((array) intersoccer_reports_attr_legacy_order_meta_labels('program-year') as $label) {
+                $label = trim((string) $label);
+                if ($label !== '') {
+                    $keys[] = $label;
+                }
+            }
+        }
+        if (function_exists('intersoccer_attr_definition')) {
+            $def = intersoccer_attr_definition('program-year');
+            if (is_array($def)) {
+                foreach (['order_meta_label', 'wc_label'] as $field) {
+                    if (!empty($def[$field])) {
+                        $keys[] = trim((string) $def[$field]);
+                    }
+                }
+                if (!empty($def['legacy_order_meta_labels']) && is_array($def['legacy_order_meta_labels'])) {
+                    foreach ($def['legacy_order_meta_labels'] as $label) {
+                        $label = trim((string) $label);
+                        if ($label !== '') {
+                            $keys[] = $label;
+                        }
+                    }
+                }
+            }
+        }
+
+        $unique = [];
+        foreach ($keys as $key) {
+            if ($key !== '' && !in_array($key, $unique, true)) {
+                $unique[] = $key;
+            }
+        }
+        return $unique;
+    }
+}
+
+if (!function_exists('intersoccer_program_year_from_attribute_value')) {
+    /**
+     * Bare 20xx (or 19xx) year from a program-year attribute, slug, or name.
+     *
+     * @param mixed $raw
+     * @return int|null
+     */
+    function intersoccer_program_year_from_attribute_value($raw) {
+        if (is_array($raw)) {
+            $raw = reset($raw);
+            if (is_array($raw)) {
+                $raw = reset($raw);
+            }
+        }
+        if ($raw === null || $raw === false) {
+            return null;
+        }
+        $raw = trim((string) $raw);
+        if ($raw === '' || strcasecmp($raw, 'N/A') === 0) {
+            return null;
+        }
+        if (preg_match('/^(19|20)\d{2}$/', $raw)) {
+            return (int) $raw;
+        }
+        if (preg_match('/\b(20\d{2})\b/', $raw, $matches)) {
+            return (int) $matches[1];
+        }
+        return null;
+    }
+}
+
+if (!function_exists('intersoccer_program_year_read_meta_value')) {
+    /**
+     * @param mixed  $source Array meta, order item id, or object with get_meta().
+     * @param string $key
+     * @return mixed|null
+     */
+    function intersoccer_program_year_read_meta_value($source, $key) {
+        if (is_array($source)) {
+            if (array_key_exists($key, $source)) {
+                return $source[$key];
+            }
+            foreach ($source as $meta_key => $meta_value) {
+                if (is_string($meta_key) && strcasecmp($meta_key, $key) === 0) {
+                    return $meta_value;
+                }
+            }
+            return null;
+        }
+        if (is_object($source) && method_exists($source, 'get_meta')) {
+            $value = $source->get_meta($key, true);
+            if ($value === '' || $value === null || $value === false) {
+                return null;
+            }
+            return $value;
+        }
+        return null;
+    }
+}
+
+if (!function_exists('intersoccer_program_year_from_order_item_source')) {
+    /**
+     * @param mixed $source
+     * @return int|null
+     */
+    function intersoccer_program_year_from_order_item_source($source) {
+        if (is_numeric($source) && (int) $source > 0 && function_exists('wc_get_order_item_meta')) {
+            $all = wc_get_order_item_meta((int) $source, '', false);
+            $source = is_array($all) ? $all : [];
+        }
+        if (!is_array($source) && !(is_object($source) && method_exists($source, 'get_meta'))) {
+            return null;
+        }
+        foreach (intersoccer_program_year_order_meta_keys() as $key) {
+            $year = intersoccer_program_year_from_attribute_value(
+                intersoccer_program_year_read_meta_value($source, $key)
+            );
+            if ($year !== null) {
+                return $year;
+            }
+        }
+        return null;
+    }
+}
+
+if (!function_exists('intersoccer_program_year_default_language_post_id')) {
+    /**
+     * Map a product or variation id to the default-language object when WPML is present.
+     *
+     * @param int $post_id
+     * @return int
+     */
+    function intersoccer_program_year_default_language_post_id($post_id) {
+        $post_id = (int) $post_id;
+        if ($post_id <= 0 || !function_exists('apply_filters')) {
+            return $post_id;
+        }
+        $default = function_exists('wpml_get_default_language') ? wpml_get_default_language() : null;
+        if (!$default) {
+            $filtered = apply_filters('wpml_default_language', null);
+            $default = is_string($filtered) ? $filtered : null;
+        }
+        if (!$default) {
+            return $post_id;
+        }
+        foreach (['product', 'product_variation'] as $type) {
+            $mapped = apply_filters('wpml_object_id', $post_id, $type, true, $default);
+            if ($mapped && (int) $mapped > 0) {
+                return (int) $mapped;
+            }
+        }
+        return $post_id;
+    }
+}
+
+if (!function_exists('intersoccer_program_year_from_terms')) {
+    /**
+     * Bare year from a product's pa_program-year term slug or name (WPML-safe).
+     *
+     * @param int $post_id
+     * @return int|null
+     */
+    function intersoccer_program_year_from_terms($post_id) {
+        $post_id = (int) $post_id;
+        if ($post_id <= 0) {
+            return null;
+        }
+        $terms = null;
+        if (function_exists('wc_get_product_terms')) {
+            $terms = wc_get_product_terms($post_id, 'pa_program-year', ['fields' => 'all']);
+        } elseif (function_exists('get_the_terms')) {
+            $terms = get_the_terms($post_id, 'pa_program-year');
+        } elseif (function_exists('wp_get_post_terms')) {
+            $terms = wp_get_post_terms($post_id, 'pa_program-year');
+        }
+        if (!is_array($terms)) {
+            return null;
+        }
+        foreach ($terms as $term) {
+            $slug = '';
+            $name = '';
+            $term_id = 0;
+            if (is_object($term)) {
+                $slug = isset($term->slug) ? (string) $term->slug : '';
+                $name = isset($term->name) ? (string) $term->name : '';
+                $term_id = isset($term->term_id) ? (int) $term->term_id : 0;
+            } elseif (is_string($term)) {
+                $slug = $term;
+                $name = $term;
+            }
+            if ($term_id > 0 && function_exists('apply_filters')) {
+                $default = function_exists('wpml_get_default_language') ? wpml_get_default_language() : null;
+                if ($default) {
+                    $original_id = apply_filters('wpml_object_id', $term_id, 'pa_program-year', true, $default);
+                    if ($original_id && (int) $original_id !== $term_id && function_exists('get_term')) {
+                        $original = get_term((int) $original_id, 'pa_program-year');
+                        if ($original && !is_wp_error($original)) {
+                            $slug = isset($original->slug) ? (string) $original->slug : $slug;
+                            $name = isset($original->name) ? (string) $original->name : $name;
+                        }
+                    }
+                }
+            }
+            $from_slug = intersoccer_program_year_from_attribute_value($slug);
+            if ($from_slug !== null) {
+                return $from_slug;
+            }
+            $from_name = intersoccer_program_year_from_attribute_value($name);
+            if ($from_name !== null) {
+                return $from_name;
+            }
+        }
+        return null;
+    }
+}
+
+if (!function_exists('intersoccer_program_year_from_post')) {
+    /**
+     * Program year stored on a variation or parent product.
+     *
+     * @param int $post_id
+     * @return int|null
+     */
+    function intersoccer_program_year_from_post($post_id) {
+        $post_id = intersoccer_program_year_default_language_post_id($post_id);
+        if ($post_id <= 0) {
+            return null;
+        }
+        if (function_exists('get_post_meta')) {
+            foreach (['attribute_pa_program-year', 'pa_program-year'] as $meta_key) {
+                $year = intersoccer_program_year_from_attribute_value(get_post_meta($post_id, $meta_key, true));
+                if ($year !== null) {
+                    return $year;
+                }
+            }
+        }
+        if (function_exists('wc_get_product')) {
+            $product = wc_get_product($post_id);
+            if ($product && method_exists($product, 'get_attribute')) {
+                $year = intersoccer_program_year_from_attribute_value($product->get_attribute('pa_program-year'));
+                if ($year !== null) {
+                    return $year;
+                }
+            }
+        }
+        return intersoccer_program_year_from_terms($post_id);
+    }
+}
+
+if (!function_exists('intersoccer_resolve_program_year')) {
+    /**
+     * Resolve a program year.
+     *
+     * Order: order-item meta (Year, pa_program-year, attribute_pa_program-year,
+     * Program Year, and localized registry labels), then the variation, then the
+     * parent product pa_program-year term (bare 20xx slug or name), then the
+     * Season-text parse used today (intersoccer_extract_year_from_season).
+     *
+     * @param mixed  $order_item_or_meta Order item id, meta array, or get_meta() object.
+     * @param int    $variation_id
+     * @param int    $product_id         Parent product id when already known.
+     * @param string $season_text
+     * @return int|null
+     */
+    function intersoccer_resolve_program_year($order_item_or_meta = null, $variation_id = 0, $product_id = 0, $season_text = '') {
+        $from_meta = intersoccer_program_year_from_order_item_source($order_item_or_meta);
+        if ($from_meta !== null) {
+            return $from_meta;
+        }
+
+        $variation_id = (int) $variation_id;
+        $product_id = (int) $product_id;
+        if ($variation_id > 0) {
+            $from_variation = intersoccer_program_year_from_post($variation_id);
+            if ($from_variation !== null) {
+                return $from_variation;
+            }
+            if ($product_id <= 0 && function_exists('wc_get_product')) {
+                $variation = wc_get_product($variation_id);
+                if ($variation && method_exists($variation, 'get_parent_id')) {
+                    $parent_id = (int) $variation->get_parent_id();
+                    if ($parent_id > 0) {
+                        $product_id = $parent_id;
+                    }
+                }
+            }
+        }
+        if ($product_id > 0 && $product_id !== $variation_id) {
+            $from_product = intersoccer_program_year_from_post($product_id);
+            if ($from_product !== null) {
+                return $from_product;
+            }
+        }
+
+        $season_text = trim((string) $season_text);
+        if ($season_text === '' || strcasecmp($season_text, 'N/A') === 0) {
+            return null;
+        }
+        if (function_exists('intersoccer_extract_year_from_season')) {
+            $from_season = intersoccer_extract_year_from_season($season_text);
+            return $from_season === null ? null : (int) $from_season;
+        }
+        if (preg_match('/(\d{4})/', $season_text, $matches)) {
+            return (int) $matches[1];
+        }
+        return null;
+    }
+}
+
+if (!function_exists('intersoccer_signature_program_year_component')) {
+    /**
+     * Program year to append to an event signature, or '' when the signature must stay as before.
+     *
+     * Past orders whose Season text already contains a four-digit year keep the
+     * master signature string. The year is appended only when that text has no
+     * year and a Program Year is resolved from meta, the variation, or the product.
+     *
+     * @param array $event_data
+     * @return string
+     */
+    function intersoccer_signature_program_year_component(array $event_data) {
+        if (!empty($event_data['signature_omit_program_year'])) {
+            return '';
+        }
+        $season = (string) ($event_data['season'] ?? '');
+        $season_has_year = false;
+        if (function_exists('intersoccer_extract_year_from_season')) {
+            $season_has_year = intersoccer_extract_year_from_season($season) !== null;
+        } elseif ($season !== '' && preg_match('/(\d{4})/', $season)) {
+            $season_has_year = true;
+        }
+        if ($season_has_year || !function_exists('intersoccer_resolve_program_year')) {
+            return '';
+        }
+        $year = intersoccer_resolve_program_year(
+            $event_data,
+            (int) ($event_data['variation_id'] ?? 0),
+            (int) ($event_data['product_id'] ?? 0),
+            ''
+        );
+        if ($year === null) {
+            return '';
+        }
+        return (string) (int) $year;
+    }
+}
+
+if (!function_exists('intersoccer_camp_terms_parse_year')) {
+    /**
+     * Year for camp-terms date parsing: Program Year, then Season text, then order date.
+     *
+     * @param mixed  $order_item_or_meta
+     * @param int    $variation_id
+     * @param int    $product_id
+     * @param string $season_text
+     * @param string $order_date
+     * @return int
+     */
+    function intersoccer_camp_terms_parse_year($order_item_or_meta, $variation_id, $product_id, $season_text, $order_date = '') {
+        $program_year = intersoccer_resolve_program_year($order_item_or_meta, $variation_id, $product_id, '');
+        if ($program_year !== null) {
+            return (int) $program_year;
+        }
+        $season_text = trim((string) $season_text);
+        if ($season_text !== '' && strcasecmp($season_text, 'N/A') !== 0) {
+            if (function_exists('intersoccer_extract_year_from_season')) {
+                $from_season = intersoccer_extract_year_from_season($season_text);
+            } elseif (preg_match('/(\d{4})/', $season_text, $matches)) {
+                $from_season = (int) $matches[1];
+            } else {
+                $from_season = null;
+            }
+            if ($from_season !== null) {
+                return (int) $from_season;
+            }
+        }
+        if ($order_date !== '' && $order_date !== null) {
+            $timestamp = strtotime((string) $order_date);
+            if ($timestamp) {
+                return (int) date('Y', $timestamp);
+            }
+        }
+        return (int) date('Y');
+    }
+}
+
 /**
- * Generates a stable event signature for roster grouping that doesn't rely on variation_id.
- * This ensures rosters remain properly grouped even when product variations are deleted.
+ * Pipe-delimited signature input (the string that is hashed).
  *
- * @param array $event_data Array containing event characteristics
- * @return string MD5 hash of the event signature
+ * When Season text has no four-digit year and a Program Year resolves, the
+ * string gains a final program_year component. Otherwise it matches the
+ * historical component list.
+ *
+ * @param array $event_data Array containing event characteristics.
+ * @return string
  */
-function intersoccer_generate_event_signature($event_data) {
+function intersoccer_event_signature_input_string($event_data) {
     // Normalize product_id for WPML translations to ensure consistent signatures across languages
     // This ensures French and English versions of the same product generate the same signature
     $product_id = $event_data['product_id'] ?? '';
@@ -7662,16 +8106,34 @@ function intersoccer_generate_event_signature($event_data) {
         $normalized_components['start_date'] = $date_value;
     }
 
-    // Create a normalized string from components
-    $signature_string = implode('|', array_map(function($key, $value) {
-        return $key . ':' . trim(strtolower($value));
-    }, array_keys($normalized_components), $normalized_components));
+    // Evergreen seasons have no year in the Season text. Append Program Year only
+    // then, as the last component, so a Season value that already contains a year
+    // keeps the master signature string and hash.
+    $program_year_component = function_exists('intersoccer_signature_program_year_component')
+        ? intersoccer_signature_program_year_component($event_data)
+        : '';
+    if ($program_year_component !== '') {
+        $normalized_components['program_year'] = $program_year_component;
+    }
 
-    // Generate MD5 hash for consistent length and comparison
+    // Create a normalized string from components
+    return implode('|', array_map(function($key, $value) {
+        return $key . ':' . trim(strtolower((string) $value));
+    }, array_keys($normalized_components), $normalized_components));
+}
+
+/**
+ * MD5 of intersoccer_event_signature_input_string().
+ *
+ * @param array $event_data Array containing event characteristics
+ * @return string
+ */
+function intersoccer_generate_event_signature($event_data) {
+    $signature_string = intersoccer_event_signature_input_string($event_data);
     $signature = md5($signature_string);
 
     if (!function_exists('intersoccer_is_bulk_normalize_quiet') || !intersoccer_is_bulk_normalize_quiet()) {
-        error_log('InterSoccer: Generated normalized event signature: ' . $signature . ' from components: ' . json_encode($normalized_components));
+        error_log('InterSoccer: Generated normalized event signature: ' . $signature . ' from components: ' . $signature_string);
     }
 
     return $signature;
@@ -8091,7 +8553,19 @@ function intersoccer_reports_resolve_camp_schedule($variation_id, $order_item_id
         if (function_exists('intersoccer_reports_normalize_camp_terms_for_dates')) {
             $camp_terms = intersoccer_reports_normalize_camp_terms_for_dates($camp_terms);
         }
-        list($parsed_start, $parsed_end, $event_dates) = intersoccer_parse_camp_dates_fixed($camp_terms, $season);
+        $program_year = function_exists('intersoccer_resolve_program_year')
+            ? intersoccer_resolve_program_year($order_item_id > 0 ? (int) $order_item_id : [], $variation_id, 0, '')
+            : null;
+        if ($program_year !== null) {
+            list($parsed_start, $parsed_end, $event_dates) = intersoccer_parse_camp_dates_fixed(
+                $camp_terms,
+                $season,
+                $program_year,
+                true
+            );
+        } else {
+            list($parsed_start, $parsed_end, $event_dates) = intersoccer_parse_camp_dates_fixed($camp_terms, $season);
+        }
         if (!empty($parsed_start) && $parsed_start !== '1970-01-01') {
             $start  = $parsed_start;
             $end    = $parsed_end ?: $parsed_start;
@@ -8130,9 +8604,10 @@ function intersoccer_reports_resolve_camp_schedule($variation_id, $order_item_id
  * @param string   $camp_terms    The camp terms string
  * @param string   $season        The season/year
  * @param int|null $fallback_year Optional year when season has no four-digit year (null = current calendar year).
+ * @param bool     $prefer_fallback_year When true, $fallback_year wins over digits in $season (Program Year).
  * @return array [$start_date, $end_date, $event_dates]
  */
-function intersoccer_parse_camp_dates_fixed($camp_terms, $season, $fallback_year = null) {
+function intersoccer_parse_camp_dates_fixed($camp_terms, $season, $fallback_year = null, $prefer_fallback_year = false) {
     $start_date = null;
     $end_date = null;
     $event_dates = 'N/A';
@@ -8143,9 +8618,13 @@ function intersoccer_parse_camp_dates_fixed($camp_terms, $season, $fallback_year
 
     $camp_terms = trim((string) $camp_terms);
 
-    // Extract year from season if available
+    // Extract year from season if available. An explicit Program Year may be
+    // passed as $fallback_year with $prefer_fallback_year so it wins over Season text.
     $year = null;
-    if (!empty($season)) {
+    if ($prefer_fallback_year && $fallback_year !== null && $fallback_year !== '') {
+        $year = (int) $fallback_year;
+    }
+    if (!$year && !empty($season)) {
         // Try to extract year from season string (e.g., "Autumn camps 2025" -> 2025)
         if (preg_match('/\b(19|20)\d{2}\b/', $season, $year_matches)) {
             $year = intval($year_matches[0]);

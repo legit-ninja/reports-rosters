@@ -171,7 +171,15 @@ $resolve_camp_dates_readonly = static function (
         if (function_exists('intersoccer_reports_normalize_camp_terms_for_dates')) {
             $camp_terms = intersoccer_reports_normalize_camp_terms_for_dates($camp_terms);
         }
-        list($parsed_start, $parsed_end) = intersoccer_parse_camp_dates_fixed($camp_terms, $season);
+        $program_year = function_exists('intersoccer_resolve_program_year')
+            ? intersoccer_resolve_program_year($order_item_id, $variation_id, 0, '')
+            : null;
+        list($parsed_start, $parsed_end) = intersoccer_parse_camp_dates_fixed(
+            $camp_terms,
+            $season,
+            $program_year,
+            $program_year !== null
+        );
         if ($is_iso_date($parsed_start) && $parsed_start !== '1970-01-01') {
             return [$parsed_start, $is_iso_date($parsed_end) ? $parsed_end : $parsed_start, 'terms_parse'];
         }
@@ -482,7 +490,15 @@ while (true) {
         } elseif ($is_iso_date($resolved_start)) {
             $best_date = $resolved_start;
         } elseif (function_exists('intersoccer_parse_camp_dates_fixed')) {
-            list($ps, $pe) = intersoccer_parse_camp_dates_fixed((string) ($r['camp_terms'] ?? ''), (string) ($r['season'] ?? ''));
+            $program_year = function_exists('intersoccer_resolve_program_year')
+                ? intersoccer_resolve_program_year($r, (int) ($r['variation_id'] ?? 0), (int) ($r['product_id'] ?? 0), '')
+                : null;
+            list($ps, $pe) = intersoccer_parse_camp_dates_fixed(
+                (string) ($r['camp_terms'] ?? ''),
+                (string) ($r['season'] ?? ''),
+                $program_year,
+                $program_year !== null
+            );
             if ($is_iso_date($pe)) {
                 $best_date = $pe;
             } elseif ($is_iso_date($ps)) {
@@ -490,7 +506,17 @@ while (true) {
             }
         }
         $season_year = 0;
-        if (preg_match('/(\d{4})/', (string) ($r['season'] ?? ''), $m)) {
+        if (function_exists('intersoccer_resolve_program_year')) {
+            $resolved_year = intersoccer_resolve_program_year(
+                $r,
+                (int) ($r['variation_id'] ?? 0),
+                (int) ($r['product_id'] ?? 0),
+                (string) ($r['season'] ?? '')
+            );
+            if ($resolved_year !== null) {
+                $season_year = (int) $resolved_year;
+            }
+        } elseif (preg_match('/(\d{4})/', (string) ($r['season'] ?? ''), $m)) {
             $season_year = (int) $m[1];
         }
 

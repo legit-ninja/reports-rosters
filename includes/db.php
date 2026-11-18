@@ -607,11 +607,24 @@ function intersoccer_rebuild_event_signatures() {
                         // If the date doesn't have a year, try to extract it from the season
                         $year = null;
                         if (!preg_match('/\d{4}/', $tournament_date)) {
-                            // No year in date string, try to extract from season
+                            // No year in date string. Program Year, then Season text.
                             $season = $record['season'] ?? '';
-                            // Handle French season names: "Automne 2025", "Printemps 2025", etc.
-                            if (preg_match('/(\d{4})/', $season, $matches)) {
+                            $year = null;
+                            if (function_exists('intersoccer_resolve_program_year')) {
+                                $resolved_year = intersoccer_resolve_program_year(
+                                    isset($item_meta_flat) && is_array($item_meta_flat) ? $item_meta_flat : [],
+                                    (int) ($variation_id ?? 0),
+                                    (int) ($product_id_to_use ?? 0),
+                                    (string) $season
+                                );
+                                if ($resolved_year !== null) {
+                                    $year = (string) $resolved_year;
+                                }
+                            }
+                            if ($year === null && preg_match('/(\d{4})/', $season, $matches)) {
                                 $year = $matches[1];
+                            }
+                            if ($year !== null) {
                                 // Try different formats: with day name, without day name
                                 if (preg_match('/^[A-Z][a-z]+\s+\d+\s+[A-Za-zàâäéèêëïîôùûüÿç]+$/', $tournament_date)) {
                                     // Format: "Dimanche 14 décembre" - add year at the end
@@ -671,8 +684,20 @@ function intersoccer_rebuild_event_signatures() {
             'city' => $record['city'] ?? '',
             'canton_region' => $record['canton_region'] ?? '',
             'product_id' => $product_id_to_use, // Use normalized product_id
+            'variation_id' => $record['variation_id'] ?? 0,
             'start_date' => $start_date,
         ];
+        if (!empty($record['order_item_id']) && function_exists('wc_get_order_item_meta') && function_exists('intersoccer_program_year_order_meta_keys')) {
+            foreach (intersoccer_program_year_order_meta_keys() as $year_key) {
+                if ($year_key === 'program_year') {
+                    continue;
+                }
+                $year_value = wc_get_order_item_meta((int) $record['order_item_id'], $year_key, true);
+                if ($year_value !== '' && $year_value !== null && $year_value !== false) {
+                    $original_data[$year_key] = is_array($year_value) ? ($year_value[0] ?? '') : $year_value;
+                }
+            }
+        }
         
         $normalized_data = function_exists('intersoccer_normalize_roster_facets_for_storage')
             ? intersoccer_normalize_roster_facets_for_storage($original_data)
@@ -1356,11 +1381,26 @@ function intersoccer_prepare_roster_entry($order, $item, $order_item_id, $order_
                 break;
             }
         }
-        $season_year = null;
-        if ($season !== 'N/A') {
-            $season_year = function_exists('intersoccer_extract_year_from_season')
-                ? intersoccer_extract_year_from_season($season)
-                : (preg_match('/(\d{4})/', $season, $sy_matches) ? intval($sy_matches[1]) : null);
+        $camp_parse_year = null;
+        $camp_parse_prefer_program_year = false;
+        if (function_exists('intersoccer_camp_terms_parse_year')) {
+            $program_only = intersoccer_resolve_program_year($order_item_meta, (int) $variation_id, (int) $product_id, '');
+            $camp_parse_prefer_program_year = $program_only !== null;
+            $camp_parse_year = intersoccer_camp_terms_parse_year(
+                $order_item_meta,
+                (int) $variation_id,
+                (int) $product_id,
+                $season !== 'N/A' ? (string) $season : '',
+                (string) $order_date
+            );
+        } else {
+            $season_year = null;
+            if ($season !== 'N/A') {
+                $season_year = function_exists('intersoccer_extract_year_from_season')
+                    ? intersoccer_extract_year_from_season($season)
+                    : (preg_match('/(\d{4})/', $season, $sy_matches) ? intval($sy_matches[1]) : null);
+            }
+            $camp_parse_year = $season_year ?: (int) (date('Y', strtotime((string) $order_date)) ?: date('Y'));
         }
 
         if ($activity_type === 'Camp') {
@@ -1391,11 +1431,12 @@ function intersoccer_prepare_roster_entry($order, $item, $order_item_id, $order_
                 $used_shared_parser = function_exists('intersoccer_parse_camp_dates_fixed');
                 $regex_matched = false;
                 if ($used_shared_parser) {
-                    $year = $season_year ?: (int) (date('Y', strtotime((string) $order_date)) ?: date('Y'));
+                    $year = $camp_parse_year;
                     list($parsed_start, $parsed_end, $parsed_label) = intersoccer_parse_camp_dates_fixed(
                         $camp_terms,
                         $season_for_parse,
-                        $year
+                        $year,
+                        $camp_parse_prefer_program_year
                     );
                 } elseif (preg_match('/(\w+)-week-\d+-(\w+)-(\d{1,2})-(\w+)-(\d{1,2})-\d+-days/i', $camp_terms, $matches)) {
                     $regex_matched = true;
@@ -1403,7 +1444,7 @@ function intersoccer_prepare_roster_entry($order, $item, $order_item_id, $order_
                     $start_day = $matches[3];
                     $end_month = $matches[4];
                     $end_day = $matches[5];
-                    $year = $season_year ?: (date('Y', strtotime($order_date)) ?: date('Y'));
+                    $year = $camp_parse_year;
                     $start_date_obj = DateTime::createFromFormat('F j Y', "$start_month $start_day $year");
                     $end_date_obj = DateTime::createFromFormat('F j Y', "$end_month $end_day $year");
                     if ($start_date_obj && $end_date_obj) {
@@ -1418,7 +1459,7 @@ function intersoccer_prepare_roster_entry($order, $item, $order_item_id, $order_
                     $month = $matches[2];
                     $start_day = $matches[3];
                     $end_day = $matches[4];
-                    $year = $season_year ?: (date('Y', strtotime($order_date)) ?: date('Y'));
+                    $year = $camp_parse_year;
                     $start_date_obj = DateTime::createFromFormat('F j Y', "$month $start_day $year");
                     $end_date_obj = DateTime::createFromFormat('F j Y', "$month $end_day $year");
                     if ($start_date_obj && $end_date_obj) {
@@ -1434,7 +1475,7 @@ function intersoccer_prepare_roster_entry($order, $item, $order_item_id, $order_
                     $start_day = $matches[3];
                     $end_month = (isset($matches[4]) && $matches[4] !== '') ? $matches[4] : $month;
                     $end_day = $matches[5];
-                    $year = $season_year ?: (date('Y', strtotime($order_date)) ?: date('Y'));
+                    $year = $camp_parse_year;
                     $start_date_obj = DateTime::createFromFormat('F j Y', "$month $start_day $year");
                     $end_date_obj = DateTime::createFromFormat('F j Y', "$end_month $end_day $year");
                     if ($start_date_obj && $end_date_obj) {
@@ -1589,10 +1630,23 @@ function intersoccer_prepare_roster_entry($order, $item, $order_item_id, $order_
                 
                 // If the date doesn't have a year, try to extract it from the season
                 if (!preg_match('/\d{4}/', $tournament_date)) {
-                    // No year in date string, try to extract from season
-                    // Handle French season names: "Automne 2025", "Printemps 2025", etc.
-                    if (preg_match('/(\d{4})/', $season, $matches)) {
+                    // No year in the date string. Program Year, then Season text.
+                    $year = null;
+                    if (function_exists('intersoccer_resolve_program_year')) {
+                        $resolved_year = intersoccer_resolve_program_year(
+                            $order_item_meta,
+                            (int) $variation_id,
+                            (int) $product_id,
+                            (string) $season
+                        );
+                        if ($resolved_year !== null) {
+                            $year = (string) $resolved_year;
+                        }
+                    }
+                    if ($year === null && preg_match('/(\d{4})/', $season, $matches)) {
                         $year = $matches[1];
+                    }
+                    if ($year !== null) {
                         // Try different formats: with day name, without day name
                         if (preg_match('/^[A-Z][a-z]+\s+\d+\s+[A-Za-zàâäéèêëïîôùûüÿç]+$/', $tournament_date)) {
                             // Format: "Dimanche 14 décembre" - add year at the end
@@ -1783,7 +1837,13 @@ function intersoccer_prepare_roster_entry($order, $item, $order_item_id, $order_
             'city' => $city,
             'canton_region' => $canton_region,
             'product_id' => $product_id,
+            'variation_id' => $variation_id,
             'start_date' => $start_date, // Include date for tournament signature generation
+            'Year' => $order_item_meta['Year'] ?? '',
+            'program_year' => $order_item_meta['program_year'] ?? ($order_item_meta['Year'] ?? ''),
+            'pa_program-year' => $order_item_meta['pa_program-year'] ?? '',
+            'attribute_pa_program-year' => $order_item_meta['attribute_pa_program-year'] ?? '',
+            'Program Year' => $order_item_meta['Program Year'] ?? '',
         ];
         
         $normalized_event_data = intersoccer_normalize_event_data_for_signature($event_data_to_normalize);

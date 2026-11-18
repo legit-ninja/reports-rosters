@@ -3770,8 +3770,8 @@ function intersoccer_close_season_rosters_ajax() {
     }
 
     $year = isset($_POST['year']) ? absint($_POST['year']) : 0;
-    if ($year < 2000 && function_exists('intersoccer_extract_year_from_season')) {
-        $extracted = intersoccer_extract_year_from_season($season);
+    if ($year < 2000 && function_exists('intersoccer_resolve_program_year')) {
+        $extracted = intersoccer_resolve_program_year([], 0, 0, $season);
         if ($extracted !== null) {
             $year = (int) $extracted;
         }

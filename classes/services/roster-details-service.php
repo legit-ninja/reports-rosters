@@ -940,7 +940,9 @@ class RosterDetailsService {
         }
 
         $listing_year = null;
-        if (!empty($filters['season']) && function_exists('intersoccer_extract_year_from_season')) {
+        if (!empty($filters['season']) && function_exists('intersoccer_resolve_program_year')) {
+            $listing_year = intersoccer_resolve_program_year([], 0, 0, (string) $filters['season']);
+        } elseif (!empty($filters['season']) && function_exists('intersoccer_extract_year_from_season')) {
             $listing_year = intersoccer_extract_year_from_season($filters['season']);
         }
         if ($listing_year === null && function_exists('intersoccer_roster_resolve_listing_year')) {

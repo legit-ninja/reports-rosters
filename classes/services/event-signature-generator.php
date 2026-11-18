@@ -102,6 +102,13 @@ class EventSignatureGenerator {
                 }
                 $components['start_date'] = $date_value;
             }
+
+            $program_year_component = function_exists('intersoccer_signature_program_year_component')
+                ? intersoccer_signature_program_year_component($event_data)
+                : '';
+            if ($program_year_component !== '') {
+                $components['program_year'] = $program_year_component;
+            }
             
             // Create signature string
             $signature_string = implode('|', $components);

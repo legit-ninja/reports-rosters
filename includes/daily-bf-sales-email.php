@@ -1953,7 +1953,29 @@ class DailyBfSalesEmail {
      * @return string
      */
     private function programmeYear($yearRaw, $seasonRaw, $terms, $name) {
-        foreach ([$yearRaw, $seasonRaw, $terms, $name] as $value) {
+        if (function_exists('intersoccer_resolve_program_year')) {
+            $resolved = intersoccer_resolve_program_year(
+                [
+                    'Year' => $yearRaw,
+                    'pa_program-year' => $yearRaw,
+                    'attribute_pa_program-year' => $yearRaw,
+                    'Program Year' => $yearRaw,
+                ],
+                0,
+                0,
+                (string) $seasonRaw
+            );
+            if ($resolved !== null) {
+                return (string) $resolved;
+            }
+        } else {
+            foreach ([$yearRaw, $seasonRaw] as $value) {
+                if (preg_match('/\b(20\d{2})\b/', (string) $value, $matches)) {
+                    return $matches[1];
+                }
+            }
+        }
+        foreach ([$terms, $name] as $value) {
             if (preg_match('/\b(20\d{2})\b/', (string) $value, $matches)) {
                 return $matches[1];
             }

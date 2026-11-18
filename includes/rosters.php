@@ -1755,9 +1755,11 @@ function intersoccer_render_camps_page() {
                             <div class="season-actions">
                                 <?php if ($active_count > 0): ?>
                                     <?php
-                                    $close_year = function_exists('intersoccer_extract_year_from_season')
-                                        ? intersoccer_extract_year_from_season($season)
-                                        : null;
+                                    $close_year = function_exists('intersoccer_resolve_program_year')
+                                        ? intersoccer_resolve_program_year([], 0, 0, $season)
+                                        : (function_exists('intersoccer_extract_year_from_season')
+                                            ? intersoccer_extract_year_from_season($season)
+                                            : null);
                                     if ($close_year === null && !empty($camps) && function_exists('intersoccer_reports_resolve_program_year')) {
                                         $years = [];
                                         foreach ($camps as $camp_row) {
@@ -2231,9 +2233,11 @@ function intersoccer_render_courses_page() {
                             <div class="season-actions">
                                 <?php if ($active_count > 0): ?>
                                     <?php
-                                    $close_year = function_exists('intersoccer_extract_year_from_season')
-                                        ? intersoccer_extract_year_from_season($season)
-                                        : null;
+                                    $close_year = function_exists('intersoccer_resolve_program_year')
+                                        ? intersoccer_resolve_program_year([], 0, 0, $season)
+                                        : (function_exists('intersoccer_extract_year_from_season')
+                                            ? intersoccer_extract_year_from_season($season)
+                                            : null);
                                     if ($close_year === null && !empty($day_groups) && function_exists('intersoccer_reports_resolve_program_year')) {
                                         $years = [];
                                         foreach ($day_groups as $courses) {
