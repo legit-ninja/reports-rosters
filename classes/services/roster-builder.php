@@ -4253,7 +4253,19 @@ class RosterBuilder {
                         'variation_id' => $roster->variation_id ?? 0,
                         'start_date' => $roster->start_date ?? '', // Include for tournament signature generation
                     ];
-                    
+                    $order_item_id = (int) ($roster->order_item_id ?? 0);
+                    if ($order_item_id > 0 && function_exists('wc_get_order_item_meta') && function_exists('intersoccer_program_year_order_meta_keys')) {
+                        foreach (intersoccer_program_year_order_meta_keys() as $year_key) {
+                            if ($year_key === 'program_year') {
+                                continue;
+                            }
+                            $year_value = wc_get_order_item_meta($order_item_id, $year_key, true);
+                            if ($year_value !== '' && $year_value !== null && $year_value !== false) {
+                                $event_data[$year_key] = is_array($year_value) ? ($year_value[0] ?? '') : $year_value;
+                            }
+                        }
+                    }
+
                     $new_signature = function_exists('intersoccer_event_signature_from_event_data')
                         ? intersoccer_event_signature_from_event_data($event_data)
                         : $this->signature_generator->generate($event_data);

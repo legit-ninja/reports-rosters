@@ -2,7 +2,12 @@
 
 namespace InterSoccer\Reports\Tests\Reports;
 
+use InterSoccer\ReportsRosters\Core\Logger;
+use InterSoccer\ReportsRosters\Data\Collections\RostersCollection;
+use InterSoccer\ReportsRosters\Data\Models\Roster;
+use InterSoccer\ReportsRosters\Data\Repositories\RosterRepository;
 use InterSoccer\ReportsRosters\Services\ReportsRostersDiagnosticsService;
+use InterSoccer\ReportsRosters\Services\RosterBuilder;
 use PHPUnit\Framework\TestCase;
 use ReflectionMethod;
 
@@ -67,6 +72,9 @@ class ProgramYearResolveTest extends TestCase {
         $GLOBALS['intersoccer_test_wc_get_product_callback'] = null;
         if (class_exists('InterSoccerRRTestMeta')) {
             \InterSoccerRRTestMeta::reset();
+        }
+        if (class_exists(\InterSoccer\ReportsRosters\Tests\ReportAccuracy\ReportAccuracyStore::class, false)) {
+            unset(\InterSoccer\ReportsRosters\Tests\ReportAccuracy\ReportAccuracyStore::$item_meta[7701]);
         }
         if (function_exists('intersoccer_set_bulk_normalize_quiet')) {
             intersoccer_set_bulk_normalize_quiet(false);
@@ -250,6 +258,108 @@ class ProgramYearResolveTest extends TestCase {
         $method->setAccessible(true);
         $this->assertSame([44], $method->invoke($service, 2027, ['wc-completed']));
     }
+
+    /**
+     * Product has no Program Year attribute. The order item does. A rebuild that
+     * only reads the roster table must hash the same signature as the full rebuild.
+     */
+    public function test_roster_table_rebuild_matches_full_rebuild_when_only_order_item_has_program_year(): void {
+        $order_item_id = 7701;
+        $product_id = 4242;
+        $variation_id = 5501;
+        $GLOBALS['intersoccer_test_wc_order_item_meta'][$order_item_id] = [
+            'Program Year' => '2027',
+        ];
+        // Report-accuracy fixtures define a namespaced wc_get_order_item_meta that
+        // RosterBuilder resolves first. Seed that store when it is loaded.
+        if (class_exists(\InterSoccer\ReportsRosters\Tests\ReportAccuracy\ReportAccuracyStore::class, false)) {
+            \InterSoccer\ReportsRosters\Tests\ReportAccuracy\ReportAccuracyStore::setItemMeta(
+                $order_item_id,
+                'Program Year',
+                '2027',
+                false
+            );
+        }
+        \InterSoccerRRTestMeta::$data[$product_id] = [];
+        \InterSoccerRRTestMeta::$data[$variation_id] = [];
+        $GLOBALS['intersoccer_test_wc_get_product_callback'] = static function () {
+            return new ProgramYearBareProduct();
+        };
+
+        $row = self::CAMP_FIXTURE;
+        $row['season'] = 'Winter';
+        $row['variation_id'] = $variation_id;
+        $row['order_item_id'] = $order_item_id;
+        $row['start_date'] = '2027-03-22';
+
+        $with_year = $row;
+        $with_year['Program Year'] = '2027';
+        $expected = intersoccer_event_signature_from_event_data($with_year);
+        $this->assertSame(self::EVERGREEN_2027_HASH, $expected);
+        $this->assertNotSame(self::MASTER_WINTER_HASH, $expected);
+
+        $roster = new Roster($row);
+        $roster->id = 81;
+        $repo = new class($roster) extends RosterRepository {
+            /** @var Roster */
+            private $roster;
+
+            /** @var string */
+            public $signature = '';
+
+            public function __construct(Roster $roster) {
+                parent::__construct(new Logger());
+                $this->roster = $roster;
+            }
+
+            public function all(array $columns = ['*']) {
+                return new RostersCollection([$this->roster]);
+            }
+
+            public function updateEventSignature($id, string $signature) {
+                $this->signature = $signature;
+                return true;
+            }
+        };
+
+        $builder = new RosterBuilder(new Logger(), null, null, $repo);
+        $table_only = $builder->rebuildSignatures();
+        $this->assertSame(1, $table_only['updated']);
+        $this->assertSame(0, $table_only['errors']);
+        $this->assertSame($expected, $repo->signature);
+
+        if (!function_exists('intersoccer_rebuild_event_signatures')) {
+            require_once dirname(__DIR__, 2) . '/includes/db.php';
+        }
+
+        global $wpdb;
+        $db = new ProgramYearRebuildWpdb();
+        $db->records = [[
+            'id' => 81,
+            'order_item_id' => $order_item_id,
+            'activity_type' => $row['activity_type'],
+            'venue' => $row['venue'],
+            'age_group' => $row['age_group'],
+            'camp_terms' => $row['camp_terms'],
+            'course_day' => $row['course_day'],
+            'times' => $row['times'],
+            'season' => $row['season'],
+            'girls_only' => $row['girls_only'],
+            'city' => $row['city'],
+            'canton_region' => $row['canton_region'],
+            'product_id' => $product_id,
+            'variation_id' => $variation_id,
+            'product_name' => 'Synthetic Camp',
+            'start_date' => '2027-03-22',
+        ]];
+        $wpdb = $db;
+
+        $full = intersoccer_rebuild_event_signatures();
+        $this->assertSame('success', $full['status']);
+        $this->assertSame(1, $full['updated']);
+        $this->assertArrayHasKey('event_signature', $db->updates[0]);
+        $this->assertSame($repo->signature, $db->updates[0]['event_signature']);
+    }
 }
 
 class ProgramYearDiagOrder {
@@ -288,5 +398,47 @@ class ProgramYearDiagWpdb extends \InterSoccerTestWpdb {
             return $this->responses['year'] ?? [];
         }
         return [];
+    }
+}
+
+/**
+ * Product with no Program Year attribute.
+ */
+class ProgramYearBareProduct {
+    public function get_attribute($name) {
+        return '';
+    }
+
+    public function get_parent_id() {
+        return 0;
+    }
+
+    public function get_name() {
+        return 'Synthetic Camp';
+    }
+
+    public function get_id() {
+        return 4242;
+    }
+}
+
+class ProgramYearRebuildWpdb extends \InterSoccerTestWpdb {
+    /** @var array<int,array<string,mixed>> */
+    public $records = [];
+
+    /** @var array<int,array<string,mixed>> */
+    public $updates = [];
+
+    public function get_results($query = null, $output = OBJECT) {
+        $sql = (string) $query;
+        if (strpos($sql, 'intersoccer_rosters') !== false) {
+            return $this->records;
+        }
+        return [];
+    }
+
+    public function update($table, $data, $where, $format = null, $where_format = null) {
+        $this->updates[] = $data;
+        return 1;
     }
 }

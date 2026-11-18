@@ -704,6 +704,18 @@ function intersoccer_rebuild_event_signatures() {
             : intersoccer_normalize_event_data_for_signature($original_data);
 
         $normalized_data['start_date'] = $start_date;
+        // Facet normalization keeps a fixed key list. Put the order-item Program
+        // Year keys back so the signature uses them before the product attribute.
+        if (function_exists('intersoccer_program_year_order_meta_keys')) {
+            foreach (intersoccer_program_year_order_meta_keys() as $year_key) {
+                if (array_key_exists($year_key, $original_data)) {
+                    $normalized_data[$year_key] = $original_data[$year_key];
+                }
+            }
+        }
+        if (array_key_exists('variation_id', $original_data)) {
+            $normalized_data['variation_id'] = $original_data['variation_id'];
+        }
 
         intersoccer_db_event_signature_rebuild_debug_log('InterSoccer: Signature components computed during event signature rebuild');
 
