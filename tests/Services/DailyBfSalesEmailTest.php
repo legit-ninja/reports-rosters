@@ -3737,49 +3737,79 @@ class DailyBfSalesEmailTest extends TestCase {
         $this->assertDirectoryDoesNotExist(dirname($path));
 
         $spreadsheet = $this->loadWorkbookCopy($mail);
-        $this->assertSame(['Booking Summary', 'Orders'], $spreadsheet->getSheetNames());
+        $this->assertSame(['Booking Summary', '2026'], $spreadsheet->getSheetNames());
         $summary = $spreadsheet->getSheetByName('Booking Summary');
-        $orders = $spreadsheet->getSheetByName('Orders');
+        $orders = $spreadsheet->getSheetByName('2026');
         $this->assertNotNull($summary);
         $this->assertNotNull($orders);
-        $this->assertContains('A1:F1', array_values($summary->getMergeCells()));
-        $this->assertSame('Black Friday Sales 2026', (string) $summary->getCell('A1')->getValue());
-        $this->assertSame('Courses/Camps', (string) $summary->getCell('A2')->getValue());
-        $this->assertSame('Number of bookings', (string) $summary->getCell('B2')->getValue());
-        $this->assertSame('Sales Numbers', (string) $summary->getCell('C2')->getValue());
-        $this->assertSame('SAMPLE-CODE Usage', (string) $summary->getCell('D2')->getValue());
-        $this->assertSame('% of Bookings', (string) $summary->getCell('E2')->getValue());
-        $this->assertSame('% of Sales', (string) $summary->getCell('F2')->getValue());
+        $this->assertContains('A2:F2', array_values($summary->getMergeCells()));
+        $this->assertSame('', (string) $summary->getCell('A1')->getValue());
+        $this->assertSame('Black Friday Sales 2026', (string) $summary->getCell('A2')->getValue());
+        $this->assertSame('Courses/Camps', (string) $summary->getCell('A3')->getValue());
+        $this->assertSame('Number of bookings', (string) $summary->getCell('B3')->getValue());
+        $this->assertSame('Sales Numbers', (string) $summary->getCell('C3')->getValue());
+        $this->assertSame('SAMPLE-CODE Usage', (string) $summary->getCell('D3')->getValue());
+        $this->assertSame('% of Bookings', (string) $summary->getCell('E3')->getValue());
+        $this->assertSame('% of Sales', (string) $summary->getCell('F3')->getValue());
+        $this->assertSame(42.0, $summary->getRowDimension(3)->getRowHeight());
 
+        $money = '"CHF"\\ #,##0.00';
         $column = $this->columnA($summary);
         $this->assertNotContains('Unknown', $column);
+        $this->assertNotContains('Summer Tournaments', $column);
         $geneva = $this->rowIndex($column, 'Geneva/Versoix');
         $genevaTotal = $this->rowIndex($column, 'Total', $geneva + 1);
         $vaud = $this->rowIndex($column, 'Vaud', $genevaTotal + 1);
+        $vaudTotal = $this->rowIndex($column, 'Total', $vaud + 1);
         $this->assertGreaterThan($genevaTotal, $vaud);
         $autumn = $this->rowIndex($column, 'Autumn Courses', $geneva + 1);
-        $winter = $this->rowIndex($column, 'Winter Camps', $autumn + 1);
-        $this->assertLessThan($genevaTotal, $winter);
+        $winterCourses = $this->rowIndex($column, 'Winter Courses', $autumn + 1);
+        $winter = $this->rowIndex($column, 'Winter Camps', $winterCourses + 1);
+        $spring = $this->rowIndex($column, 'Spring Courses', $winter + 1);
+        $easter = $this->rowIndex($column, 'Easter Camps', $spring + 1);
+        $summer = $this->rowIndex($column, 'Summer Camps', $easter + 1);
+        $this->assertLessThan($genevaTotal, $summer);
+        $this->assertNumericCell($summary, 'B' . $winterCourses, 0, '0');
+        $this->assertNumericCell($summary, 'B' . $spring, 0, '0');
+        $this->assertNumericCell($summary, 'B' . $easter, 0, '0');
+        $this->assertNumericCell($summary, 'B' . $summer, 0, '0');
         $this->assertNumericCell($summary, 'B' . $winter, 5, '0');
-        $this->assertNumericCell($summary, 'C' . $winter, 300, '#,##0.00');
+        $this->assertNumericCell($summary, 'C' . $winter, 300, $money);
         $this->assertNumericCell($summary, 'D' . $winter, 5, '0');
-        $this->assertNumericCell($summary, 'E' . $winter, 5 / 7, '0.0%');
-        $this->assertNumericCell($summary, 'F' . $winter, 300 / 380, '0.0%');
-        $this->assertNumericCell($summary, 'B' . $genevaTotal, 7, '0');
-        $this->assertNumericCell($summary, 'C' . $genevaTotal, 380, '#,##0.00');
-        $this->assertNumericCell($summary, 'E' . $genevaTotal, 7 / 30, '0.0%');
-        $this->assertNumericCell($summary, 'F' . $genevaTotal, 380 / 1584, '0.0%');
+        $this->assertSame('=IF(B$' . $genevaTotal . '=0,0,B' . $winter . '/B$' . $genevaTotal . ')', (string) $summary->getCell('E' . $winter)->getValue());
+        $this->assertCalculated($summary, 'E' . $winter, 5 / 7, '0.00%');
+        $this->assertCalculated($summary, 'F' . $winter, 300 / 380, '0.00%');
+        $this->assertSame('=SUM(B' . ($geneva + 1) . ':B' . ($genevaTotal - 1) . ')', (string) $summary->getCell('B' . $genevaTotal)->getValue());
+        $this->assertCalculated($summary, 'B' . $genevaTotal, 7, '0');
+        $this->assertCalculated($summary, 'C' . $genevaTotal, 380, $money);
+        $this->assertSame('=IF(B$' . $this->rowIndex($column, 'Total Products Sold (Courses/Camps)') . '=0,0,B' . $genevaTotal . '/B$' . $this->rowIndex($column, 'Total Products Sold (Courses/Camps)') . ')', (string) $summary->getCell('E' . $genevaTotal)->getValue());
+        $products = $this->rowIndex($column, 'Total Products Sold (Courses/Camps)');
+        $this->assertCalculated($summary, 'E' . $genevaTotal, 7 / 30, '0.00%');
+        $this->assertCalculated($summary, 'F' . $genevaTotal, 380 / 1584, '0.00%');
+        $vaudLabels = [];
+        for ($cursor = $vaud + 1; $cursor < $vaudTotal; $cursor++) {
+            $vaudLabels[] = $column[$cursor];
+        }
+        $this->assertNotContains('Winter Camps', $vaudLabels);
+        $this->assertNotContains('Tournaments', $vaudLabels);
 
         $french = $this->rowIndex($column, 'Swiss French');
         $german = $this->rowIndex($column, 'Swiss German', $french + 1);
-        $this->assertNumericCell($summary, 'B' . $french, 12, '0');
-        $this->assertNumericCell($summary, 'C' . $french, 730, '#,##0.00');
-        $this->assertNumericCell($summary, 'B' . $german, 18, '0');
-        $this->assertNumericCell($summary, 'C' . $german, 854, '#,##0.00');
+        $baselTotal = $this->rowIndex($column, 'Total', $this->rowIndex($column, 'Basel') + 1);
+        $zugTotal = $this->rowIndex($column, 'Total', $this->rowIndex($column, 'Zug/Cham') + 1);
+        $zurichTotal = $this->rowIndex($column, 'Total', $this->rowIndex($column, 'Zurich') + 1);
+        $this->assertSame('=B' . $genevaTotal . '+B' . $vaudTotal, (string) $summary->getCell('B' . $french)->getValue());
+        $this->assertSame('=B' . $baselTotal . '+B' . $zugTotal . '+B' . $zurichTotal, (string) $summary->getCell('B' . $german)->getValue());
+        $this->assertCalculated($summary, 'B' . $french, 12, '0');
+        $this->assertCalculated($summary, 'C' . $french, 730, $money);
+        $this->assertCalculated($summary, 'B' . $german, 18, '0');
+        $this->assertCalculated($summary, 'C' . $german, 854, $money);
+        $this->assertCalculated($summary, 'E' . $french, 12 / 30, '0.00%');
 
-        $products = $this->rowIndex($column, 'Total Products Sold (Courses/Camps)');
-        $this->assertNumericCell($summary, 'B' . $products, 28, '0');
-        $this->assertNumericCell($summary, 'C' . $products, 1488, '#,##0.00');
+        $this->assertCalculated($summary, 'B' . $products, 30, '0');
+        $this->assertCalculated($summary, 'C' . $products, 1584, $money);
+        $this->assertSame('-', (string) $summary->getCell('E' . $products)->getValue());
+        $this->assertSame('-', (string) $summary->getCell('F' . $products)->getValue());
         $birthday = $this->rowIndex($column, 'Birthday Parties', $products + 1);
         $this->assertNumericCell($summary, 'B' . $birthday, 1, '0');
         $this->assertSame('s', $summary->getCell('C' . $birthday)->getDataType());
@@ -3788,12 +3818,20 @@ class DailyBfSalesEmailTest extends TestCase {
         $this->assertSame('-', (string) $summary->getCell('E' . $birthday)->getValue());
         $this->assertSame('s', $summary->getCell('F' . $birthday)->getDataType());
         $this->assertSame('-', (string) $summary->getCell('F' . $birthday)->getValue());
-        $tournaments = $this->rowIndex($column, 'TOTAL Summer Tournaments');
-        $this->assertNumericCell($summary, 'B' . $tournaments, 2, '0');
-        $this->assertNumericCell($summary, 'C' . $tournaments, 96, '#,##0.00');
+        $this->assertNotContains('TOTAL Summer Tournaments', $column);
+        $tournaments = $this->rowIndex($column, 'TOTAL Tournaments');
+        $zug = $this->rowIndex($column, 'Zug/Cham');
+        $zugTournament = $this->rowIndex($column, 'Tournaments', $zug + 1);
+        $this->assertLessThan($zugTotal, $zugTournament);
+        $this->assertSame('Tournaments', $column[$zugTournament]);
+        $this->assertSame('=SUM(B' . $zugTournament . ')', (string) $summary->getCell('B' . $tournaments)->getValue());
+        $this->assertCalculated($summary, 'B' . $tournaments, 2, '0');
+        $this->assertCalculated($summary, 'C' . $tournaments, 96, $money);
+        $this->assertSame('=IF(B$' . $products . '=0,0,B' . $tournaments . '/B$' . $products . ')', (string) $summary->getCell('E' . $tournaments)->getValue());
         $orderTotal = $this->rowIndex($column, 'Total orders (Courses/Camps)');
         $this->assertNumericCell($summary, 'B' . $orderTotal, 8, '0');
-        $this->assertNumericCell($summary, 'C' . $orderTotal, 1488, '#,##0.00');
+        $this->assertSame('=C' . $products, (string) $summary->getCell('C' . $orderTotal)->getValue());
+        $this->assertCalculated($summary, 'C' . $orderTotal, 1584, $money);
         $this->assertNumericCell($summary, 'D' . $orderTotal, 1, '0');
         $this->assertSame('s', $summary->getCell('E' . $orderTotal)->getDataType());
         $this->assertSame('-', (string) $summary->getCell('E' . $orderTotal)->getValue());
@@ -3801,20 +3839,47 @@ class DailyBfSalesEmailTest extends TestCase {
         $this->assertSame('-', (string) $summary->getCell('F' . $orderTotal)->getValue());
         $returning = $this->rowIndex($column, 'RETURNING CUSTOMERS');
         $newCustomers = $this->rowIndex($column, 'NEW CUSTOMERS');
-        $this->assertNumericCell($summary, 'B' . $returning, 5, '0');
-        $this->assertNumericCell($summary, 'C' . $returning, 925, '#,##0.00');
-        $this->assertNumericCell($summary, 'E' . $returning, 0.5, '0.0%');
-        $this->assertNumericCell($summary, 'B' . $newCustomers, 5, '0');
-        $this->assertNumericCell($summary, 'C' . $newCustomers, 694, '#,##0.00');
+        $this->assertNumericCell($summary, 'B' . $returning, 4, '0');
+        $this->assertNumericCell($summary, 'C' . $returning, 890, $money);
+        $this->assertSame('-', (string) $summary->getCell('D' . $returning)->getValue());
+        $this->assertSame('=IF(B$' . $orderTotal . '=0,0,B' . $returning . '/B$' . $orderTotal . ')', (string) $summary->getCell('E' . $returning)->getValue());
+        $this->assertCalculated($summary, 'E' . $returning, 0.5, '0.00%');
+        $this->assertCalculated($summary, 'F' . $returning, 890 / 1584, '0.00%');
+        $this->assertNumericCell($summary, 'B' . $newCustomers, 4, '0');
+        $this->assertNumericCell($summary, 'C' . $newCustomers, 694, $money);
+        $this->assertSame(27.75, $summary->getRowDimension($products)->getRowHeight());
+        $this->assertSame(27.75, $summary->getRowDimension($orderTotal)->getRowHeight());
+        $this->assertSame(27.75, $summary->getRowDimension($returning)->getRowHeight());
+        $this->assertSame(13.5, $summary->getRowDimension($newCustomers)->getRowHeight());
+        $this->assertSame(13.5, $summary->getDefaultRowDimension()->getRowHeight());
+        $this->assertEqualsWithDelta(20.75, $summary->getColumnDimension('A')->getWidth(), 0.001);
+        $this->assertEqualsWithDelta(13.38, $summary->getColumnDimension('B')->getWidth(), 0.001);
+        $this->assertEqualsWithDelta(16.25, $summary->getColumnDimension('C')->getWidth(), 0.001);
+        $this->assertEqualsWithDelta(17.63, $summary->getColumnDimension('D')->getWidth(), 0.001);
+        $this->assertEqualsWithDelta(15.63, $summary->getColumnDimension('E')->getWidth(), 0.001);
+        $this->assertEqualsWithDelta(11.88, $summary->getColumnDimension('F')->getWidth(), 0.001);
+        $this->assertSummaryStyle($summary, 'A3', 'FFF4CCCC');
+        $this->assertSummaryStyle($summary, 'A' . $geneva, 'FFF4CCCC');
+        $this->assertSummaryStyle($summary, 'F' . $geneva, 'FFF4CCCC');
+        $this->assertSummaryStyle($summary, 'A' . $autumn, 'FFB8CCE4');
+        $this->assertSummaryStyle($summary, 'B' . $autumn, '');
+        $this->assertSummaryStyle($summary, 'A' . $genevaTotal, 'FFB8CCE4');
+        $this->assertSummaryStyle($summary, 'F' . $genevaTotal, 'FFB8CCE4');
+        $this->assertSummaryStyle($summary, 'A' . $tournaments, 'FFB8CCE4');
+        $this->assertSummaryStyle($summary, 'A' . $newCustomers, 'FFF4CCCC');
+        $this->assertSummaryStyle($summary, 'A' . $french, 'FFF4CCCC');
+        $this->assertSame('FFD5A6BD', $summary->getStyle('A2')->getFill()->getStartColor()->getARGB());
 
-        $this->assertSame('910001', (string) $orders->getCell('B2')->getValue());
-        $this->assertNumericCell($orders, 'C2', 300, '#,##0.00');
+        $this->assertSame(910001, (int) $orders->getCell('B2')->getValue());
+        $this->assertSame('n', $orders->getCell('B2')->getDataType());
+        $this->assertSame('CHF300.00', (string) $orders->getCell('C2')->getValue());
+        $this->assertSame('s', $orders->getCell('C2')->getDataType());
         $this->assertNumericCell($orders, 'J2', 300, '#,##0.00');
         $this->assertSame('n', $orders->getCell('A2')->getDataType());
-        $this->assertSame('yyyy-mm-dd hh:mm', $orders->getStyle('A2')->getNumberFormat()->getFormatCode());
-        $this->assertSame('Completed', (string) $orders->getCell('D2')->getValue());
+        $this->assertSame('dd/mm/yyyy hh:mm', $orders->getStyle('A2')->getNumberFormat()->getFormatCode());
+        $this->assertSame('completed', (string) $orders->getCell('D2')->getValue());
         $this->assertSame('Sample Parent A', (string) $orders->getCell('E2')->getValue());
-        $this->assertSame('Returning', (string) $orders->getCell('F2')->getValue());
+        $this->assertSame('returning', (string) $orders->getCell('F2')->getValue());
         $this->assertSame('5× Sample Camp A', (string) $orders->getCell('G2')->getValue());
         $this->assertNumericCell($orders, 'H2', 5, '0');
         $this->assertSame('sample-code', (string) $orders->getCell('I2')->getValue());
@@ -3822,7 +3887,11 @@ class DailyBfSalesEmailTest extends TestCase {
         $this->assertSame('fr', (string) $orders->getCell('L2')->getValue());
         $this->assertSame('CHF', (string) $orders->getCell('M2')->getValue());
         $this->assertSame('Sample Parent B', (string) $orders->getCell('E3')->getValue());
+        $this->assertSame('new', (string) $orders->getCell('F3')->getValue());
         $this->assertSame('', (string) $orders->getCell('K3')->getValue());
+        $this->assertSame('N. Revenue (formatted)', (string) $orders->getCell('C1')->getValue());
+        $this->assertTrue($orders->getStyle('A1')->getFont()->getBold());
+        $this->assertFalse($orders->getStyle('A2')->getFont()->getBold());
 
         $blob = $this->sheetTextBlob($summary) . $this->sheetTextBlob($orders);
         $this->assertStringNotContainsString('@', $blob);
@@ -3844,13 +3913,25 @@ class DailyBfSalesEmailTest extends TestCase {
         $this->assertFileExists($path);
         $spreadsheet = \PhpOffice\PhpSpreadsheet\IOFactory::load($path);
         $summary = $spreadsheet->getSheet(0);
-        $this->assertSame('Black Friday Sales 2031', (string) $summary->getCell('A1')->getValue());
-        $this->assertSame('Coupon Usage', (string) $summary->getCell('D2')->getValue());
+        $this->assertSame('2031', $spreadsheet->getSheet(1)->getTitle());
+        $this->assertSame('Black Friday Sales 2031', (string) $summary->getCell('A2')->getValue());
+        $this->assertSame('Coupon Usage', (string) $summary->getCell('D3')->getValue());
         $column = $this->columnA($summary);
-        $genevaTotal = $this->rowIndex($column, 'Total', $this->rowIndex($column, 'Geneva/Versoix') + 1);
-        $this->assertNumericCell($summary, 'B' . $genevaTotal, 0, '0');
-        $this->assertNumericCell($summary, 'E' . $genevaTotal, 0, '0.0%');
-        $this->assertNumericCell($summary, 'F' . $genevaTotal, 0, '0.0%');
+        $geneva = $this->rowIndex($column, 'Geneva/Versoix');
+        $genevaTotal = $this->rowIndex($column, 'Total', $geneva + 1);
+        $this->assertSame('Autumn Courses', $column[$geneva + 1]);
+        $this->assertSame('Winter Courses', $column[$geneva + 2]);
+        $this->assertSame('Spring Courses', $column[$geneva + 3]);
+        $this->assertSame('Easter Camps', $column[$geneva + 4]);
+        $this->assertSame('Summer Camps', $column[$geneva + 5]);
+        $this->assertSame($geneva + 6, $genevaTotal);
+        $this->assertNotContains('Winter Camps', $column);
+        $this->assertNotContains('Tournaments', $column);
+        $this->assertCalculated($summary, 'B' . $genevaTotal, 0, '0');
+        $this->assertSame('=IF(B$' . $genevaTotal . '=0,0,B' . ($geneva + 1) . '/B$' . $genevaTotal . ')', (string) $summary->getCell('E' . ($geneva + 1))->getValue());
+        $this->assertCalculated($summary, 'E' . ($geneva + 1), 0, '0.00%');
+        $this->assertCalculated($summary, 'E' . $genevaTotal, 0, '0.00%');
+        $this->assertCalculated($summary, 'F' . $genevaTotal, 0, '0.00%');
         $birthday = $this->rowIndex($column, 'Birthday Parties');
         $this->assertSame('-', (string) $summary->getCell('C' . $birthday)->getValue());
         $this->assertSame('s', $summary->getCell('E' . $birthday)->getDataType());
@@ -3858,10 +3939,10 @@ class DailyBfSalesEmailTest extends TestCase {
         $this->assertSame('s', $summary->getCell('F' . $birthday)->getDataType());
         $this->assertSame('-', (string) $summary->getCell('F' . $birthday)->getValue());
         $this->assertNumericCell($summary, 'B' . $this->rowIndex($column, 'NEW CUSTOMERS'), 0, '0');
-        $this->assertNumericCell($summary, 'E' . $this->rowIndex($column, 'RETURNING CUSTOMERS'), 0, '0.0%');
+        $this->assertCalculated($summary, 'E' . $this->rowIndex($column, 'RETURNING CUSTOMERS'), 0, '0.00%');
         $blob = $this->sheetTextBlob($summary) . $this->sheetTextBlob($spreadsheet->getSheet(1));
         $this->assertStringNotContainsString('#DIV/0!', $blob);
-        $this->assertStringNotContainsString('2026', (string) $summary->getCell('A1')->getValue());
+        $this->assertStringNotContainsString('2026', (string) $summary->getCell('A2')->getValue());
         $spreadsheet->disconnectWorksheets();
         unlink($path);
 
@@ -3870,7 +3951,8 @@ class DailyBfSalesEmailTest extends TestCase {
             'report_date' => '2024-02-03',
         ], $reportPath);
         $yearBook = \PhpOffice\PhpSpreadsheet\IOFactory::load($reportPath);
-        $this->assertSame('Black Friday Sales 2024', (string) $yearBook->getSheet(0)->getCell('A1')->getValue());
+        $this->assertSame('Black Friday Sales 2024', (string) $yearBook->getSheet(0)->getCell('A2')->getValue());
+        $this->assertSame('2024', $yearBook->getSheet(1)->getTitle());
         $yearBook->disconnectWorksheets();
         unlink($reportPath);
     }
@@ -3994,15 +4076,19 @@ class DailyBfSalesEmailTest extends TestCase {
         ], $path);
         $spreadsheet = \PhpOffice\PhpSpreadsheet\IOFactory::load($path);
         $summary = $spreadsheet->getSheetByName('Booking Summary');
-        $orders = $spreadsheet->getSheetByName('Orders');
-        $this->assertSame('Black Friday Sales 2030', (string) $summary->getCell('A1')->getValue());
-        $this->assertSame('42', (string) $orders->getCell('B2')->getValue());
+        $orders = $spreadsheet->getSheetByName('2030');
+        $this->assertSame('Black Friday Sales 2030', (string) $summary->getCell('A2')->getValue());
+        $this->assertSame(42, (int) $orders->getCell('B2')->getValue());
+        $this->assertSame('n', $orders->getCell('B2')->getDataType());
         $this->assertSame('Sample Parent A', (string) $orders->getCell('E2')->getValue());
-        $this->assertSame('43', (string) $orders->getCell('B3')->getValue());
+        $this->assertSame('completed', (string) $orders->getCell('D2')->getValue());
+        $this->assertSame('returning', (string) $orders->getCell('F2')->getValue());
+        $this->assertSame(43, (int) $orders->getCell('B3')->getValue());
         $this->assertSame('', (string) $orders->getCell('E3')->getValue());
+        $this->assertSame('new', (string) $orders->getCell('F3')->getValue());
         $this->assertSame('2× Sample Camp, 3× Sample Camp Extra', (string) $orders->getCell('G2')->getValue());
         $this->assertNumericCell($orders, 'H2', 5, '0');
-        $this->assertNumericCell($orders, 'C2', 13.77, '#,##0.00');
+        $this->assertSame('CHF13.77', (string) $orders->getCell('C2')->getValue());
         $this->assertNumericCell($orders, 'J2', 11.62, '#,##0.00');
         $this->assertSame('n', $orders->getCell('A2')->getDataType());
         $column = $this->columnA($summary);
@@ -4011,7 +4097,7 @@ class DailyBfSalesEmailTest extends TestCase {
         $this->assertNumericCell($summary, 'D' . $winter, 5, '0');
         $orderTotal = $this->rowIndex($column, 'Total orders (Courses/Camps)');
         $this->assertNumericCell($summary, 'B' . $orderTotal, 2, '0');
-        $this->assertNumericCell($summary, 'C' . $orderTotal, 15.62, '#,##0.00');
+        $this->assertCalculated($summary, 'C' . $orderTotal, 15.62, '"CHF"\\ #,##0.00');
         $this->assertNumericCell($summary, 'D' . $orderTotal, 1, '0');
         $this->assertSame('-', (string) $summary->getCell('E' . $orderTotal)->getValue());
         $this->assertSame('-', (string) $summary->getCell('F' . $orderTotal)->getValue());
@@ -4084,7 +4170,7 @@ class DailyBfSalesEmailTest extends TestCase {
         $this->assertSame('intersoccer-bf-sales-2026-11-28.xlsx', basename((string) $mail['attachments'][0]));
         $this->assertFileDoesNotExist($mail['attachments'][0]);
         $spreadsheet = $this->loadWorkbookCopy($mail);
-        $this->assertSame(['Booking Summary', 'Orders'], $spreadsheet->getSheetNames());
+        $this->assertSame(['Booking Summary', '2026'], $spreadsheet->getSheetNames());
         $spreadsheet->disconnectWorksheets();
     }
 
@@ -4391,6 +4477,36 @@ class DailyBfSalesEmailTest extends TestCase {
         $this->assertSame('n', $value->getDataType(), $cell);
         $this->assertEqualsWithDelta($expected, (float) $value->getValue(), 0.000001, $cell);
         $this->assertSame($format, $sheet->getStyle($cell)->getNumberFormat()->getFormatCode(), $cell);
+    }
+
+    private function assertCalculated(\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet, string $cell, float $expected, string $format): void {
+        $value = $sheet->getCell($cell);
+        $this->assertSame('f', $value->getDataType(), $cell);
+        $this->assertEqualsWithDelta($expected, (float) $value->getCalculatedValue(), 0.000001, $cell);
+        $this->assertSame($format, $sheet->getStyle($cell)->getNumberFormat()->getFormatCode(), $cell);
+    }
+
+    private function assertSummaryStyle(\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet, string $cell, string $fill): void {
+        $style = $sheet->getStyle($cell);
+        $font = $style->getFont();
+        $this->assertSame('Arial', $font->getName(), $cell);
+        $this->assertSame(11.0, $font->getSize(), $cell);
+        $this->assertTrue($font->getBold(), $cell);
+        $this->assertSame('FF000000', $font->getColor()->getARGB(), $cell);
+        $alignment = $style->getAlignment();
+        $this->assertSame(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER, $alignment->getHorizontal(), $cell);
+        $this->assertSame(\PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_CENTER, $alignment->getVertical(), $cell);
+        $this->assertTrue($alignment->getWrapText(), $cell);
+        $this->assertSame(\PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN, $style->getBorders()->getLeft()->getBorderStyle(), $cell);
+        $this->assertSame(\PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN, $style->getBorders()->getRight()->getBorderStyle(), $cell);
+        $this->assertSame(\PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN, $style->getBorders()->getTop()->getBorderStyle(), $cell);
+        $this->assertSame(\PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN, $style->getBorders()->getBottom()->getBorderStyle(), $cell);
+        if ($fill === '') {
+            $this->assertSame(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_NONE, $style->getFill()->getFillType(), $cell);
+            return;
+        }
+        $this->assertSame(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID, $style->getFill()->getFillType(), $cell);
+        $this->assertSame($fill, $style->getFill()->getStartColor()->getARGB(), $cell);
     }
 
     private function sheetTextBlob(\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet): string {

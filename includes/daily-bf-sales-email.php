@@ -4805,11 +4805,13 @@ class DailyBfSalesEmail {
             $summary = $spreadsheet->getActiveSheet();
             $summary->setTitle('Booking Summary');
             $orders = $spreadsheet->createSheet();
-            $orders->setTitle('Orders');
+            $orders->setTitle($this->ordersSheetTitle($this->workbookPayload($digest)['year']));
             $this->fillBookingSummarySheet($summary, $digest);
             $this->fillOrdersSheet($orders, $digest);
             $spreadsheet->setActiveSheetIndex(0);
             $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+            $writer->setPreCalculateFormulas(true);
+            $writer->setForceFullCalc(true);
             $writer->save($path);
         } finally {
             $spreadsheet->disconnectWorksheets();
@@ -4828,11 +4830,17 @@ class DailyBfSalesEmail {
         if ($year !== '') {
             $title .= ' ' . $year;
         }
-        $this->sheetText($sheet, 'A1', $title);
-        $sheet->mergeCells('A1:F1');
-        $sheet->getStyle('A1')->getFont()->setBold(true);
         $coupon = trim((string) $book['coupon_code']);
         $usageHeader = ($coupon === '') ? 'Coupon Usage' : (strtoupper($coupon) . ' Usage');
+        $model = $this->summaryModel($book['lines'], $book['orders']);
+        $plan = $this->summarySheetPlan($model);
+        $money = $this->summaryMoneyFormat();
+        $percent = '0.00%';
+        $tps = (int) $plan['products_row'];
+        $ordersRow = (int) $plan['orders_row'];
+
+        $this->sheetText($sheet, 'A2', $title);
+        $sheet->mergeCells('A2:F2');
         $headers = [
             'A' => 'Courses/Camps',
             'B' => 'Number of bookings',
@@ -4842,164 +4850,504 @@ class DailyBfSalesEmail {
             'F' => '% of Sales',
         ];
         foreach ($headers as $column => $header) {
-            $this->sheetText($sheet, $column . '2', $header);
+            $this->sheetText($sheet, $column . '3', $header);
         }
-        $sheet->getStyle('A2:F2')->getFont()->setBold(true);
-        $model = $this->summaryModel($book['lines'], $book['orders']);
-        $row = 3;
-        $named = $this->summaryRegionOrder();
-        foreach ($named as $region) {
-            $block = $model['regions'][$region];
-            $row = $this->writeRegionBlock($sheet, $row, $region, $block, $model['grand']);
+
+        foreach ($plan['regions'] as $region) {
+            $this->sheetText($sheet, 'A' . $region['header'], $region['label']);
+            $first = 0;
+            $last = 0;
+            foreach ($region['products'] as $label => $productRow) {
+                $productRow = (int) $productRow;
+                if ($first === 0) {
+                    $first = $productRow;
+                }
+                $last = $productRow;
+                $bucket = $this->summaryBucket($region['rows'], $label);
+                $this->sheetText($sheet, 'A' . $productRow, $label);
+                $this->sheetNumber($sheet, 'B' . $productRow, (int) $bucket['quantity'], '0');
+                $this->sheetNumber($sheet, 'C' . $productRow, round((float) $bucket['sales'], 2), $money);
+                $this->sheetNumber($sheet, 'D' . $productRow, (int) $bucket['coupon_qty'], '0');
+            }
+            $totalRow = (int) $region['total'];
+            $this->sheetText($sheet, 'A' . $totalRow, 'Total');
+            $this->sheetFormula($sheet, 'B' . $totalRow, $this->sumRangeFormula('B', $first, $last), '0');
+            $this->sheetFormula($sheet, 'C' . $totalRow, $this->sumRangeFormula('C', $first, $last), $money);
+            $this->sheetFormula($sheet, 'D' . $totalRow, $this->sumRangeFormula('D', $first, $last), '0');
+            $this->sheetFormula($sheet, 'E' . $totalRow, $this->shareFormula('B', $totalRow, $tps), $percent);
+            $this->sheetFormula($sheet, 'F' . $totalRow, $this->shareFormula('C', $totalRow, $tps), $percent);
+            foreach ($region['products'] as $productRow) {
+                $productRow = (int) $productRow;
+                $this->sheetFormula($sheet, 'E' . $productRow, $this->shareFormula('B', $productRow, $totalRow), $percent);
+                $this->sheetFormula($sheet, 'F' . $productRow, $this->shareFormula('C', $productRow, $totalRow), $percent);
+            }
         }
-        $unknown = $model['regions']['Unknown'];
-        if (!$this->bucketIsZero($unknown['total'])) {
-            $row = $this->writeRegionBlock($sheet, $row, 'Unknown', $unknown, $model['grand']);
+
+        $this->sheetText($sheet, 'A' . $plan['general_row'], 'General');
+        $this->writeAddedTotals($sheet, (int) $plan['french_row'], 'Swiss French', $plan['french_totals'], $tps, $money, $percent);
+        $this->writeAddedTotals($sheet, (int) $plan['german_row'], 'Swiss German', $plan['german_totals'], $tps, $money, $percent);
+        $this->sheetText($sheet, 'A' . $tps, 'Total Products Sold (Courses/Camps)');
+        $this->sheetFormula($sheet, 'B' . $tps, $this->sumCellFormula('B', $plan['region_totals']), '0');
+        $this->sheetFormula($sheet, 'C' . $tps, $this->sumCellFormula('C', $plan['region_totals']), $money);
+        $this->sheetFormula($sheet, 'D' . $tps, $this->sumCellFormula('D', $plan['region_totals']), '0');
+        $this->sheetText($sheet, 'E' . $tps, '-');
+        $this->sheetText($sheet, 'F' . $tps, '-');
+
+        $birthdayRow = (int) $plan['birthday_row'];
+        $this->sheetText($sheet, 'A' . $birthdayRow, 'Birthday Parties');
+        $this->sheetNumber($sheet, 'B' . $birthdayRow, (int) $model['birthday']['quantity'], '0');
+        $this->sheetText($sheet, 'C' . $birthdayRow, '-');
+        $this->sheetNumber($sheet, 'D' . $birthdayRow, (int) $model['birthday']['coupon_qty'], '0');
+        $this->sheetText($sheet, 'E' . $birthdayRow, '-');
+        $this->sheetText($sheet, 'F' . $birthdayRow, '-');
+
+        foreach ($plan['season_rows'] as $label => $seasonRow) {
+            $seasonRow = (int) $seasonRow;
+            $sources = isset($plan['season_sources'][$label]) ? $plan['season_sources'][$label] : [];
+            $this->sheetText($sheet, 'A' . $seasonRow, 'TOTAL ' . $label);
+            $this->sheetFormula($sheet, 'B' . $seasonRow, $this->sumCellFormula('B', $sources), '0');
+            $this->sheetFormula($sheet, 'C' . $seasonRow, $this->sumCellFormula('C', $sources), $money);
+            $this->sheetFormula($sheet, 'D' . $seasonRow, $this->sumCellFormula('D', $sources), '0');
+            $this->sheetFormula($sheet, 'E' . $seasonRow, $this->shareFormula('B', $seasonRow, $tps), $percent);
+            $this->sheetFormula($sheet, 'F' . $seasonRow, $this->shareFormula('C', $seasonRow, $tps), $percent);
         }
-        $this->sheetText($sheet, 'A' . $row, 'General');
-        $row++;
-        $row = $this->writeSummaryNumbers(
-            $sheet,
-            $row,
-            'Swiss French',
-            $model['swiss_french'],
-            $model['swiss_french']['quantity'],
-            $model['grand']['quantity'],
-            $model['swiss_french']['sales'],
-            $model['grand']['sales']
-        );
-        $row = $this->writeSummaryNumbers(
-            $sheet,
-            $row,
-            'Swiss German',
-            $model['swiss_german'],
-            $model['swiss_german']['quantity'],
-            $model['grand']['quantity'],
-            $model['swiss_german']['sales'],
-            $model['grand']['sales']
-        );
-        $row = $this->writeSummaryNumbers(
-            $sheet,
-            $row,
-            'Total Products Sold (Courses/Camps)',
-            $model['course_camp'],
-            $model['course_camp']['quantity'],
-            $model['grand']['quantity'],
-            $model['course_camp']['sales'],
-            $model['grand']['sales']
-        );
-        $this->sheetText($sheet, 'A' . $row, 'Birthday Parties');
-        $this->sheetNumber($sheet, 'B' . $row, (int) $model['birthday']['quantity'], '0');
-        $this->sheetText($sheet, 'C' . $row, '-');
-        $this->sheetNumber($sheet, 'D' . $row, (int) $model['birthday']['coupon_qty'], '0');
-        $this->sheetText($sheet, 'E' . $row, '-');
-        $this->sheetText($sheet, 'F' . $row, '-');
-        $row++;
-        foreach ($model['season_totals'] as $label => $bucket) {
-            $row = $this->writeSummaryNumbers(
-                $sheet,
-                $row,
-                'TOTAL ' . $label,
-                $bucket,
-                $bucket['quantity'],
-                $model['grand']['quantity'],
-                $bucket['sales'],
-                $model['grand']['sales']
-            );
+
+        $this->sheetText($sheet, 'A' . $ordersRow, 'Total orders (Courses/Camps)');
+        $this->sheetNumber($sheet, 'B' . $ordersRow, (int) $model['course_camp_orders'], '0');
+        $this->sheetFormula($sheet, 'C' . $ordersRow, '=C' . $tps, $money);
+        $this->sheetNumber($sheet, 'D' . $ordersRow, (int) $model['course_camp_coupon_orders'], '0');
+        $this->sheetText($sheet, 'E' . $ordersRow, '-');
+        $this->sheetText($sheet, 'F' . $ordersRow, '-');
+
+        foreach (['new_row' => 'New', 'returning_row' => 'Returning'] as $planKey => $customerKey) {
+            $customerRow = (int) $plan[$planKey];
+            $group = $model['customers'][$customerKey];
+            $label = $customerKey === 'New' ? 'NEW CUSTOMERS' : 'RETURNING CUSTOMERS';
+            $this->sheetText($sheet, 'A' . $customerRow, $label);
+            $this->sheetNumber($sheet, 'B' . $customerRow, (int) $group['orders'], '0');
+            $this->sheetNumber($sheet, 'C' . $customerRow, round((float) $group['sales'], 2), $money);
+            $this->sheetText($sheet, 'D' . $customerRow, '-');
+            $this->sheetFormula($sheet, 'E' . $customerRow, $this->shareFormula('B', $customerRow, $ordersRow), $percent);
+            $this->sheetFormula($sheet, 'F' . $customerRow, $this->shareFormula('C', $customerRow, $tps), $percent);
         }
-        $this->sheetText($sheet, 'A' . $row, 'Total orders (Courses/Camps)');
-        $this->sheetNumber($sheet, 'B' . $row, (int) $model['course_camp_orders'], '0');
-        $this->sheetNumber($sheet, 'C' . $row, round((float) $model['course_camp']['sales'], 2), '#,##0.00');
-        $this->sheetNumber($sheet, 'D' . $row, (int) $model['course_camp_coupon_orders'], '0');
-        $this->sheetText($sheet, 'E' . $row, '-');
-        $this->sheetText($sheet, 'F' . $row, '-');
-        $row++;
-        $whole = $model['customer_whole'];
-        foreach (['NEW CUSTOMERS' => 'New', 'RETURNING CUSTOMERS' => 'Returning'] as $label => $key) {
-            $group = $model['customers'][$key];
-            $groupBucket = [
-                'quantity' => (int) $group['orders'],
-                'sales' => (float) $group['sales'],
-                'coupon_qty' => (int) $group['coupon_qty'],
-            ];
-            $row = $this->writeSummaryNumbers(
-                $sheet,
-                $row,
-                $label,
-                $groupBucket,
-                $group['orders'],
-                $whole['orders'],
-                $group['sales'],
-                $whole['sales']
-            );
+
+        $last = (int) $plan['last_row'];
+        $this->styleSummaryTable($sheet, $last, $plan);
+        $sheet->getDefaultRowDimension()->setRowHeight(13.5);
+        $sheet->getRowDimension(3)->setRowHeight(42);
+        for ($row = 2; $row <= $last; $row++) {
+            if ($row === 3) {
+                continue;
+            }
+            $sheet->getRowDimension($row)->setRowHeight($this->summaryRowHeight((string) $sheet->getCell('A' . $row)->getValue()));
         }
         $this->sheetWidths($sheet, [
-            'A' => 42,
-            'B' => 22,
-            'C' => 18,
-            'D' => 24,
-            'E' => 16,
-            'F' => 14,
+            'A' => 20.75,
+            'B' => 13.38,
+            'C' => 16.25,
+            'D' => 17.63,
+            'E' => 15.63,
+            'F' => 11.88,
         ]);
     }
 
     /**
-     * @param \PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet
-     * @param int                                           $row
-     * @param string                                        $region
-     * @param array<string,mixed>                           $block
-     * @param array<string,mixed>                           $grand
-     * @return int
+     * @param array<string,mixed> $model
+     * @return array<string,mixed>
      */
-    private function writeRegionBlock($sheet, $row, $region, array $block, array $grand) {
-        $this->sheetText($sheet, 'A' . $row, $region);
-        $row++;
-        $labels = $this->sortSeasonTypeLabels(array_keys($block['rows']));
-        $regionTotal = $block['total'];
-        foreach ($labels as $label) {
-            $bucket = $block['rows'][$label];
-            $row = $this->writeSummaryNumbers(
-                $sheet,
-                $row,
-                $label,
-                $bucket,
-                $bucket['quantity'],
-                $regionTotal['quantity'],
-                $bucket['sales'],
-                $regionTotal['sales']
-            );
+    private function summarySheetPlan(array $model) {
+        $global = $this->summaryProductLabels($model['regions']);
+        $row = 4;
+        $regions = [];
+        $regionTotals = [];
+        $seasonSources = [];
+        foreach ($this->summaryRegionsToShow($model) as $label) {
+            $rows = isset($model['regions'][$label]['rows']) && is_array($model['regions'][$label]['rows'])
+                ? $model['regions'][$label]['rows']
+                : [];
+            $header = $row;
+            $row++;
+            $products = [];
+            foreach ($this->regionProductLabels($rows, $global) as $product) {
+                $products[$product] = $row;
+                if (!isset($seasonSources[$product])) {
+                    $seasonSources[$product] = [];
+                }
+                $seasonSources[$product][] = $row;
+                $row++;
+            }
+            $regions[] = [
+                'label' => $label,
+                'header' => $header,
+                'products' => $products,
+                'total' => $row,
+                'rows' => $rows,
+            ];
+            $regionTotals[] = $row;
+            $row++;
         }
-        return $this->writeSummaryNumbers(
-            $sheet,
-            $row,
-            'Total',
-            $regionTotal,
-            $regionTotal['quantity'],
-            $grand['quantity'],
-            $regionTotal['sales'],
-            $grand['sales']
-        );
+        $general = $row;
+        $row++;
+        $french = $row;
+        $row++;
+        $german = $row;
+        $row++;
+        $productsRow = $row;
+        $row++;
+        $birthday = $row;
+        $row++;
+        $seasonRows = [];
+        foreach ($global as $label) {
+            $seasonRows[$label] = $row;
+            $row++;
+        }
+        $ordersRow = $row;
+        $row++;
+        $newRow = $row;
+        $row++;
+        $returningRow = $row;
+        $namedTotals = [];
+        foreach ($regions as $region) {
+            $namedTotals[$region['label']] = (int) $region['total'];
+        }
+        return [
+            'regions' => $regions,
+            'region_totals' => $regionTotals,
+            'general_row' => $general,
+            'french_row' => $french,
+            'german_row' => $german,
+            'french_totals' => [
+                $namedTotals['Geneva/Versoix'],
+                $namedTotals['Vaud'],
+            ],
+            'german_totals' => [
+                $namedTotals['Basel'],
+                $namedTotals['Zug/Cham'],
+                $namedTotals['Zurich'],
+            ],
+            'products_row' => $productsRow,
+            'birthday_row' => $birthday,
+            'season_rows' => $seasonRows,
+            'season_sources' => $seasonSources,
+            'orders_row' => $ordersRow,
+            'new_row' => $newRow,
+            'returning_row' => $returningRow,
+            'last_row' => $returningRow,
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $model
+     * @return array<int,string>
+     */
+    private function summaryRegionsToShow(array $model) {
+        $regions = $this->summaryRegionOrder();
+        $unknown = isset($model['regions']['Unknown']['total']) && is_array($model['regions']['Unknown']['total'])
+            ? $model['regions']['Unknown']['total']
+            : $this->emptySummaryBucket();
+        if (!$this->bucketIsZero($unknown)) {
+            $regions[] = 'Unknown';
+        }
+        return $regions;
+    }
+
+    /**
+     * Fixed course and camp rows, then Winter Camps, Tournaments, and any other non-zero type.
+     *
+     * @param array<string,mixed> $regions
+     * @return array<int,string>
+     */
+    private function summaryProductLabels(array $regions) {
+        $present = [];
+        foreach ($regions as $block) {
+            if (!is_array($block) || !isset($block['rows']) || !is_array($block['rows'])) {
+                continue;
+            }
+            foreach ($block['rows'] as $label => $bucket) {
+                if (!is_array($bucket) || $this->bucketIsZero($bucket)) {
+                    continue;
+                }
+                $present[(string) $label] = true;
+            }
+        }
+        $labels = ['Autumn Courses', 'Winter Courses'];
+        if (isset($present['Winter Camps'])) {
+            $labels[] = 'Winter Camps';
+        }
+        $labels = array_merge($labels, ['Spring Courses', 'Easter Camps', 'Summer Camps']);
+        if (isset($present['Tournaments'])) {
+            $labels[] = 'Tournaments';
+        }
+        $placed = array_fill_keys($labels, true);
+        $extra = [];
+        foreach (array_keys($present) as $label) {
+            if (!isset($placed[$label])) {
+                $extra[] = $label;
+            }
+        }
+        foreach ($this->sortSeasonTypeLabels($extra) as $label) {
+            $labels[] = $label;
+        }
+        return $labels;
+    }
+
+    /**
+     * @param array<string,mixed> $rows
+     * @param array<int,string>   $global
+     * @return array<int,string>
+     */
+    private function regionProductLabels(array $rows, array $global) {
+        $fixed = array_fill_keys($this->fixedSummaryProductLabels(), true);
+        $labels = [];
+        foreach ($global as $label) {
+            $bucket = $this->summaryBucket($rows, $label);
+            if (isset($fixed[$label]) || !$this->bucketIsZero($bucket)) {
+                $labels[] = $label;
+            }
+        }
+        return $labels;
+    }
+
+    /**
+     * @return array<int,string>
+     */
+    private function fixedSummaryProductLabels() {
+        return ['Autumn Courses', 'Winter Courses', 'Spring Courses', 'Easter Camps', 'Summer Camps'];
+    }
+
+    /**
+     * @param array<string,mixed> $rows
+     * @param string              $label
+     * @return array{quantity:int,sales:float,coupon_qty:int}
+     */
+    private function summaryBucket(array $rows, $label) {
+        if (isset($rows[$label]) && is_array($rows[$label])) {
+            return $rows[$label];
+        }
+        return $this->emptySummaryBucket();
+    }
+
+    /**
+     * @return array{quantity:int,sales:float,coupon_qty:int}
+     */
+    private function emptySummaryBucket() {
+        return ['quantity' => 0, 'sales' => 0.0, 'coupon_qty' => 0];
     }
 
     /**
      * @param \PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet
      * @param int                                           $row
      * @param string                                        $label
-     * @param array<string,mixed>                           $bucket
-     * @param float|int                                     $qtyPart
-     * @param float|int                                     $qtyWhole
-     * @param float|int                                     $salesPart
-     * @param float|int                                     $salesWhole
-     * @return int
+     * @param array<int,int>                                $totalRows
+     * @param int                                           $productsRow
+     * @param string                                        $money
+     * @param string                                        $percent
+     * @return void
      */
-    private function writeSummaryNumbers($sheet, $row, $label, array $bucket, $qtyPart, $qtyWhole, $salesPart, $salesWhole) {
+    private function writeAddedTotals($sheet, $row, $label, array $totalRows, $productsRow, $money, $percent) {
         $this->sheetText($sheet, 'A' . $row, $label);
-        $this->sheetNumber($sheet, 'B' . $row, (int) $bucket['quantity'], '0');
-        $this->sheetNumber($sheet, 'C' . $row, round((float) $bucket['sales'], 2), '#,##0.00');
-        $this->sheetNumber($sheet, 'D' . $row, (int) $bucket['coupon_qty'], '0');
-        $this->sheetNumber($sheet, 'E' . $row, $this->share($qtyPart, $qtyWhole), '0.0%');
-        $this->sheetNumber($sheet, 'F' . $row, $this->share($salesPart, $salesWhole), '0.0%');
-        return $row + 1;
+        $this->sheetFormula($sheet, 'B' . $row, $this->addedFormula('B', $totalRows), '0');
+        $this->sheetFormula($sheet, 'C' . $row, $this->addedFormula('C', $totalRows), $money);
+        $this->sheetFormula($sheet, 'D' . $row, $this->addedFormula('D', $totalRows), '0');
+        $this->sheetFormula($sheet, 'E' . $row, $this->shareFormula('B', $row, $productsRow), $percent);
+        $this->sheetFormula($sheet, 'F' . $row, $this->shareFormula('C', $row, $productsRow), $percent);
+    }
+
+    /**
+     * @param string       $column
+     * @param array<int,int> $rows
+     * @return string
+     */
+    private function addedFormula($column, array $rows) {
+        $refs = [];
+        foreach ($rows as $row) {
+            $refs[] = $column . (int) $row;
+        }
+        if ($refs === []) {
+            return '=0';
+        }
+        return '=' . implode('+', $refs);
+    }
+
+    /**
+     * @param string         $column
+     * @param array<int,int> $rows
+     * @return string
+     */
+    private function sumCellFormula($column, array $rows) {
+        $refs = [];
+        foreach ($rows as $row) {
+            $refs[] = $column . (int) $row;
+        }
+        if ($refs === []) {
+            return '=SUM(0)';
+        }
+        return '=SUM(' . implode(',', $refs) . ')';
+    }
+
+    /**
+     * @param string $column
+     * @param int    $start
+     * @param int    $end
+     * @return string
+     */
+    private function sumRangeFormula($column, $start, $end) {
+        if ((int) $start < 1 || (int) $end < (int) $start) {
+            return '=SUM(0)';
+        }
+        return '=SUM(' . $column . (int) $start . ':' . $column . (int) $end . ')';
+    }
+
+    /**
+     * @param string $column
+     * @param int    $partRow
+     * @param int    $wholeRow
+     * @return string
+     */
+    private function shareFormula($column, $partRow, $wholeRow) {
+        return '=IF(' . $column . '$' . (int) $wholeRow . '=0,0,' . $column . (int) $partRow . '/' . $column . '$' . (int) $wholeRow . ')';
+    }
+
+    /**
+     * @param \PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet
+     * @param string                                        $cell
+     * @param string                                        $formula
+     * @param string                                        $format
+     * @return void
+     */
+    private function sheetFormula($sheet, $cell, $formula, $format) {
+        $sheet->setCellValue($cell, $formula);
+        $sheet->getStyle($cell)->getNumberFormat()->setFormatCode($format);
+    }
+
+    /**
+     * Arial 11 bold, centred, wrapped, thin black borders, then the reference fills.
+     *
+     * Swiss French and Swiss German are pink across A:F. The 2025 block shows that
+     * fill on the whole row, not blue on column A alone.
+     *
+     * @param \PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet
+     * @param int                                           $last
+     * @param array<string,mixed>                           $plan
+     * @return void
+     */
+    private function styleSummaryTable($sheet, $last, array $plan) {
+        $pink = 'FFF4CCCC';
+        $blue = 'FFB8CCE4';
+        $columns = ['A', 'B', 'C', 'D', 'E', 'F'];
+        for ($row = 2; $row <= $last; $row++) {
+            foreach ($columns as $column) {
+                $this->styleSummaryCell($sheet, $column . $row);
+            }
+        }
+        $this->fillSummaryRow($sheet, 2, 'FFD5A6BD');
+        $this->fillSummaryRow($sheet, 3, $pink);
+        foreach ($plan['regions'] as $region) {
+            $this->fillSummaryRow($sheet, (int) $region['header'], $pink);
+            foreach ($region['products'] as $productRow) {
+                $this->fillSummaryCell($sheet, 'A' . (int) $productRow, $blue);
+            }
+            $this->fillSummaryRow($sheet, (int) $region['total'], $blue);
+        }
+        $this->fillSummaryRow($sheet, (int) $plan['general_row'], $pink);
+        $this->fillSummaryRow($sheet, (int) $plan['french_row'], $pink);
+        $this->fillSummaryRow($sheet, (int) $plan['german_row'], $pink);
+        $this->fillSummaryRow($sheet, (int) $plan['products_row'], $pink);
+        $this->fillSummaryRow($sheet, (int) $plan['birthday_row'], $pink);
+        foreach ($plan['season_rows'] as $seasonRow) {
+            $this->fillSummaryRow($sheet, (int) $seasonRow, $blue);
+        }
+        $this->fillSummaryRow($sheet, (int) $plan['orders_row'], $pink);
+        $this->fillSummaryRow($sheet, (int) $plan['new_row'], $pink);
+        $this->fillSummaryRow($sheet, (int) $plan['returning_row'], $pink);
+    }
+
+    /**
+     * @param \PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet
+     * @param string                                        $cell
+     * @return void
+     */
+    private function styleSummaryCell($sheet, $cell) {
+        $style = $sheet->getStyle($cell);
+        $font = $style->getFont();
+        $font->setName('Arial');
+        $font->setSize(11);
+        $font->setBold(true);
+        $font->getColor()->setARGB('FF000000');
+        $style->getAlignment()
+            ->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER)
+            ->setVertical(\PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_CENTER)
+            ->setWrapText(true);
+        $style->getBorders()->getAllBorders()
+            ->setBorderStyle(\PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN)
+            ->getColor()->setARGB('FF000000');
+    }
+
+    /**
+     * @param \PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet
+     * @param int                                           $row
+     * @param string                                        $argb
+     * @return void
+     */
+    private function fillSummaryRow($sheet, $row, $argb) {
+        foreach (['A', 'B', 'C', 'D', 'E', 'F'] as $column) {
+            $this->fillSummaryCell($sheet, $column . $row, $argb);
+        }
+    }
+
+    /**
+     * @param \PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet
+     * @param string                                        $cell
+     * @param string                                        $argb
+     * @return void
+     */
+    private function fillSummaryCell($sheet, $cell, $argb) {
+        $sheet->getStyle($cell)->getFill()
+            ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
+            ->getStartColor()->setARGB($argb);
+    }
+
+    /**
+     * Two-line height when the label is longer than 16 characters.
+     *
+     * Arial 11 bold at column width 20.75 wraps "RETURNING CUSTOMERS" (19)
+     * and the long Total / TOTAL labels. "NEW CUSTOMERS" (13) stays one line.
+     *
+     * @param string $label
+     * @return float
+     */
+    private function summaryRowHeight($label) {
+        if (strlen($label) > 16) {
+            return 27.75;
+        }
+        return 13.5;
+    }
+
+    /**
+     * @return string
+     */
+    private function summaryMoneyFormat() {
+        return '"CHF"\\ #,##0.00';
+    }
+
+    /**
+     * @param string $year
+     * @return string
+     */
+    private function ordersSheetTitle($year) {
+        $year = trim((string) $year);
+        if (preg_match('/^\d{4}$/', $year) === 1) {
+            return $year;
+        }
+        return 'Orders';
+    }
+
+    /**
+     * @param float|int $amount
+     * @return string
+     */
+    private function formattedChf($amount) {
+        return 'CHF' . number_format((float) $amount, 2, '.', '');
     }
 
     /**
@@ -5012,7 +5360,7 @@ class DailyBfSalesEmail {
         $headers = [
             'A' => 'Date',
             'B' => 'Order #',
-            'C' => 'Revenue',
+            'C' => 'N. Revenue (formatted)',
             'D' => 'Status',
             'E' => 'Customer',
             'F' => 'Customer type',
@@ -5034,11 +5382,11 @@ class DailyBfSalesEmail {
                 continue;
             }
             $this->sheetZurichDate($sheet, 'A' . $row, isset($order['paid_at']) ? (string) $order['paid_at'] : '');
-            $this->sheetText($sheet, 'B' . $row, isset($order['order_number']) ? (string) $order['order_number'] : '');
-            $this->sheetNumber($sheet, 'C' . $row, round((float) ($order['revenue'] ?? 0), 2), '#,##0.00');
-            $this->sheetText($sheet, 'D' . $row, isset($order['status']) ? (string) $order['status'] : '');
+            $this->sheetOrderNumber($sheet, 'B' . $row, isset($order['order_number']) ? (string) $order['order_number'] : '');
+            $this->sheetText($sheet, 'C' . $row, $this->formattedChf(round((float) ($order['revenue'] ?? 0), 2)));
+            $this->sheetText($sheet, 'D' . $row, strtolower(isset($order['status']) ? (string) $order['status'] : ''));
             $this->sheetText($sheet, 'E' . $row, isset($order['customer']) ? (string) $order['customer'] : '');
-            $this->sheetText($sheet, 'F' . $row, isset($order['customer_type']) ? (string) $order['customer_type'] : '');
+            $this->sheetText($sheet, 'F' . $row, strtolower(isset($order['customer_type']) ? (string) $order['customer_type'] : ''));
             $this->sheetText($sheet, 'G' . $row, isset($order['products']) ? (string) $order['products'] : '');
             $this->sheetNumber($sheet, 'H' . $row, (int) ($order['items_sold'] ?? 0), '0');
             $this->sheetText($sheet, 'I' . $row, isset($order['coupons']) ? (string) $order['coupons'] : '');
@@ -5126,9 +5474,13 @@ class DailyBfSalesEmail {
             if ($region === '') {
                 $region = 'Unknown';
             }
-            $label = trim((string) ($line['season_type'] ?? ''));
-            if ($label === '') {
-                $label = 'Other';
+            if ($type === ProductTypeClassifierService::TYPE_TOURNAMENT) {
+                $label = 'Tournaments';
+            } else {
+                $label = trim((string) ($line['season_type'] ?? ''));
+                if ($label === '') {
+                    $label = 'Other';
+                }
             }
             if (!isset($grouped[$region])) {
                 $grouped[$region] = [];
@@ -5190,22 +5542,25 @@ class DailyBfSalesEmail {
                 continue;
             }
             $type = ((string) ($order['customer_type'] ?? '')) === 'Returning' ? 'Returning' : 'New';
-            $customers[$type]['orders']++;
-            $customers[$type]['sales'] = round((float) $customers[$type]['sales'] + (float) ($order['net_sales'] ?? 0), 2);
             $number = trim((string) ($order['order_number'] ?? ''));
             if ($number !== '') {
                 $orderType[$number] = $type;
             }
         }
+        foreach (array_keys($courseCampOrders) as $number) {
+            $type = isset($orderType[$number]) ? $orderType[$number] : 'New';
+            $customers[$type]['orders']++;
+        }
         foreach ($lines as $line) {
             if (!is_array($line)) {
                 continue;
             }
-            $number = trim((string) ($line['order_number'] ?? ''));
-            if ($number === '' || !isset($orderType[$number])) {
+            if ((string) ($line['product_type'] ?? '') === ProductTypeClassifierService::TYPE_BIRTHDAY) {
                 continue;
             }
-            $customers[$orderType[$number]]['coupon_qty'] += max(0, (int) ($line['coupon_qty'] ?? 0));
+            $number = trim((string) ($line['order_number'] ?? ''));
+            $type = ($number !== '' && isset($orderType[$number])) ? $orderType[$number] : 'New';
+            $customers[$type]['sales'] = round((float) $customers[$type]['sales'] + (float) ($line['sales'] ?? 0), 2);
         }
         return [
             'regions' => $regions,
@@ -5356,6 +5711,21 @@ class DailyBfSalesEmail {
     }
 
     /**
+     * @param \PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet
+     * @param string                                        $cell
+     * @param string                                        $number
+     * @return void
+     */
+    private function sheetOrderNumber($sheet, $cell, $number) {
+        $number = trim((string) $number);
+        if ($number !== '' && preg_match('/^-?\d+$/', $number) === 1) {
+            $this->sheetNumber($sheet, $cell, (int) $number, '0');
+            return;
+        }
+        $this->sheetText($sheet, $cell, $number);
+    }
+
+    /**
      * Europe/Zurich wall-clock time as an Excel date serial.
      *
      * @param \PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet
@@ -5375,7 +5745,7 @@ class DailyBfSalesEmail {
             $this->sheetText($sheet, $cell, $text);
             return;
         }
-        $this->sheetNumber($sheet, $cell, (float) $serial, 'yyyy-mm-dd hh:mm');
+        $this->sheetNumber($sheet, $cell, (float) $serial, 'dd/mm/yyyy hh:mm');
     }
 
     /**
