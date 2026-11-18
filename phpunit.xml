@@ -108,6 +108,7 @@
             <file>tests/Campaign/Final15CampaignFixtureTest.php</file>
             <file>tests/Campaign/CampaignMomentumTest.php</file>
             <file>tests/Services/RosterCanonicalFieldsTest.php</file>
+            <file>tests/Services/CacheManagerBinarySafeTest.php</file>
             <file>tests/Services/RosterRefundServiceTest.php</file>
             <file>tests/Services/RosterExportRefundFilterTest.php</file>
             <file>tests/Ajax/RosterVenueAccessTest.php</file>
