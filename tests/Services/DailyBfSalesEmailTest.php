@@ -3782,8 +3782,9 @@ class DailyBfSalesEmailTest extends TestCase {
         $this->assertSame('=SUM(B' . ($geneva + 1) . ':B' . ($genevaTotal - 1) . ')', (string) $summary->getCell('B' . $genevaTotal)->getValue());
         $this->assertCalculated($summary, 'B' . $genevaTotal, 7, '0');
         $this->assertCalculated($summary, 'C' . $genevaTotal, 380, $money);
-        $this->assertSame('=IF(B$' . $this->rowIndex($column, 'Total Products Sold (Courses/Camps)') . '=0,0,B' . $genevaTotal . '/B$' . $this->rowIndex($column, 'Total Products Sold (Courses/Camps)') . ')', (string) $summary->getCell('E' . $genevaTotal)->getValue());
-        $products = $this->rowIndex($column, 'Total Products Sold (Courses/Camps)');
+        $productsLabel = 'Total Products Sold (Courses/Camps/Tournaments)';
+        $this->assertSame('=IF(B$' . $this->rowIndex($column, $productsLabel) . '=0,0,B' . $genevaTotal . '/B$' . $this->rowIndex($column, $productsLabel) . ')', (string) $summary->getCell('E' . $genevaTotal)->getValue());
+        $products = $this->rowIndex($column, $productsLabel);
         $this->assertCalculated($summary, 'E' . $genevaTotal, 7 / 30, '0.00%');
         $this->assertCalculated($summary, 'F' . $genevaTotal, 380 / 1584, '0.00%');
         $vaudLabels = [];
@@ -3828,8 +3829,9 @@ class DailyBfSalesEmailTest extends TestCase {
         $this->assertCalculated($summary, 'B' . $tournaments, 2, '0');
         $this->assertCalculated($summary, 'C' . $tournaments, 96, $money);
         $this->assertSame('=IF(B$' . $products . '=0,0,B' . $tournaments . '/B$' . $products . ')', (string) $summary->getCell('E' . $tournaments)->getValue());
-        $orderTotal = $this->rowIndex($column, 'Total orders (Courses/Camps)');
-        $this->assertNumericCell($summary, 'B' . $orderTotal, 8, '0');
+        $this->assertNotContains('Total orders (Courses/Camps)', $column);
+        $orderTotal = $this->rowIndex($column, 'Total orders (Courses/Camps/Tournaments)');
+        $this->assertNumericCell($summary, 'B' . $orderTotal, 9, '0');
         $this->assertSame('=C' . $products, (string) $summary->getCell('C' . $orderTotal)->getValue());
         $this->assertCalculated($summary, 'C' . $orderTotal, 1584, $money);
         $this->assertNumericCell($summary, 'D' . $orderTotal, 1, '0');
@@ -3843,10 +3845,12 @@ class DailyBfSalesEmailTest extends TestCase {
         $this->assertNumericCell($summary, 'C' . $returning, 890, $money);
         $this->assertSame('-', (string) $summary->getCell('D' . $returning)->getValue());
         $this->assertSame('=IF(B$' . $orderTotal . '=0,0,B' . $returning . '/B$' . $orderTotal . ')', (string) $summary->getCell('E' . $returning)->getValue());
-        $this->assertCalculated($summary, 'E' . $returning, 0.5, '0.00%');
+        $this->assertCalculated($summary, 'E' . $returning, 4 / 9, '0.00%');
         $this->assertCalculated($summary, 'F' . $returning, 890 / 1584, '0.00%');
-        $this->assertNumericCell($summary, 'B' . $newCustomers, 4, '0');
+        $this->assertNumericCell($summary, 'B' . $newCustomers, 5, '0');
         $this->assertNumericCell($summary, 'C' . $newCustomers, 694, $money);
+        $this->assertCalculated($summary, 'E' . $newCustomers, 5 / 9, '0.00%');
+        $this->assertCalculated($summary, 'F' . $newCustomers, 694 / 1584, '0.00%');
         $this->assertSame(27.75, $summary->getRowDimension($products)->getRowHeight());
         $this->assertSame(27.75, $summary->getRowDimension($orderTotal)->getRowHeight());
         $this->assertSame(27.75, $summary->getRowDimension($returning)->getRowHeight());
@@ -4099,6 +4103,7 @@ class DailyBfSalesEmailTest extends TestCase {
         $winter = $this->rowIndex($column, 'Winter Camps');
         $this->assertNumericCell($summary, 'B' . $winter, 5, '0');
         $this->assertNumericCell($summary, 'D' . $winter, 5, '0');
+        $this->assertSame('Total Products Sold (Courses/Camps)', $column[$this->rowIndex($column, 'Total Products Sold (Courses/Camps)')]);
         $orderTotal = $this->rowIndex($column, 'Total orders (Courses/Camps)');
         $this->assertNumericCell($summary, 'B' . $orderTotal, 2, '0');
         $this->assertCalculated($summary, 'C' . $orderTotal, 15.62, '"CHF"\\ #,##0.00');
@@ -4113,6 +4118,137 @@ class DailyBfSalesEmailTest extends TestCase {
         $this->assertStringNotContainsString('Sample Parent', $logged);
         $spreadsheet->disconnectWorksheets();
         unlink($path);
+    }
+
+    public function test_total_labels_and_order_counts_follow_tournament_rows(): void {
+        $service = $this->wooService();
+        $write = new \ReflectionMethod(DailyBfSalesEmail::class, 'writeWorkbook');
+        $write->setAccessible(true);
+        $money = '"CHF"\\ #,##0.00';
+
+        $plainPath = sys_get_temp_dir() . '/rr-bf-plain-' . uniqid('', true) . '.xlsx';
+        $write->invoke($service, [
+            'report_date' => '2026-11-10',
+            'campaign_start' => '2026-11-01',
+            'workbook' => $this->summaryWorkbook([
+                $this->summaryLine('1', 'Camp', 'Winter Camps', 'Geneva/Versoix', 2, 100, 2),
+                $this->summaryLine('2', 'Course', 'Spring Courses', 'Zurich', 1, 50, 0),
+                $this->summaryLine('3', 'Birthday', 'Spring Birthdays', 'Unknown', 1, 20, 1),
+            ], [
+                $this->summaryOrder('1', 'Returning'),
+                $this->summaryOrder('2', 'New'),
+                $this->summaryOrder('3', 'New'),
+            ]),
+        ], $plainPath);
+        $plain = \PhpOffice\PhpSpreadsheet\IOFactory::load($plainPath);
+        $plainSummary = $plain->getSheet(0);
+        $plainColumn = $this->columnA($plainSummary);
+        $this->assertNotContains('Tournaments', $plainColumn);
+        $this->assertNotContains('TOTAL Tournaments', $plainColumn);
+        $plainProducts = $this->rowIndex($plainColumn, 'Total Products Sold (Courses/Camps)');
+        $plainOrders = $this->rowIndex($plainColumn, 'Total orders (Courses/Camps)');
+        $this->assertCalculated($plainSummary, 'C' . $plainProducts, 150, $money);
+        $this->assertNumericCell($plainSummary, 'B' . $plainOrders, 2, '0');
+        $this->assertNumericCell($plainSummary, 'D' . $plainOrders, 1, '0');
+        $plainNew = $this->rowIndex($plainColumn, 'NEW CUSTOMERS');
+        $plainReturning = $this->rowIndex($plainColumn, 'RETURNING CUSTOMERS');
+        $this->assertNumericCell($plainSummary, 'B' . $plainNew, 1, '0');
+        $this->assertNumericCell($plainSummary, 'C' . $plainNew, 50, $money);
+        $this->assertNumericCell($plainSummary, 'B' . $plainReturning, 1, '0');
+        $this->assertNumericCell($plainSummary, 'C' . $plainReturning, 100, $money);
+        $this->assertCalculated($plainSummary, 'E' . $plainNew, 0.5, '0.00%');
+        $this->assertCalculated($plainSummary, 'F' . $plainNew, 50 / 150, '0.00%');
+        $plain->disconnectWorksheets();
+        unlink($plainPath);
+
+        $tournamentPath = sys_get_temp_dir() . '/rr-bf-tournament-' . uniqid('', true) . '.xlsx';
+        $write->invoke($service, [
+            'report_date' => '2026-11-10',
+            'campaign_start' => '2026-11-01',
+            'workbook' => $this->summaryWorkbook([
+                $this->summaryLine('1', 'Camp', 'Winter Camps', 'Geneva/Versoix', 2, 100, 0),
+                $this->summaryLine('4', 'Tournament', 'Summer Tournaments', 'Zug/Cham', 1, 40, 1),
+                $this->summaryLine('3', 'Birthday', 'Spring Birthdays', 'Unknown', 1, 20, 1),
+            ], [
+                $this->summaryOrder('1', 'Returning'),
+                $this->summaryOrder('4', 'New'),
+                $this->summaryOrder('3', 'Returning'),
+            ]),
+        ], $tournamentPath);
+        $tournament = \PhpOffice\PhpSpreadsheet\IOFactory::load($tournamentPath);
+        $tournamentSummary = $tournament->getSheet(0);
+        $tournamentColumn = $this->columnA($tournamentSummary);
+        $this->assertContains('TOTAL Tournaments', $tournamentColumn);
+        $products = $this->rowIndex($tournamentColumn, 'Total Products Sold (Courses/Camps/Tournaments)');
+        $orders = $this->rowIndex($tournamentColumn, 'Total orders (Courses/Camps/Tournaments)');
+        $this->assertSame(27.75, $tournamentSummary->getRowDimension($products)->getRowHeight());
+        $this->assertSame(27.75, $tournamentSummary->getRowDimension($orders)->getRowHeight());
+        $this->assertCalculated($tournamentSummary, 'B' . $products, 3, '0');
+        $this->assertCalculated($tournamentSummary, 'C' . $products, 140, $money);
+        $this->assertNumericCell($tournamentSummary, 'B' . $orders, 2, '0');
+        $this->assertNumericCell($tournamentSummary, 'D' . $orders, 1, '0');
+        $newCustomers = $this->rowIndex($tournamentColumn, 'NEW CUSTOMERS');
+        $returning = $this->rowIndex($tournamentColumn, 'RETURNING CUSTOMERS');
+        $this->assertNumericCell($tournamentSummary, 'B' . $newCustomers, 1, '0');
+        $this->assertNumericCell($tournamentSummary, 'C' . $newCustomers, 40, $money);
+        $this->assertNumericCell($tournamentSummary, 'B' . $returning, 1, '0');
+        $this->assertNumericCell($tournamentSummary, 'C' . $returning, 100, $money);
+        $this->assertCalculated($tournamentSummary, 'E' . $newCustomers, 0.5, '0.00%');
+        $this->assertCalculated($tournamentSummary, 'F' . $newCustomers, 40 / 140, '0.00%');
+        $this->assertCalculated($tournamentSummary, 'E' . $returning, 0.5, '0.00%');
+        $this->assertCalculated($tournamentSummary, 'F' . $returning, 100 / 140, '0.00%');
+        $tournament->disconnectWorksheets();
+        unlink($tournamentPath);
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $lines
+     * @param array<int,array<string,mixed>> $orders
+     * @return array<string,mixed>
+     */
+    private function summaryWorkbook(array $lines, array $orders): array {
+        return [
+            'year' => '2026',
+            'coupon_code' => 'sample-code',
+            'lines' => $lines,
+            'orders' => $orders,
+        ];
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    private function summaryLine(string $order, string $type, string $seasonType, string $region, int $qty, float $sales, int $couponQty): array {
+        return [
+            'order_number' => $order,
+            'product_type' => $type,
+            'season_type' => $seasonType,
+            'region' => $region,
+            'quantity' => $qty,
+            'sales' => $sales,
+            'coupon_qty' => $couponQty,
+        ];
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    private function summaryOrder(string $order, string $customerType): array {
+        return [
+            'paid_at' => '2026-11-10 09:15',
+            'order_number' => $order,
+            'revenue' => 0,
+            'net_sales' => 0,
+            'status' => 'Completed',
+            'customer' => 'Sample Parent',
+            'customer_type' => $customerType,
+            'products' => 'Sample',
+            'items_sold' => 1,
+            'coupons' => '',
+            'attribution' => '',
+            'language' => 'en',
+            'currency' => 'CHF',
+        ];
     }
 
     public function test_workbook_failure_still_sends_html_and_logs_no_customer_data(): void {

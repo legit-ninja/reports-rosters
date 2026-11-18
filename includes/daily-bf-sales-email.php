@@ -4888,7 +4888,8 @@ class DailyBfSalesEmail {
         $this->sheetText($sheet, 'A' . $plan['general_row'], 'General');
         $this->writeAddedTotals($sheet, (int) $plan['french_row'], 'Swiss French', $plan['french_totals'], $tps, $money, $percent);
         $this->writeAddedTotals($sheet, (int) $plan['german_row'], 'Swiss German', $plan['german_totals'], $tps, $money, $percent);
-        $this->sheetText($sheet, 'A' . $tps, 'Total Products Sold (Courses/Camps)');
+        $scope = !empty($model['includes_tournaments']) ? 'Courses/Camps/Tournaments' : 'Courses/Camps';
+        $this->sheetText($sheet, 'A' . $tps, 'Total Products Sold (' . $scope . ')');
         $this->sheetFormula($sheet, 'B' . $tps, $this->sumCellFormula('B', $plan['region_totals']), '0');
         $this->sheetFormula($sheet, 'C' . $tps, $this->sumCellFormula('C', $plan['region_totals']), $money);
         $this->sheetFormula($sheet, 'D' . $tps, $this->sumCellFormula('D', $plan['region_totals']), '0');
@@ -4914,10 +4915,10 @@ class DailyBfSalesEmail {
             $this->sheetFormula($sheet, 'F' . $seasonRow, $this->shareFormula('C', $seasonRow, $tps), $percent);
         }
 
-        $this->sheetText($sheet, 'A' . $ordersRow, 'Total orders (Courses/Camps)');
-        $this->sheetNumber($sheet, 'B' . $ordersRow, (int) $model['course_camp_orders'], '0');
+        $this->sheetText($sheet, 'A' . $ordersRow, 'Total orders (' . $scope . ')');
+        $this->sheetNumber($sheet, 'B' . $ordersRow, (int) $model['summary_orders'], '0');
         $this->sheetFormula($sheet, 'C' . $ordersRow, '=C' . $tps, $money);
-        $this->sheetNumber($sheet, 'D' . $ordersRow, (int) $model['course_camp_coupon_orders'], '0');
+        $this->sheetNumber($sheet, 'D' . $ordersRow, (int) $model['summary_coupon_orders'], '0');
         $this->sheetText($sheet, 'E' . $ordersRow, '-');
         $this->sheetText($sheet, 'F' . $ordersRow, '-');
 
@@ -5452,6 +5453,9 @@ class DailyBfSalesEmail {
         $courseCamp = ['quantity' => 0, 'sales' => 0.0, 'coupon_qty' => 0];
         $courseCampOrders = [];
         $courseCampCouponOrders = [];
+        $tournamentOrders = [];
+        $tournamentCouponOrders = [];
+        $hasTournaments = false;
         foreach ($lines as $line) {
             if (!is_array($line)) {
                 continue;
@@ -5477,6 +5481,16 @@ class DailyBfSalesEmail {
             }
             if ($type === ProductTypeClassifierService::TYPE_TOURNAMENT) {
                 $label = 'Tournaments';
+                if ($qty > 0 || $sales != 0.0 || $couponQty > 0) {
+                    $hasTournaments = true;
+                    $orderNumber = trim((string) ($line['order_number'] ?? ''));
+                    if ($orderNumber !== '') {
+                        $tournamentOrders[$orderNumber] = true;
+                        if ($couponQty > 0) {
+                            $tournamentCouponOrders[$orderNumber] = true;
+                        }
+                    }
+                }
             } else {
                 $label = trim((string) ($line['season_type'] ?? ''));
                 if ($label === '') {
@@ -5548,7 +5562,17 @@ class DailyBfSalesEmail {
                 $orderType[$number] = $type;
             }
         }
-        foreach (array_keys($courseCampOrders) as $number) {
+        $countedOrders = $courseCampOrders;
+        $countedCouponOrders = $courseCampCouponOrders;
+        if ($hasTournaments) {
+            foreach ($tournamentOrders as $number => $unused) {
+                $countedOrders[$number] = true;
+            }
+            foreach ($tournamentCouponOrders as $number => $unused) {
+                $countedCouponOrders[$number] = true;
+            }
+        }
+        foreach (array_keys($countedOrders) as $number) {
             $type = isset($orderType[$number]) ? $orderType[$number] : 'New';
             $customers[$type]['orders']++;
         }
@@ -5568,8 +5592,9 @@ class DailyBfSalesEmail {
             'grand' => $this->sumBuckets($grandParts),
             'birthday' => $birthday,
             'course_camp' => $courseCamp,
-            'course_camp_orders' => count($courseCampOrders),
-            'course_camp_coupon_orders' => count($courseCampCouponOrders),
+            'includes_tournaments' => $hasTournaments,
+            'summary_orders' => count($countedOrders),
+            'summary_coupon_orders' => count($countedCouponOrders),
             'customers' => $customers,
             'customer_whole' => [
                 'orders' => (int) $customers['New']['orders'] + (int) $customers['Returning']['orders'],
