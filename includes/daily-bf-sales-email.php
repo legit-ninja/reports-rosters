@@ -3498,9 +3498,11 @@ class DailyBfSalesEmail {
         if ($label === '' || strcasecmp($label, 'Unknown') === 0 || strcasecmp($label, 'not_recorded') === 0) {
             return 'Unknown';
         }
-        $lower = strtolower(FacetNormalizer::decode_label($label));
+        $lower = FacetNormalizer::lower_label(FacetNormalizer::decode_label($label));
         $map = [
             'basel-stadt' => 'Basel',
+            'bl' => 'Basel',
+            'bs' => 'Basel',
             'geneva' => 'Geneva/Versoix',
             'genève' => 'Geneva/Versoix',
             'geneve' => 'Geneva/Versoix',

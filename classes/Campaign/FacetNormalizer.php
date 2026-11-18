@@ -43,6 +43,38 @@ class FacetNormalizer {
 	}
 
 	/**
+	 * UTF-8 lowercase. ASCII strtolower is only the fallback when mbstring is absent.
+	 *
+	 * @param string $value
+	 * @return string
+	 */
+	public static function lower_label($value) {
+		$value = (string) $value;
+		if (function_exists('mb_strtolower')) {
+			return mb_strtolower($value, 'UTF-8');
+		}
+		return strtolower($value);
+	}
+
+	/**
+	 * Exact value, or the needle as a whole token. A letter or number on either side blocks it.
+	 *
+	 * @param string $haystack
+	 * @param string $needle
+	 * @return bool
+	 */
+	public static function label_has_token($haystack, $needle) {
+		if ($haystack === $needle) {
+			return true;
+		}
+		if ($needle === '') {
+			return false;
+		}
+		$pattern = '/(?:^|[^\p{L}\p{N}])' . preg_quote($needle, '/') . '(?:$|[^\p{L}\p{N}])/u';
+		return preg_match($pattern, $haystack) === 1;
+	}
+
+	/**
 	 * @param array<string,mixed> $raw Meta key => value (pivoted once)
 	 * @return array<string,mixed> Normalized facets
 	 */
@@ -321,9 +353,12 @@ class FacetNormalizer {
 	 * @return string
 	 */
 	public function normalize_region($raw) {
-		$t = strtolower(self::decode_label($raw));
+		$t = self::lower_label(self::decode_label($raw));
 		if ($t === '') {
 			return 'not_recorded';
+		}
+		if (self::label_has_token($t, 'bl') || self::label_has_token($t, 'bs')) {
+			return 'Basel-Stadt';
 		}
 		$map = [
 			'geneva' => 'Geneva',

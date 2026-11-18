@@ -4448,6 +4448,30 @@ class DailyBfSalesEmailTest extends TestCase {
     /**
      * @return array<int,string>
      */
+    public function test_basel_codes_match_only_as_whole_tokens(): void {
+        $normalizer = new \InterSoccer\ReportsRosters\Campaign\FacetNormalizer();
+        $this->assertSame('Basel-Stadt', $normalizer->normalize_region('BL'));
+        $this->assertSame('Basel-Stadt', $normalizer->normalize_region('BS'));
+        $this->assertSame('Basel-Stadt', $normalizer->normalize_region('BÂLE-CAMPAGNE'));
+        $this->assertSame('Basel-Stadt', $normalizer->normalize_region('Basel-Landschaft'));
+        $this->assertSame('Basel-Stadt', $normalizer->normalize_region('Basel BL'));
+        $this->assertStringStartsWith('unmapped:', $normalizer->normalize_region('Ablex'));
+        $this->assertStringStartsWith('unmapped:', $normalizer->normalize_region('Absolute'));
+        $this->assertStringStartsWith('unmapped:', $normalizer->normalize_region('Neuchatel'));
+
+        $service = $this->wooService();
+        $bucket = new \ReflectionMethod(DailyBfSalesEmail::class, 'regionDisplayBucket');
+        $bucket->setAccessible(true);
+        $this->assertSame('Basel', $bucket->invoke($service, 'BL'));
+        $this->assertSame('Basel', $bucket->invoke($service, 'BS'));
+        $this->assertSame('Basel', $bucket->invoke($service, 'BÂLE-CAMPAGNE'));
+        $this->assertSame('Basel', $bucket->invoke($service, 'Basel-Landschaft'));
+        $this->assertSame('Basel', $bucket->invoke($service, 'Basel BL'));
+        $this->assertSame('Unknown', $bucket->invoke($service, 'Ablex'));
+        $this->assertSame('Unknown', $bucket->invoke($service, 'Absolute'));
+        $this->assertSame('Unknown', $bucket->invoke($service, 'Neuchatel'));
+    }
+
     private function columnA(\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet): array {
         $values = [];
         $highest = (int) $sheet->getHighestDataRow();
