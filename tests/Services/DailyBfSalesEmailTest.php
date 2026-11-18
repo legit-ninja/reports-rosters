@@ -3867,7 +3867,11 @@ class DailyBfSalesEmailTest extends TestCase {
         $this->assertSummaryStyle($summary, 'F' . $genevaTotal, 'FFB8CCE4');
         $this->assertSummaryStyle($summary, 'A' . $tournaments, 'FFB8CCE4');
         $this->assertSummaryStyle($summary, 'A' . $newCustomers, 'FFF4CCCC');
-        $this->assertSummaryStyle($summary, 'A' . $french, 'FFF4CCCC');
+        $this->assertSummaryStyle($summary, 'A' . $french, 'FFB8CCE4');
+        $this->assertSummaryStyle($summary, 'B' . $french, '');
+        $this->assertSummaryStyle($summary, 'F' . $french, '');
+        $this->assertSummaryStyle($summary, 'A' . $german, 'FFB8CCE4');
+        $this->assertSummaryStyle($summary, 'B' . $german, '');
         $this->assertSame('FFD5A6BD', $summary->getStyle('A2')->getFill()->getStartColor()->getARGB());
 
         $this->assertSame(910001, (int) $orders->getCell('B2')->getValue());

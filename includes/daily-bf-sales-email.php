@@ -5225,8 +5225,7 @@ class DailyBfSalesEmail {
     /**
      * Arial 11 bold, centred, wrapped, thin black borders, then the reference fills.
      *
-     * Swiss French and Swiss German are pink across A:F. The 2025 block shows that
-     * fill on the whole row, not blue on column A alone.
+     * Swiss French and Swiss German match product rows: blue on column A only.
      *
      * @param \PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet
      * @param int                                           $last
@@ -5252,8 +5251,8 @@ class DailyBfSalesEmail {
             $this->fillSummaryRow($sheet, (int) $region['total'], $blue);
         }
         $this->fillSummaryRow($sheet, (int) $plan['general_row'], $pink);
-        $this->fillSummaryRow($sheet, (int) $plan['french_row'], $pink);
-        $this->fillSummaryRow($sheet, (int) $plan['german_row'], $pink);
+        $this->fillSummaryCell($sheet, 'A' . (int) $plan['french_row'], $blue);
+        $this->fillSummaryCell($sheet, 'A' . (int) $plan['german_row'], $blue);
         $this->fillSummaryRow($sheet, (int) $plan['products_row'], $pink);
         $this->fillSummaryRow($sheet, (int) $plan['birthday_row'], $pink);
         foreach ($plan['season_rows'] as $seasonRow) {
