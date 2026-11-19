@@ -28,6 +28,7 @@ if (!function_exists('intersoccer_reports_attr_order_meta_label')) {
             'camp-times' => 'Camp Times',
             'activity-type' => 'Activity Type',
             'program-season' => 'Season',
+            'program-year' => 'Year',
             'booking-type' => 'Booking Type',
             'canton-region' => 'Canton / Region',
             'city' => 'City',

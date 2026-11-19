@@ -482,7 +482,15 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
                         if (function_exists('intersoccer_reports_normalize_camp_terms_for_dates')) {
                             $camp_terms = intersoccer_reports_normalize_camp_terms_for_dates($camp_terms);
                         }
-                        list($parsed_start, $parsed_end, $event_dates) = intersoccer_parse_camp_dates_fixed($camp_terms, $season);
+                        $program_year = function_exists('intersoccer_resolve_program_year')
+                            ? intersoccer_resolve_program_year($roster, 0, 0, '')
+                            : null;
+                        list($parsed_start, $parsed_end, $event_dates) = intersoccer_parse_camp_dates_fixed(
+                            $camp_terms,
+                            $season,
+                            $program_year,
+                            $program_year !== null
+                        );
                         if (!empty($parsed_start) && $parsed_start !== '1970-01-01') {
                             $event_start_date = $parsed_start;
                             $event_end_date = $parsed_end ?: $parsed_start;
@@ -509,7 +517,15 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
                             // Try to get dates from product attributes or metadata
                             $product_camp_terms = $product->get_attribute('pa_camp-terms');
                             if (!empty($product_camp_terms) && $product_camp_terms !== 'N/A') {
-                                list($parsed_start, $parsed_end, $event_dates) = intersoccer_parse_camp_dates_fixed($product_camp_terms, $season);
+                                $program_year = function_exists('intersoccer_resolve_program_year')
+                                    ? intersoccer_resolve_program_year($roster, 0, (int) $product_id, '')
+                                    : null;
+                                list($parsed_start, $parsed_end, $event_dates) = intersoccer_parse_camp_dates_fixed(
+                                    $product_camp_terms,
+                                    $season,
+                                    $program_year,
+                                    $program_year !== null
+                                );
                                 if (!empty($parsed_start) && $parsed_start !== '1970-01-01') {
                                     $event_start_date = $parsed_start;
                                     $event_end_date = $parsed_end ?: $parsed_start;
@@ -663,7 +679,15 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
                     $season
                 );
             } else {
-                list($event_start_date, $event_end_date, $event_dates) = intersoccer_parse_camp_dates_fixed($camp_terms, $season);
+                $program_year = function_exists('intersoccer_resolve_program_year')
+                    ? intersoccer_resolve_program_year($roster, $variation_id, (int) ($roster['product_id'] ?? 0), '')
+                    : null;
+                list($event_start_date, $event_end_date, $event_dates) = intersoccer_parse_camp_dates_fixed(
+                    $camp_terms,
+                    $season,
+                    $program_year,
+                    $program_year !== null
+                );
             }
             
             // If parsing failed, try to get dates from rosters table as fallback
@@ -681,7 +705,9 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
                         $event_start_date = $roster_data['start_date'];
                         $event_end_date = $roster_data['end_date'] ?: $event_start_date;
                     } else {
-                        $season_year_undated = !empty($season) ? intersoccer_extract_year_from_season($season) : null;
+                        $season_year_undated = function_exists('intersoccer_resolve_program_year')
+                            ? intersoccer_resolve_program_year($roster, 0, 0, (string) $season)
+                            : (!empty($season) ? intersoccer_extract_year_from_season($season) : null);
                         if ($season_year_undated !== null && $season_year_undated == intval($year)) {
                             $event_start_date = '';
                             $event_end_date = '';
@@ -696,7 +722,9 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
                         }
                     }
                 } else {
-                    $season_year_undated = !empty($season) ? intersoccer_extract_year_from_season($season) : null;
+                    $season_year_undated = function_exists('intersoccer_resolve_program_year')
+                        ? intersoccer_resolve_program_year($roster, 0, 0, (string) $season)
+                        : (!empty($season) ? intersoccer_extract_year_from_season($season) : null);
                     if ($season_year_undated !== null && $season_year_undated == intval($year)) {
                         $event_start_date = '';
                         $event_end_date = '';
@@ -734,7 +762,9 @@ function intersoccer_get_final_reports_data($year, $activity_type, $season_type 
             }
             
             // Filter by season year (primary) - match user's query behavior (season LIKE '%year')
-            $season_year = !empty($season) ? intersoccer_extract_year_from_season($season) : null;
+            $season_year = function_exists('intersoccer_resolve_program_year')
+                ? intersoccer_resolve_program_year($roster, 0, 0, (string) $season)
+                : (!empty($season) ? intersoccer_extract_year_from_season($season) : null);
             $requested_year_int = intval($year);
             
             // Primary filter: season year must match (like user's query: season LIKE '%year')

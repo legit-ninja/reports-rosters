@@ -1467,10 +1467,7 @@ class RosterBuilder {
         $start_norm = $this->normalizeDriftValue('start_date', $roster_data['start_date'] ?? '');
         $start_month = $this->isEmptyRosterValue('start_date', $start_norm) ? 'none' : substr($start_norm, 0, 7);
         $season = (string) ($roster_data['season'] ?? '');
-        $year_mismatch = false;
-        if ($start_month !== 'none' && preg_match_all('/(?:19|20)\d{2}/', $season, $season_years) && !empty($season_years[0])) {
-            $year_mismatch = !in_array(substr($start_month, 0, 4), $season_years[0], true);
-        }
+        $year_mismatch = $this->startYearNotInSeason($roster_data);
         $bucket = &$this->build_stats['created'];
         if ($year_mismatch) {
             $bucket['start_year_not_in_season']++;
@@ -1513,6 +1510,17 @@ class RosterBuilder {
         $start = $this->normalizeDriftValue('start_date', $roster_data['start_date'] ?? '');
         if ($this->isEmptyRosterValue('start_date', $start)) {
             return false;
+        }
+        $program_year = function_exists('intersoccer_resolve_program_year')
+            ? intersoccer_resolve_program_year(
+                $roster_data,
+                (int) ($roster_data['variation_id'] ?? 0),
+                (int) ($roster_data['product_id'] ?? 0),
+                ''
+            )
+            : null;
+        if ($program_year !== null) {
+            return substr($start, 0, 4) !== (string) (int) $program_year;
         }
         $season = (string) ($roster_data['season'] ?? '');
         if (!preg_match_all('/(?:19|20)\d{2}/', $season, $years) || empty($years[0])) {
@@ -1614,7 +1622,23 @@ class RosterBuilder {
                 $normalized_terms = function_exists('intersoccer_reports_normalize_camp_terms_for_dates')
                     ? intersoccer_reports_normalize_camp_terms_for_dates($camp_terms)
                     : $camp_terms;
-                $terms_parse = array_slice((array) intersoccer_parse_camp_dates_fixed($normalized_terms, $season), 0, 2);
+                $parse_year = null;
+                $prefer_program_year = false;
+                if (function_exists('intersoccer_resolve_program_year')) {
+                    $parse_year = intersoccer_resolve_program_year(
+                        $roster_data,
+                        $variation_id,
+                        $product_id,
+                        ''
+                    );
+                    $prefer_program_year = $parse_year !== null;
+                }
+                $terms_parse = array_slice((array) intersoccer_parse_camp_dates_fixed(
+                    $normalized_terms,
+                    $season,
+                    $parse_year,
+                    $prefer_program_year
+                ), 0, 2);
             } catch (\Throwable $e) {
                 $terms_parse = null;
             }
@@ -2645,7 +2669,13 @@ class RosterBuilder {
                 'city' => $roster_data['city'] ?? '',
                 'canton_region' => $roster_data['canton_region'] ?? '',
                 'product_id' => $roster_data['product_id'] ?? 0,
+                'variation_id' => $roster_data['variation_id'] ?? 0,
                 'start_date' => $roster_data['start_date'] ?? '', // Include date for tournament signature generation
+                'program_year' => $roster_data['program_year'] ?? ($order_data['program_year'] ?? ''),
+                'Year' => $order_data['Year'] ?? ($roster_data['Year'] ?? ''),
+                'pa_program-year' => $order_data['pa_program-year'] ?? ($roster_data['pa_program-year'] ?? ''),
+                'attribute_pa_program-year' => $order_data['attribute_pa_program-year'] ?? ($roster_data['attribute_pa_program-year'] ?? ''),
+                'Program Year' => $order_data['Program Year'] ?? '',
             ];
             
             // Use legacy normalization function to get English term names (not slugs)
@@ -4220,9 +4250,22 @@ class RosterBuilder {
                         'city' => $roster->city ?? '',
                         'canton_region' => $roster->canton_region ?? '',
                         'product_id' => $roster->product_id ?? 0,
+                        'variation_id' => $roster->variation_id ?? 0,
                         'start_date' => $roster->start_date ?? '', // Include for tournament signature generation
                     ];
-                    
+                    $order_item_id = (int) ($roster->order_item_id ?? 0);
+                    if ($order_item_id > 0 && function_exists('wc_get_order_item_meta') && function_exists('intersoccer_program_year_order_meta_keys')) {
+                        foreach (intersoccer_program_year_order_meta_keys() as $year_key) {
+                            if ($year_key === 'program_year') {
+                                continue;
+                            }
+                            $year_value = wc_get_order_item_meta($order_item_id, $year_key, true);
+                            if ($year_value !== '' && $year_value !== null && $year_value !== false) {
+                                $event_data[$year_key] = is_array($year_value) ? ($year_value[0] ?? '') : $year_value;
+                            }
+                        }
+                    }
+
                     $new_signature = function_exists('intersoccer_event_signature_from_event_data')
                         ? intersoccer_event_signature_from_event_data($event_data)
                         : $this->signature_generator->generate($event_data);

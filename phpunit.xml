@@ -77,6 +77,7 @@
             <file>tests/Reports/CampTermFormatTest.php</file>
             <file>tests/Reports/FinalReportsUrgencyTest.php</file>
             <file>tests/Reports/EvergreenYearIsolationTest.php</file>
+            <file>tests/Reports/ProgramYearResolveTest.php</file>
             <file>tests/Reports/CanonicalOrderMetaPreferenceTest.php</file>
             <file>tests/Reports/DistressedVariationIdsTest.php</file>
             <file>tests/Reports/PlayerCampStatusTest.php</file>
@@ -107,6 +108,7 @@
             <file>tests/Campaign/Final15CampaignFixtureTest.php</file>
             <file>tests/Campaign/CampaignMomentumTest.php</file>
             <file>tests/Services/RosterCanonicalFieldsTest.php</file>
+            <file>tests/Services/CacheManagerBinarySafeTest.php</file>
             <file>tests/Services/RosterRefundServiceTest.php</file>
             <file>tests/Services/RosterExportRefundFilterTest.php</file>
             <file>tests/Ajax/RosterVenueAccessTest.php</file>

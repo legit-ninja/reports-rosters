@@ -74,6 +74,11 @@ class CacheManager {
     private $key_prefix = 'intersoccer_';
 
     /**
+     * Text-safe prefix for compressed values stored in the options table.
+     */
+    private const COMPRESSED_PREFIX = 'rrz1:';
+
+    /**
      * Redis connection (if available)
      * 
      * @var \Redis|null
@@ -181,7 +186,7 @@ class CacheManager {
                     break;
                 case 'transients':
                 default:
-                    $success = set_transient($cache_key, $cache_data, $ttl);
+                    $success = $this->write_transient($cache_key, $cache_data, $ttl);
                     break;
             }
             
@@ -247,9 +252,20 @@ class CacheManager {
                 ]);
                 return $default;
             }
-            
-            // Decompress data if needed
-            $result = $this->config['compression'] ? $this->decompress_data($data) : $data;
+
+            if ($this->config['compression']) {
+                try {
+                    $result = $this->decompress_data($data);
+                } catch (\UnexpectedValueException $e) {
+                    $this->logger->debug('Cache payload unreadable', [
+                        'key' => $cache_key,
+                        'group' => $group,
+                    ]);
+                    return $default;
+                }
+            } else {
+                $result = $data;
+            }
             
             $this->logger->debug('Cache hit', [
                 'key' => $cache_key,
@@ -612,25 +628,190 @@ class CacheManager {
     }
 
     /**
-     * Compress data for storage
-     * 
+     * Compress data for storage.
+     *
+     * Options rows must be valid UTF-8. Raw gzip is not, so the stored value
+     * is a prefixed base64 string. Redis and file backends share this helper.
+     *
      * @param mixed $data Data to compress
-     * 
+     *
      * @return string Compressed data
      */
     private function compress_data($data) {
-        return gzcompress(serialize($data), 6);
+        $compressed = gzcompress(serialize($data), 6);
+        if (!is_string($compressed) || $compressed === '') {
+            throw new \RuntimeException('Cache compression failed');
+        }
+
+        return self::COMPRESSED_PREFIX . base64_encode($compressed);
     }
 
     /**
-     * Decompress stored data
-     * 
-     * @param string $data Compressed data
-     * 
+     * Decompress a prefixed payload. Anything else is a cache miss.
+     *
+     * @param mixed $data Stored value
+     *
      * @return mixed Decompressed data
      */
     private function decompress_data($data) {
-        return unserialize(gzuncompress($data));
+        $prefix = self::COMPRESSED_PREFIX;
+        if (!is_string($data) || strncmp($data, $prefix, strlen($prefix)) !== 0) {
+            throw new \UnexpectedValueException('Cache payload is not readable');
+        }
+
+        $decoded = base64_decode(substr($data, strlen($prefix)), true);
+        if (!is_string($decoded) || $decoded === '') {
+            throw new \UnexpectedValueException('Cache payload is not readable');
+        }
+
+        $serialized = $this->without_warnings(static function () use ($decoded) {
+            $inflated = gzuncompress($decoded);
+            return is_string($inflated) ? $inflated : false;
+        });
+        if (!is_string($serialized) || !$this->looks_like_serialized($serialized)) {
+            throw new \UnexpectedValueException('Cache payload is not readable');
+        }
+
+        try {
+            $value = $this->without_warnings(static function () use ($serialized) {
+                return unserialize($serialized, ['allowed_classes' => true]);
+            });
+        } catch (\Throwable $e) {
+            throw new \UnexpectedValueException('Cache payload is not readable');
+        }
+
+        if ($value === false && $serialized !== 'b:0;') {
+            throw new \UnexpectedValueException('Cache payload is not readable');
+        }
+
+        return $value;
+    }
+
+    /**
+     * Store a transient without leaving a database error for the caller.
+     *
+     * @param string $key   Transient key
+     * @param mixed  $value Stored value
+     * @param int    $ttl   TTL in seconds
+     *
+     * @return bool
+     */
+    private function write_transient($key, $value, $ttl) {
+        $prior = $this->read_wpdb_last_error();
+        $success = false;
+
+        try {
+            $success = (bool) set_transient($key, $value, $ttl);
+            return $success;
+        } finally {
+            $after = $this->read_wpdb_last_error();
+            if ($prior !== null) {
+                $this->restore_wpdb_last_error($prior);
+            }
+
+            // set_transient() also returns false when the stored value is unchanged.
+            // That is not a failed write. Log only when the database reports an error.
+            $new_error = $after !== null && $after !== '' && $after !== $prior;
+            $db_error = $after !== null && $after !== '';
+            if ($new_error || (!$success && $db_error)) {
+                $this->logger->warning('Cache write failed', [
+                    'key' => (string) $key,
+                ]);
+            }
+
+            if ($prior !== null) {
+                $this->restore_wpdb_last_error($prior);
+            }
+        }
+    }
+
+    /**
+     * @return string|null Null when this connection does not expose last_error.
+     */
+    private function read_wpdb_last_error() {
+        global $wpdb;
+        if (!is_object($wpdb)) {
+            return null;
+        }
+        if (!property_exists($wpdb, 'last_error') && !isset($wpdb->last_error)) {
+            return null;
+        }
+
+        $error = $wpdb->last_error;
+        return is_string($error) ? $error : '';
+    }
+
+    /**
+     * @param string $prior Error text captured before the cache write.
+     */
+    private function restore_wpdb_last_error($prior) {
+        global $wpdb;
+        if (!is_object($wpdb)) {
+            return;
+        }
+        if (!property_exists($wpdb, 'last_error') && !isset($wpdb->last_error)) {
+            return;
+        }
+
+        $wpdb->last_error = $prior;
+    }
+
+    /**
+     * @param callable $callback
+     * @return mixed
+     */
+    private function without_warnings(callable $callback) {
+        set_error_handler(static function () {
+            return true;
+        });
+        try {
+            return $callback();
+        } finally {
+            restore_error_handler();
+        }
+    }
+
+    /**
+     * Accept only the shapes PHP serialize() writes. Untrusted junk is not passed to unserialize().
+     *
+     * @param string $data Inflated payload
+     * @return bool
+     */
+    private function looks_like_serialized($data) {
+        if (!is_string($data)) {
+            return false;
+        }
+        if ($data === 'N;') {
+            return true;
+        }
+        if (strlen($data) < 4 || $data[1] !== ':') {
+            return false;
+        }
+
+        $last = substr($data, -1);
+        if ($last !== ';' && $last !== '}') {
+            return false;
+        }
+
+        $token = $data[0];
+        switch ($token) {
+            case 's':
+                if (substr($data, -2, 1) !== '"') {
+                    return false;
+                }
+                // Fall through. A string payload uses the same length prefix as arrays and objects.
+            case 'a':
+            case 'O':
+            case 'C':
+            case 'E':
+                return (bool) preg_match("/^{$token}:[0-9]+:/s", $data);
+            case 'b':
+            case 'i':
+            case 'd':
+                return (bool) preg_match("/^{$token}:[0-9.E+-]+;$/", $data);
+        }
+
+        return false;
     }
 
     /**
@@ -737,7 +918,7 @@ class CacheManager {
             
             if (!in_array($cache_key, $keys)) {
                 $keys[] = $cache_key;
-                set_transient($index_key, $keys, $this->get_ttl($group));
+                $this->write_transient($index_key, $keys, $this->get_ttl($group));
             }
         }
     }

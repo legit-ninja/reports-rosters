@@ -19,32 +19,38 @@ if (!function_exists('intersoccer_reports_resolve_program_year')) {
      * @return int|null
      */
     function intersoccer_reports_resolve_program_year(array $entry) {
-        foreach (['program_year', 'Year', 'pa_program-year'] as $key) {
-            if (!isset($entry[$key]) || $entry[$key] === '' || $entry[$key] === null) {
-                continue;
-            }
-            $raw = trim((string) $entry[$key]);
-            if ($raw === '') {
-                continue;
-            }
-            if (preg_match('/\b(20\d{2})\b/', $raw, $m)) {
-                return (int) $m[1];
-            }
-            if (preg_match('/^(19|20)\d{2}$/', $raw)) {
-                return (int) $raw;
-            }
-        }
-
         $season = '';
         if (!empty($entry['season'])) {
             $season = (string) $entry['season'];
         } elseif (!empty($entry['roster_season'])) {
             $season = (string) $entry['roster_season'];
         }
-        if ($season !== '' && function_exists('intersoccer_extract_year_from_season')) {
-            $from_season = intersoccer_extract_year_from_season($season);
-            if ($from_season !== null) {
-                return (int) $from_season;
+        if (function_exists('intersoccer_resolve_program_year')) {
+            $from_helper = intersoccer_resolve_program_year($entry, 0, 0, $season);
+            if ($from_helper !== null) {
+                return (int) $from_helper;
+            }
+        } else {
+            foreach (['program_year', 'Year', 'pa_program-year'] as $key) {
+                if (!isset($entry[$key]) || $entry[$key] === '' || $entry[$key] === null) {
+                    continue;
+                }
+                $raw = trim((string) $entry[$key]);
+                if ($raw === '') {
+                    continue;
+                }
+                if (preg_match('/\b(20\d{2})\b/', $raw, $m)) {
+                    return (int) $m[1];
+                }
+                if (preg_match('/^(19|20)\d{2}$/', $raw)) {
+                    return (int) $raw;
+                }
+            }
+            if ($season !== '' && function_exists('intersoccer_extract_year_from_season')) {
+                $from_season = intersoccer_extract_year_from_season($season);
+                if ($from_season !== null) {
+                    return (int) $from_season;
+                }
             }
         }
 
@@ -495,7 +501,15 @@ if (!function_exists('intersoccer_reports_build_camp_report_from_entries')) {
                     }
                 } elseif ($ct !== '' && $ct !== 'N/A' && function_exists('intersoccer_parse_camp_dates_fixed')) {
                     $season_for_parse = $entry['season'] ?? '';
-                    list($parsed_from_terms_start, $parsed_from_terms_end, $_ignored_ev) = intersoccer_parse_camp_dates_fixed($ct, $season_for_parse);
+                    $program_year = function_exists('intersoccer_resolve_program_year')
+                        ? intersoccer_resolve_program_year($entry, (int) $vid, (int) ($entry['product_id'] ?? 0), '')
+                        : null;
+                    list($parsed_from_terms_start, $parsed_from_terms_end, $_ignored_ev) = intersoccer_parse_camp_dates_fixed(
+                        $ct,
+                        $season_for_parse,
+                        $program_year,
+                        $program_year !== null
+                    );
                     if (!empty($parsed_from_terms_start) && $parsed_from_terms_start !== '1970-01-01' && $parsed_from_terms_start !== '0000-00-00') {
                         $esd = $parsed_from_terms_start;
                     }

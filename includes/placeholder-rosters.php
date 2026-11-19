@@ -305,6 +305,7 @@ function intersoccer_extract_event_data_from_variation($variation, $parent_produ
         'season' => $season,
         'girls_only' => $girls_only,
         'product_id' => $product_id,
+        'variation_id' => $variation_id,
         'booking_type' => $booking_type,
     ];
 }

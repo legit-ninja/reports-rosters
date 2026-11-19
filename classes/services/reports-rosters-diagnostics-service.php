@@ -1195,7 +1195,71 @@ class ReportsRostersDiagnosticsService {
                   AND om.meta_value LIKE %s";
 
         $ids = $wpdb->get_col($wpdb->prepare($sql, $like));
-        if (!is_array($ids) || $ids === []) {
+        if (!is_array($ids)) {
+            $ids = [];
+        }
+
+        $year_text = (string) $year;
+        $year_prefix = $wpdb->esc_like($year_text) . '-%';
+        $year_meta_keys = function_exists('intersoccer_program_year_order_meta_keys')
+            ? intersoccer_program_year_order_meta_keys()
+            : ['Year', 'pa_program-year', 'attribute_pa_program-year', 'Program Year', 'Année', 'Jahr'];
+        $year_meta_keys = array_values(array_filter($year_meta_keys, static function ($key) {
+            return $key !== 'program_year';
+        }));
+        if ($year_meta_keys !== []) {
+            $key_placeholders = implode(',', array_fill(0, count($year_meta_keys), '%s'));
+            $year_sql = "SELECT DISTINCT oi.order_id
+                FROM {$order_items_table} oi
+                INNER JOIN {$order_itemmeta_table} om
+                    ON oi.order_item_id = om.order_item_id
+                WHERE oi.order_item_type = 'line_item'
+                  AND om.meta_key IN ({$key_placeholders})
+                  AND (om.meta_value = %s OR om.meta_value LIKE %s)";
+            $year_ids = $wpdb->get_col($wpdb->prepare($year_sql, ...array_merge($year_meta_keys, [$year_text, $year_prefix])));
+            if (is_array($year_ids)) {
+                $ids = array_merge($ids, $year_ids);
+            }
+        }
+
+        $postmeta_table = $wpdb->postmeta;
+        $product_sql = "SELECT DISTINCT oi.order_id
+            FROM {$order_items_table} oi
+            INNER JOIN {$order_itemmeta_table} pid
+                ON oi.order_item_id = pid.order_item_id
+               AND pid.meta_key IN ('_product_id', '_variation_id')
+            INNER JOIN {$postmeta_table} pm
+                ON pm.post_id = pid.meta_value
+               AND pm.meta_key IN ('attribute_pa_program-year', 'pa_program-year')
+               AND (pm.meta_value = %s OR pm.meta_value LIKE %s)
+            WHERE oi.order_item_type = 'line_item'";
+        $product_meta_ids = $wpdb->get_col($wpdb->prepare($product_sql, $year_text, $year_prefix));
+        if (is_array($product_meta_ids)) {
+            $ids = array_merge($ids, $product_meta_ids);
+        }
+
+        $terms = $wpdb->terms;
+        $term_taxonomy = $wpdb->term_taxonomy;
+        $term_relationships = $wpdb->term_relationships;
+        $term_sql = "SELECT DISTINCT oi.order_id
+            FROM {$order_items_table} oi
+            INNER JOIN {$order_itemmeta_table} pid
+                ON oi.order_item_id = pid.order_item_id
+               AND pid.meta_key IN ('_product_id', '_variation_id')
+            INNER JOIN {$term_relationships} tr ON tr.object_id = pid.meta_value
+            INNER JOIN {$term_taxonomy} tt
+                ON tt.term_taxonomy_id = tr.term_taxonomy_id
+               AND tt.taxonomy = 'pa_program-year'
+            INNER JOIN {$terms} t ON t.term_id = tt.term_id
+            WHERE oi.order_item_type = 'line_item'
+              AND (t.slug = %s OR t.name = %s OR t.slug LIKE %s OR t.name LIKE %s)";
+        $term_ids = $wpdb->get_col($wpdb->prepare($term_sql, $year_text, $year_text, $year_prefix, $year_prefix));
+        if (is_array($term_ids)) {
+            $ids = array_merge($ids, $term_ids);
+        }
+
+        $ids = array_values(array_unique(array_map('intval', $ids)));
+        if ($ids === []) {
             return [];
         }
 
