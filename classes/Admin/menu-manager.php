@@ -138,6 +138,10 @@ class MenuManager {
         // Plugin.php hooks register_menus at priority 5, WC registers at priority 10.
         // Schedule at priority 999 to ensure WC Analytics menu exists.
         add_action('admin_menu', [$this, 'inject_campaign_analytics_into_wc_analytics_submenu'], 999);
+        // Slot [2] is the admin.php URL, which is not the page slug. These
+        // filters keep that row current and the Analytics parent open.
+        add_filter('parent_file', [$this, 'filter_campaign_analytics_parent_file']);
+        add_filter('submenu_file', [$this, 'filter_campaign_analytics_submenu_file'], 10, 2);
 
         // Step 3: Connect the PHP page to WC Admin for breadcrumbs/header.
         // Screen ID for a hidden page (parent=null) is 'admin_page_{slug}'.
@@ -162,17 +166,91 @@ class MenuManager {
 
         $analytics_menu_slug = 'wc-admin&path=/analytics/overview';
 
-        if (!isset($submenu[$analytics_menu_slug])) {
+        if (!isset($submenu[$analytics_menu_slug]) || !is_array($submenu[$analytics_menu_slug])) {
             return;
         }
 
-        // Format: [0]=title, [1]=capability, [2]=slug/url, [3]=page_title (optional)
+        // Format: [0]=title, [1]=capability, [2]=slug/url, [3]=page_title (optional).
+        // The page is registered with parent null, so a bare slug is rendered as
+        // wp-admin/<slug> and 404s. A real admin.php URL is printed as-is.
         $submenu[$analytics_menu_slug][] = [
             __('Campaign Analytics', 'intersoccer-reports-rosters'),
             'manage_options',
-            'intersoccer-campaign-analytics',
+            'admin.php?page=intersoccer-campaign-analytics',
             __('Campaign Analytics', 'intersoccer-reports-rosters'),
         ];
+
+        // add_submenu_page(null) also stores the bare slug under an empty parent.
+        // get_admin_page_parent() runs after the parent_file filter and would
+        // replace the Analytics parent with that empty parent.
+        foreach ($submenu as $parent_slug => $items) {
+            if (!is_array($items)) {
+                continue;
+            }
+            foreach ($items as $index => $item) {
+                if (!is_array($item) || !isset($item[2])) {
+                    continue;
+                }
+                if ($item[2] === 'intersoccer-campaign-analytics') {
+                    unset($submenu[$parent_slug][$index]);
+                }
+            }
+            if ($submenu[$parent_slug] === []) {
+                unset($submenu[$parent_slug]);
+            }
+        }
+    }
+
+    /**
+     * Keep WooCommerce → Analytics open on the Campaign Analytics screen.
+     *
+     * @param mixed $parent_file Current parent file.
+     * @return mixed
+     */
+    public function filter_campaign_analytics_parent_file($parent_file) {
+        if (!$this->is_campaign_analytics_admin_page()) {
+            return $parent_file;
+        }
+
+        return 'wc-admin&path=/analytics/overview';
+    }
+
+    /**
+     * Mark the Analytics submenu row current.
+     *
+     * WordPress compares $submenu_file to submenu slot [2] with ===.
+     *
+     * @param mixed $submenu_file Current submenu file.
+     * @param mixed $parent_file  Unused. Passed by the submenu_file filter.
+     * @return mixed
+     */
+    public function filter_campaign_analytics_submenu_file($submenu_file, $parent_file = '') {
+        if (!$this->is_campaign_analytics_admin_page()) {
+            return $submenu_file;
+        }
+
+        return 'admin.php?page=intersoccer-campaign-analytics';
+    }
+
+    /**
+     * Whether the current admin request is the Campaign Analytics page.
+     *
+     * @return bool
+     */
+    private function is_campaign_analytics_admin_page(): bool {
+        global $plugin_page;
+
+        if (isset($plugin_page) && is_string($plugin_page) && $plugin_page !== '') {
+            return $plugin_page === 'intersoccer-campaign-analytics';
+        }
+
+        if (!isset($_GET['page'])) {
+            return false;
+        }
+
+        $page = sanitize_text_field(wp_unslash((string) $_GET['page']));
+
+        return $page === 'intersoccer-campaign-analytics';
     }
 
     public function register_menus(): void {

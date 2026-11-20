@@ -107,6 +107,7 @@
             <file>tests/Reports/FinalReportsMetaTest.php</file>
             <file>tests/Campaign/Final15CampaignFixtureTest.php</file>
             <file>tests/Campaign/CampaignMomentumTest.php</file>
+            <file>tests/Admin/MenuManagerCampaignAnalyticsMenuTest.php</file>
             <file>tests/Services/RosterCanonicalFieldsTest.php</file>
             <file>tests/Services/CacheManagerBinarySafeTest.php</file>
             <file>tests/Services/RosterRefundServiceTest.php</file>
