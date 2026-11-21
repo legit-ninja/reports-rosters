@@ -1984,7 +1984,7 @@ class DailyBfSalesEmail {
     }
 
     /**
-     * Winter, Spring, or Easter. A Spring camp is promoted when Easter is named.
+     * Winter, Spring, or Easter for the catalogue list. A Spring camp is promoted when Easter is named.
      *
      * @param string $seasonRaw
      * @param string $terms
@@ -1993,6 +1993,25 @@ class DailyBfSalesEmail {
      * @return string
      */
     private function catalogueSeason($seasonRaw, $terms, $name, $type) {
+        $bucket = $this->seasonFromSources($seasonRaw, $terms, $name, $type);
+        if ($bucket === 'Winter' || $bucket === 'Spring' || $bucket === 'Easter') {
+            return $bucket;
+        }
+        return '';
+    }
+
+    /**
+     * Season field, then camp or course terms, then the item or product name.
+     * An Easter season field wins before the later sources. A Spring camp is
+     * promoted when Easter is named on the field, the terms, or the name.
+     *
+     * @param string $seasonRaw
+     * @param string $terms
+     * @param string $name
+     * @param string $type
+     * @return string
+     */
+    private function seasonFromSources($seasonRaw, $terms, $name, $type) {
         if ($this->normalizeSeasonValue($seasonRaw) === 'Easter') {
             return 'Easter';
         }
@@ -2009,10 +2028,7 @@ class DailyBfSalesEmail {
         ) {
             $bucket = 'Easter';
         }
-        if ($bucket === 'Winter' || $bucket === 'Spring' || $bucket === 'Easter') {
-            return $bucket;
-        }
-        return '';
+        return $bucket;
     }
 
     /**
@@ -2341,6 +2357,8 @@ class DailyBfSalesEmail {
     }
 
     /**
+     * Season field, then camp or course terms, then the item name. Unspecified when none match.
+     *
      * @param array<string,mixed> $row
      * @param string              $productType
      * @return string
@@ -2354,16 +2372,7 @@ class DailyBfSalesEmail {
         if ($name === '') {
             $name = trim((string) ($row['class_name'] ?? ''));
         }
-        $bucket = $this->normalizeSeasonValue($raw);
-        if ($bucket === 'Easter') {
-            return 'Easter';
-        }
-        if ($productType === ProductTypeClassifierService::TYPE_CAMP
-            && $bucket === 'Spring'
-            && ($this->mentionsEaster($raw) || $this->mentionsEaster($terms) || $this->mentionsEaster($name))
-        ) {
-            return 'Easter';
-        }
+        $bucket = $this->seasonFromSources($raw, $terms, $name, (string) $productType);
         return $bucket === '' ? 'Unspecified' : $bucket;
     }
 
@@ -2379,8 +2388,8 @@ class DailyBfSalesEmail {
             return '';
         }
         $value = str_ireplace(
-            ['Pâques', 'Paques', 'Ostern', 'Oster', 'Frühling', 'Fruhling', 'Hiver', 'Printemps', 'Automne', 'Sommer', 'Herbst', 'Été', 'Ete'],
-            ['Easter', 'Easter', 'Easter', 'Easter', 'Spring', 'Spring', 'Winter', 'Spring', 'Autumn', 'Summer', 'Autumn', 'Summer', 'Summer'],
+            ['Pâques', 'Paques', 'Ostern', 'Oster', 'Frühling', 'Fruhling', 'Frühjahr', 'Fruhjahr', 'Hiver', 'Printemps', 'Automne', 'Sommer', 'Herbst', 'Été', 'Ete'],
+            ['Easter', 'Easter', 'Easter', 'Easter', 'Spring', 'Spring', 'Spring', 'Spring', 'Winter', 'Spring', 'Autumn', 'Summer', 'Autumn', 'Summer', 'Summer'],
             $value
         );
         $lower = strtolower($value);
