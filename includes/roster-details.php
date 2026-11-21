@@ -614,6 +614,56 @@ function intersoccer_roster_details_title_venue($variation_id, array $variation_
 }
 
 /**
+ * Whether the request names one roster set.
+ *
+ * Order status and listing context are not enough. Without a variation,
+ * event signature, or order line, roster details loads every roster row.
+ *
+ * @param int      $variation_id
+ * @param int[]    $variation_ids
+ * @param int[]    $order_item_ids
+ * @param string   $event_signature
+ * @param string[] $event_signatures
+ * @return bool
+ */
+function intersoccer_roster_details_request_has_selector($variation_id, array $variation_ids, array $order_item_ids, $event_signature, array $event_signatures) {
+    if ((int) $variation_id > 0) {
+        return true;
+    }
+    foreach ($variation_ids as $id) {
+        if ((int) $id > 0) {
+            return true;
+        }
+    }
+    foreach ($order_item_ids as $id) {
+        if ((int) $id > 0) {
+            return true;
+        }
+    }
+    $event_signature = trim((string) $event_signature);
+    if ($event_signature !== '' && strcasecmp($event_signature, 'N/A') !== 0) {
+        return true;
+    }
+    foreach ($event_signatures as $signature) {
+        $signature = trim((string) $signature);
+        if ($signature !== '' && strcasecmp($signature, 'N/A') !== 0) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/**
+ * English admin notice when roster details has no roster selector.
+ *
+ * @return string
+ */
+function intersoccer_roster_details_missing_selector_notice() {
+    return __('A variation, event signature, or order line is required to open roster details.', 'intersoccer-reports-rosters');
+}
+
+/**
  * Render the roster details page
  */
 function intersoccer_render_roster_details_page() {
@@ -670,6 +720,13 @@ function intersoccer_render_roster_details_page() {
         if (!intersoccer_roster_venues_allowed_for_coach($resolved_venues, $coach_venue_scope)) {
             wp_die(__('Permission denied.', 'intersoccer-reports-rosters'));
         }
+    }
+    if (!intersoccer_roster_details_request_has_selector($variation_id, $variation_ids, $order_item_ids, $event_signature, $event_signatures)) {
+        echo '<div class="wrap">';
+        echo '<h1>' . esc_html__('Roster Details', 'intersoccer-reports-rosters') . '</h1>';
+        echo '<div class="notice notice-warning"><p>' . esc_html(intersoccer_roster_details_missing_selector_notice()) . '</p></div>';
+        echo '</div>';
+        return;
     }
     $age_group = isset($_GET['age_group']) ? sanitize_text_field($_GET['age_group']) : '';
     $times = isset($_GET['times']) ? sanitize_text_field($_GET['times']) : '';
