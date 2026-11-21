@@ -1399,6 +1399,56 @@ class DailyBfSalesEmailTest extends TestCase {
         }
     }
 
+    public function test_empty_course_season_meta_uses_terms_then_the_item_name(): void {
+        $service = $this->enabledService($this->novemberCoupon(), 'ops@example.com');
+        $paid = (string) $this->unix('2026-11-28 10:00:00');
+        $lines = [
+            [9811, 'course', 'North City Spring/Summer Football Courses 2027', ['Season' => '']],
+            [9812, 'course', 'East City Fruhjahrs-/Sommerfussballkurse 2027', []],
+            [9813, 'course', 'East City Frühjahrs-/Sommerfussballkurse 2027', []],
+            [9814, 'course', 'North City Autumn Football Courses 2026', []],
+            [9815, 'course', "Cours de foot d'automne East City 2026", []],
+            [9816, 'course', 'North City Winter Indoor Football Courses 2027', []],
+            [9817, 'course', "Cours de foot d'hiver North City 2027", []],
+            [9818, 'course', 'East City Winter Fussballkurse 2027', []],
+            [9819, 'course', 'North City Winter Indoor Football Courses 2027', ['Season' => 'Autumn']],
+            [9820, 'course', 'East City Frühjahrs-/Sommerfussballkurse 2027', ['Saison' => 'Hiver']],
+            [9821, 'course', 'North City Winter Indoor Football Courses 2027', ['Camp Terms' => 'Autumn week']],
+            [9822, 'camp', 'North City Easter Camp', ['Semaine de camp' => 'Printemps']],
+            [9823, 'course', 'North City Easter Course', ['Semaine de camp' => 'Printemps']],
+            [9824, 'camp', 'North City Spring Camp', []],
+        ];
+        $orders = [];
+        $meta = [];
+        foreach ($lines as $line) {
+            $id = $line[0];
+            $orders[] = [
+                'id' => $id,
+                'post_date' => '2026-11-28 10:00:00',
+                'date_paid' => $paid,
+                'items' => [
+                    $this->item($id * 10, $line[2], $id, 0, 1, '10.00', '10.00', '0.00'),
+                ],
+            ];
+            $itemMeta = $line[3];
+            $itemMeta['_intersoccer_canonical_activity_type'] = $line[1];
+            $meta[$id * 10] = $itemMeta;
+        }
+        $this->wpdb->orders = $orders;
+        $this->wpdb->itemMeta = $meta;
+
+        $digest = $service->buildDigest($this->zurich('2026-11-29 08:00:00'));
+        $daily = $digest['daily'];
+        $this->assertSame(4, $this->seasonTypeByLabel($daily, 'Spring Courses')['quantity']);
+        $this->assertSame(4, $this->seasonTypeByLabel($daily, 'Autumn Courses')['quantity']);
+        $this->assertSame(4, $this->seasonTypeByLabel($daily, 'Winter Courses')['quantity']);
+        $this->assertSame(1, $this->seasonTypeByLabel($daily, 'Easter Camps')['quantity']);
+        $this->assertSame(1, $this->seasonTypeByLabel($daily, 'Spring Camps')['quantity']);
+        foreach ($daily['season_types'] as $row) {
+            $this->assertNotSame('Courses', $row['label'] ?? '');
+        }
+    }
+
     public function test_failed_and_pending_orders_list_order_number_date_and_link_only(): void {
         $this->assertSame(['wc-failed', 'wc-pending'], DailyBfSalesEmail::ATTENTION_ORDER_STATUSES);
         $this->assertSame(['wc-failed', 'wc-pending'], DailyBfSalesEmail::attentionOrderStatuses());
