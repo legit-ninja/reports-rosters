@@ -5089,6 +5089,36 @@ class DailyBfSalesEmailTest extends TestCase {
         $this->assertStringNotContainsString('Excluded Variation', $products);
     }
 
+    public function test_excluded_variation_of_listed_parent_is_kept_when_order_used_coupon(): void {
+        $service = $this->installParentListedCoupon();
+        $this->seedParentListedOrder(77511, 'bf', 9401, 9402, 'Excluded Variation', 3, '30.00');
+
+        $digest = $service->buildDigest($this->zurich('2026-11-29 08:00:00'));
+        $this->assertSame(['Excluded Variation'], $this->bookingProductNames($digest));
+        $this->assertSame(3, $this->summaryQuantity($digest['daily']));
+        $this->assertSame(3, $this->workbookCouponQuantity($digest));
+    }
+
+    public function test_excluded_variation_of_listed_parent_is_dropped_without_coupon(): void {
+        $service = $this->installParentListedCoupon();
+        $this->seedParentListedOrder(77512, '', 9401, 9402, 'Excluded Variation', 3, '30.00');
+
+        $digest = $service->buildDigest($this->zurich('2026-11-29 08:00:00'));
+        $this->assertSame([], $this->bookingProductNames($digest));
+        $this->assertSame(0, $this->summaryQuantity($digest['daily']));
+        $this->assertSame(0, $this->workbookCouponQuantity($digest));
+    }
+
+    public function test_uncovered_product_is_dropped_when_order_used_coupon(): void {
+        $service = $this->installParentListedCoupon();
+        $this->seedParentListedOrder(77513, 'BF', 8409, 0, 'Uncovered Product', 4, '40.00');
+
+        $digest = $service->buildDigest($this->zurich('2026-11-29 08:00:00'));
+        $this->assertSame([], $this->bookingProductNames($digest));
+        $this->assertSame(0, $this->summaryQuantity($digest['daily']));
+        $this->assertSame(0, $this->workbookCouponQuantity($digest));
+    }
+
     public function test_unrestricted_coupon_counts_every_line_and_logs_once(): void {
         $service = $this->enabledService($this->novemberCoupon(), 'ops@example.com');
         $GLOBALS['intersoccer_rr_bf_coupon_ids'] = ['BF' => 8803];
@@ -5276,6 +5306,120 @@ class DailyBfSalesEmailTest extends TestCase {
         }
         $this->assertTrue($sawTrid);
         $this->assertTrue($sawOriginal);
+    }
+
+    /**
+     * Product list holds the default-language parent. The variation of that
+     * parent is excluded. Translated line ids map back through the translation
+     * table; the list does not contain those translated ids.
+     */
+    private function installParentListedCoupon(): DailyBfSalesEmail {
+        $service = $this->enabledService($this->novemberCoupon(), 'ops@example.com');
+        $GLOBALS['intersoccer_rr_bf_coupon_ids'] = ['BF' => 8811];
+        $GLOBALS['intersoccer_rr_bf_coupon_limits'] = [
+            8811 => [
+                'product_ids' => [8401],
+                'excluded_product_ids' => [8402],
+                'product_categories' => [],
+                'excluded_product_categories' => [],
+            ],
+        ];
+        $this->stubCouponProducts([
+            8401 => new DailyBfCouponProductStub(8401, 0),
+            8402 => new DailyBfCouponProductStub(8402, 8401),
+            8409 => new DailyBfCouponProductStub(8409, 0),
+        ]);
+        $GLOBALS['intersoccer_test_post_parents'] = [9402 => 9401];
+        $this->wpdb->translationRows = [
+            [
+                'element_id' => 9401,
+                'element_type' => 'post_product',
+                'trid' => 701,
+                'source_language_code' => 'fr',
+            ],
+            [
+                'element_id' => 8401,
+                'element_type' => 'post_product',
+                'trid' => 701,
+                'source_language_code' => null,
+            ],
+            [
+                'element_id' => 9402,
+                'element_type' => 'post_product_variation',
+                'trid' => 702,
+                'source_language_code' => 'fr',
+            ],
+            [
+                'element_id' => 8402,
+                'element_type' => 'post_product_variation',
+                'trid' => 702,
+                'source_language_code' => null,
+            ],
+        ];
+        return $service;
+    }
+
+    /**
+     * @param int    $orderId
+     * @param string $couponCode Empty when the order applied no coupon.
+     * @param int    $productId
+     * @param int    $variationId
+     * @param string $name
+     * @param int    $qty
+     * @param string $amount
+     */
+    private function seedParentListedOrder($orderId, $couponCode, $productId, $variationId, $name, $qty, $amount): void {
+        $orderId = (int) $orderId;
+        $itemId = $orderId * 10 + 1;
+        $paid = (string) $this->unix('2026-11-28 10:00:00');
+        $order = [
+            'id' => $orderId,
+            'post_date' => '2026-11-28 10:00:00',
+            'date_paid' => $paid,
+            'items' => [
+                $this->item($itemId, $name, $productId, $variationId, $qty, $amount, $amount, '0.00'),
+            ],
+        ];
+        $couponCode = trim((string) $couponCode);
+        if ($couponCode !== '') {
+            $order['coupons'] = [$couponCode];
+        }
+        $this->wpdb->orders = [$order];
+        $this->wpdb->itemMeta = [
+            $itemId => ['Season' => 'Winter', '_intersoccer_canonical_activity_type' => 'course'],
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $digest
+     * @return array<int,string>
+     */
+    private function bookingProductNames(array $digest): array {
+        $names = [];
+        $lines = (isset($digest['booking_lines']) && is_array($digest['booking_lines'])) ? $digest['booking_lines'] : [];
+        foreach ($lines as $line) {
+            if (is_array($line)) {
+                $names[] = (string) ($line['product'] ?? '');
+            }
+        }
+        sort($names);
+        return $names;
+    }
+
+    /**
+     * @param array<string,mixed> $digest
+     */
+    private function workbookCouponQuantity(array $digest): int {
+        $qty = 0;
+        $lines = (isset($digest['workbook']['lines']) && is_array($digest['workbook']['lines']))
+            ? $digest['workbook']['lines']
+            : [];
+        foreach ($lines as $line) {
+            if (is_array($line)) {
+                $qty += (int) ($line['coupon_qty'] ?? 0);
+            }
+        }
+        return $qty;
     }
 
     /**

@@ -27,9 +27,11 @@
  * leave the site default sender and add no Reply-To header.
  *
  * Paid totals count processing and completed orders whose paid date falls in
- * the Europe/Zurich window. Each paid line is kept only when the configured
- * coupon can cover that product. A coupon with no product ids, excluded
- * products, categories, or excluded categories counts every line. On-hold
+ * the Europe/Zurich window. Each paid line is kept when the configured
+ * coupon's product rules accept it. A rejected line is still kept when the
+ * order used that coupon and the line's default-language parent is on the
+ * coupon's product list. A coupon with no product ids, excluded products,
+ * categories, or excluded categories counts every line. On-hold
  * orders are counted separately by the date they were created and are not
  * added in. Orders with no paid date are omitted from the paid totals.
  *
@@ -1621,9 +1623,9 @@ class DailyBfSalesEmail {
 
     /**
      * One filter for the paid daily report, the booking list, and the workbook.
-     * Eligibility is the configured coupon's product rules, not the coupon the
-     * order happened to use. A line paid in full, or with another code, still
-     * counts when the product itself is covered.
+     * A line the coupon accepts is kept. A line it rejects is kept only when
+     * the order used the configured coupon and the line's default-language
+     * parent is in the coupon's product id list.
      *
      * An unrestricted coupon has no product ids, excluded product ids, product
      * categories, or excluded categories. That case is logged once per run and
@@ -1737,11 +1739,30 @@ class DailyBfSalesEmail {
      * keep a variation the coupon excludes whenever the coupon has no product
      * id list. Simple lines use the default-language product id.
      *
+     * A line those rules reject stays only when the order applied the
+     * configured coupon and the line's default-language parent is in the
+     * coupon product id list.
+     *
      * @param object              $coupon
      * @param array<string,mixed> $row
      * @return bool
      */
     private function lineEligibleForCoupon($coupon, array $row) {
+        if ($this->couponRulesAcceptLine($coupon, $row)) {
+            return true;
+        }
+        if (!$this->rowUsedCouponCode($row, $this->settings()['coupon_code'])) {
+            return false;
+        }
+        return $this->parentListedOnCoupon($coupon, $row);
+    }
+
+    /**
+     * @param object              $coupon
+     * @param array<string,mixed> $row
+     * @return bool
+     */
+    private function couponRulesAcceptLine($coupon, array $row) {
         $variationId = (int) ($row['variation_id'] ?? 0);
         if ($variationId > 0) {
             $variation = $this->couponProduct($this->defaultLanguageVariationId($variationId));
@@ -1770,6 +1791,39 @@ class DailyBfSalesEmail {
             }
         }
         return false;
+    }
+
+    /**
+     * Default-language parent. The line's product id is mapped with the same
+     * lookup as other coupon checks, including the translation-table fallback.
+     * A variation id is used only when the line has no product id; that lookup
+     * lifts a post parent before the language map.
+     *
+     * @param array<string,mixed> $row
+     * @return int
+     */
+    private function lineDefaultLanguageParentId(array $row) {
+        $productId = (int) ($row['product_id'] ?? 0);
+        if ($productId <= 0) {
+            $productId = (int) ($row['variation_id'] ?? 0);
+        }
+        if ($productId <= 0) {
+            return 0;
+        }
+        return $this->defaultLanguageProductId($productId);
+    }
+
+    /**
+     * @param object              $coupon
+     * @param array<string,mixed> $row
+     * @return bool
+     */
+    private function parentListedOnCoupon($coupon, array $row) {
+        $parentId = $this->lineDefaultLanguageParentId($row);
+        if ($parentId <= 0) {
+            return false;
+        }
+        return in_array($parentId, $this->couponLimitIds($coupon, 'get_product_ids'), true);
     }
 
     /**
@@ -4957,18 +5011,34 @@ class DailyBfSalesEmail {
      * @return int
      */
     private function couponLineQuantity(array $row, $couponCode, $qty) {
-        $expected = strtolower(trim((string) $couponCode));
-        if ($expected === '' || (int) $qty <= 0) {
+        $qty = (int) $qty;
+        if ($qty <= 0 || !$this->rowUsedCouponCode($row, $couponCode)) {
             return 0;
+        }
+        return $qty;
+    }
+
+    /**
+     * The report row copies the order's applied coupon codes into discount_codes.
+     * Comparison is case-insensitive and matches the configured code as stored.
+     *
+     * @param array<string,mixed> $row
+     * @param string              $couponCode
+     * @return bool
+     */
+    private function rowUsedCouponCode(array $row, $couponCode) {
+        $expected = strtolower(trim((string) $couponCode));
+        if ($expected === '') {
+            return false;
         }
         $tokens = [];
         $this->addCouponTokens($tokens, isset($row['discount_codes']) ? (string) $row['discount_codes'] : '');
         foreach ($tokens as $token) {
             if (strtolower($token) === $expected) {
-                return (int) $qty;
+                return true;
             }
         }
-        return 0;
+        return false;
     }
 
     /**
