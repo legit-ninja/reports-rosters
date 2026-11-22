@@ -27,9 +27,11 @@
  * leave the site default sender and add no Reply-To header.
  *
  * Paid totals count processing and completed orders whose paid date falls in
- * the Europe/Zurich window. On-hold orders are counted separately by the date
- * they were created and are not added in. Orders with no paid date are omitted
- * from the paid totals.
+ * the Europe/Zurich window. Each paid line is kept only when the configured
+ * coupon can cover that product. A coupon with no product ids, excluded
+ * products, categories, or excluded categories counts every line. On-hold
+ * orders are counted separately by the date they were created and are not
+ * added in. Orders with no paid date are omitted from the paid totals.
  *
  * Low and zero booking lists cover published Winter, Spring, and Easter 2027
  * programmes that have not started. Counts include every paid booking, of any
@@ -45,9 +47,10 @@
  * when the code matches the front-end format. Region rows use display
  * buckets for this email (Geneva/Versoix, Vaud, Basel, Zug/Cham, Zurich, and
  * Unknown). The season-and-type table keeps the daily-versus-campaign
- * comparison and always shows Autumn, Winter, and Spring courses plus Easter
- * and Summer camps, even when the quantity is zero. Empty Other and Unknown
- * rows stay hidden. Every amount in the email is what the customer paid,
+ * comparison and always shows Winter Courses, Spring Courses, and Easter
+ * Camps, even when the quantity is zero. Autumn Courses and Summer Camps
+ * appear only when they have bookings. Empty Other and Unknown rows stay
+ * hidden. Every amount in the email is what the customer paid,
  * including VAT. There is no year-on-year comparison.
  *
  * @package InterSoccer\ReportsRosters\Services
@@ -129,6 +132,21 @@ class DailyBfSalesEmail {
      * @var callable|null
      */
     private $workbookBuilder;
+
+    /**
+     * @var bool
+     */
+    private $bfCouponResolved = false;
+
+    /**
+     * @var object|null
+     */
+    private $bfCouponObject = null;
+
+    /**
+     * @var bool
+     */
+    private $loggedUnrestrictedCoupon = false;
 
     /**
      * @param Logger|null                  $logger
@@ -1580,7 +1598,204 @@ class DailyBfSalesEmail {
      */
     private function loadReport($startYmd, $endYmd, array $statuses) {
         $options = self::paidWindowOptions($startYmd, $endYmd, $this->siteTimezone(), $statuses);
-        return $this->reportService()->getFinancialBookingReport($startYmd, $endYmd, '', '', $options);
+        $report = $this->reportService()->getFinancialBookingReport($startYmd, $endYmd, '', '', $options);
+        if (!is_array($report)) {
+            return $report;
+        }
+        return $this->keepCouponEligibleLines($report);
+    }
+
+    /**
+     * One filter for the paid daily report, the booking list, and the workbook.
+     * Eligibility is the configured coupon's product rules, not the coupon the
+     * order happened to use. A line paid in full, or with another code, still
+     * counts when the product itself is covered.
+     *
+     * An unrestricted coupon has no product ids, excluded product ids, product
+     * categories, or excluded categories. That case is logged once per run and
+     * every line is kept.
+     *
+     * @param array<string,mixed> $report
+     * @return array<string,mixed>
+     */
+    private function keepCouponEligibleLines(array $report) {
+        $coupon = $this->bfCoupon();
+        if (!is_object($coupon) || !method_exists($coupon, 'is_valid_for_product')) {
+            return $report;
+        }
+        if (!$this->couponHasProductLimits($coupon)) {
+            $this->noteUnrestrictedCoupon();
+            return $report;
+        }
+        $rows = (isset($report['data']) && is_array($report['data'])) ? $report['data'] : [];
+        $kept = [];
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            if ($this->lineEligibleForCoupon($coupon, $row)) {
+                $kept[] = $row;
+            }
+        }
+        $report['data'] = $kept;
+        return $report;
+    }
+
+    /**
+     * @return object|null
+     */
+    private function bfCoupon() {
+        if ($this->bfCouponResolved) {
+            return $this->bfCouponObject;
+        }
+        $this->bfCouponResolved = true;
+        $this->bfCouponObject = null;
+        $code = trim((string) $this->settings()['coupon_code']);
+        if ($code === '' || !class_exists('WC_Coupon') || !function_exists('wc_get_coupon_id_by_code')) {
+            return null;
+        }
+        $id = (int) wc_get_coupon_id_by_code($code);
+        if ($id <= 0) {
+            return null;
+        }
+        $coupon = new \WC_Coupon($id);
+        if (is_object($coupon)) {
+            $this->bfCouponObject = $coupon;
+        }
+        return $this->bfCouponObject;
+    }
+
+    /**
+     * True when any of the four WooCommerce product or category limit lists
+     * contains an id. Empty lists are an unrestricted coupon.
+     *
+     * @param object $coupon
+     * @return bool
+     */
+    private function couponHasProductLimits($coupon) {
+        foreach (['get_product_ids', 'get_excluded_product_ids', 'get_product_categories', 'get_excluded_product_categories'] as $method) {
+            if ($this->couponLimitIds($coupon, $method) !== []) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * @param object $coupon
+     * @param string $method
+     * @return array<int,int>
+     */
+    private function couponLimitIds($coupon, $method) {
+        if (!is_object($coupon) || !method_exists($coupon, $method)) {
+            return [];
+        }
+        $raw = $coupon->{$method}();
+        if (!is_array($raw)) {
+            return [];
+        }
+        $ids = [];
+        foreach ($raw as $id) {
+            $id = (int) $id;
+            if ($id > 0) {
+                $ids[$id] = $id;
+            }
+        }
+        return array_values($ids);
+    }
+
+    /**
+     * @return void
+     */
+    private function noteUnrestrictedCoupon() {
+        if ($this->loggedUnrestrictedCoupon) {
+            return;
+        }
+        $this->loggedUnrestrictedCoupon = true;
+        $this->logger->info('Daily sales email: coupon has no product or category limits', [
+            'reason' => 'coupon_unrestricted',
+        ]);
+    }
+
+    /**
+     * A variation line is judged on the default-language variation. WooCommerce
+     * checks that variation and its parent together. A parent-only check would
+     * keep a variation the coupon excludes whenever the coupon has no product
+     * id list. Simple lines use the default-language product id.
+     *
+     * @param object              $coupon
+     * @param array<string,mixed> $row
+     * @return bool
+     */
+    private function lineEligibleForCoupon($coupon, array $row) {
+        $variationId = (int) ($row['variation_id'] ?? 0);
+        if ($variationId > 0) {
+            $variation = $this->couponProduct($this->defaultLanguageVariationId($variationId));
+            if (is_object($variation)) {
+                return (bool) $coupon->is_valid_for_product($variation);
+            }
+        }
+        $candidates = [];
+        if ($variationId > 0) {
+            $candidates[] = $this->defaultLanguageProductId($variationId);
+        }
+        $productId = (int) ($row['product_id'] ?? 0);
+        if ($productId > 0) {
+            $candidates[] = $this->defaultLanguageProductId($productId);
+        }
+        $seen = [];
+        foreach ($candidates as $id) {
+            $id = (int) $id;
+            if ($id <= 0 || isset($seen[$id])) {
+                continue;
+            }
+            $seen[$id] = true;
+            $product = $this->couponProduct($id);
+            if (is_object($product) && $coupon->is_valid_for_product($product)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * @param int $productId
+     * @return object|null
+     */
+    private function couponProduct($productId) {
+        $productId = (int) $productId;
+        if ($productId <= 0 || !function_exists('wc_get_product')) {
+            return null;
+        }
+        $product = wc_get_product($productId);
+        return is_object($product) ? $product : null;
+    }
+
+    /**
+     * Default-language variation id. Unlike defaultLanguageProductId(), this
+     * does not replace the variation with its parent before the WPML lookup.
+     *
+     * @param int $variationId
+     * @return int
+     */
+    private function defaultLanguageVariationId($variationId) {
+        $variationId = (int) $variationId;
+        if ($variationId <= 0) {
+            return 0;
+        }
+        if (!function_exists('apply_filters')) {
+            return $variationId;
+        }
+        $language = 'en';
+        if (function_exists('wpml_get_default_language')) {
+            $detected = wpml_get_default_language();
+            if (is_string($detected) && $detected !== '') {
+                $language = $detected;
+            }
+        }
+        $mapped = apply_filters('wpml_object_id', $variationId, 'product_variation', true, $language);
+        $mapped = (int) $mapped;
+        return $mapped > 0 ? $mapped : $variationId;
     }
 
     /**
@@ -3917,8 +4132,9 @@ class DailyBfSalesEmail {
     }
 
     /**
-     * Regions and products drop every empty row. Season and type keeps the
-     * five primary programme rows and drops only empty Other and Unknown.
+     * Regions and products drop every empty row. Season and type keeps
+     * Winter Courses, Spring Courses, and Easter Camps. Empty Autumn Courses,
+     * Summer Camps, Other, and Unknown are dropped.
      *
      * @param string $collection
      * @param string $label
@@ -3928,7 +4144,10 @@ class DailyBfSalesEmail {
         if ($collection !== 'season_types') {
             return true;
         }
-        return $label === 'Other' || $label === 'Unknown';
+        if ($label === 'Winter Courses' || $label === 'Spring Courses' || $label === 'Easter Camps') {
+            return false;
+        }
+        return true;
     }
 
     /**
@@ -4613,6 +4832,8 @@ class DailyBfSalesEmail {
 
     /**
      * Line quantity when this line's order applied the configured coupon.
+     * Ineligible lines are removed in loadReport() before this runs, so a
+     * mixed cart does not add them here.
      *
      * @param array<string,mixed> $row
      * @param string              $couponCode
@@ -5086,7 +5307,8 @@ class DailyBfSalesEmail {
     }
 
     /**
-     * Fixed course and camp rows, then Winter Camps, Tournaments, and any other non-zero type.
+     * Winter Courses, Spring Courses, and Easter Camps always. Autumn Courses,
+     * Summer Camps, Winter Camps, and Tournaments only when a region has some.
      *
      * @param array<string,mixed> $regions
      * @return array<int,string>
@@ -5104,11 +5326,19 @@ class DailyBfSalesEmail {
                 $present[(string) $label] = true;
             }
         }
-        $labels = ['Autumn Courses', 'Winter Courses'];
+        $labels = [];
+        if (isset($present['Autumn Courses'])) {
+            $labels[] = 'Autumn Courses';
+        }
+        $labels[] = 'Winter Courses';
         if (isset($present['Winter Camps'])) {
             $labels[] = 'Winter Camps';
         }
-        $labels = array_merge($labels, ['Spring Courses', 'Easter Camps', 'Summer Camps']);
+        $labels[] = 'Spring Courses';
+        $labels[] = 'Easter Camps';
+        if (isset($present['Summer Camps'])) {
+            $labels[] = 'Summer Camps';
+        }
         if (isset($present['Tournaments'])) {
             $labels[] = 'Tournaments';
         }
@@ -5146,7 +5376,7 @@ class DailyBfSalesEmail {
      * @return array<int,string>
      */
     private function fixedSummaryProductLabels() {
-        return ['Autumn Courses', 'Winter Courses', 'Spring Courses', 'Easter Camps', 'Summer Camps'];
+        return ['Winter Courses', 'Spring Courses', 'Easter Camps'];
     }
 
     /**

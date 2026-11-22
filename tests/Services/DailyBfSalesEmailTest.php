@@ -160,6 +160,105 @@ namespace {
                 $value = $map[$this->id];
                 return ($value instanceof \DateTimeInterface) ? $value : null;
             }
+
+            /**
+             * @return array<int,int>
+             */
+            public function get_product_ids() {
+                return $this->limitList('product_ids');
+            }
+
+            /**
+             * @return array<int,int>
+             */
+            public function get_excluded_product_ids() {
+                return $this->limitList('excluded_product_ids');
+            }
+
+            /**
+             * @return array<int,int>
+             */
+            public function get_product_categories() {
+                return $this->limitList('product_categories');
+            }
+
+            /**
+             * @return array<int,int>
+             */
+            public function get_excluded_product_categories() {
+                return $this->limitList('excluded_product_categories');
+            }
+
+            /**
+             * Same product and category rules as WooCommerce's coupon check.
+             *
+             * @param object $product
+             * @param array  $values
+             * @return bool
+             */
+            public function is_valid_for_product($product, $values = []) {
+                if (!isset($GLOBALS['intersoccer_rr_bf_coupon_product_checks'])) {
+                    $GLOBALS['intersoccer_rr_bf_coupon_product_checks'] = 0;
+                }
+                $GLOBALS['intersoccer_rr_bf_coupon_product_checks']++;
+                if (!is_object($product) || !method_exists($product, 'get_id')) {
+                    return false;
+                }
+                $productIds = $this->limitList('product_ids');
+                $excludedProducts = $this->limitList('excluded_product_ids');
+                $categories = $this->limitList('product_categories');
+                $excludedCategories = $this->limitList('excluded_product_categories');
+                $valid = ($productIds === [] && $categories === []);
+                $ids = [(int) $product->get_id()];
+                if (method_exists($product, 'get_parent_id')) {
+                    $parent = (int) $product->get_parent_id();
+                    if ($parent > 0) {
+                        $ids[] = $parent;
+                    }
+                }
+                if ($productIds !== [] && array_intersect($ids, $productIds) !== []) {
+                    $valid = true;
+                }
+                $cats = [];
+                if (method_exists($product, 'get_category_ids')) {
+                    foreach ((array) $product->get_category_ids() as $cat) {
+                        $cat = (int) $cat;
+                        if ($cat > 0) {
+                            $cats[] = $cat;
+                        }
+                    }
+                }
+                if ($categories !== [] && array_intersect($cats, $categories) !== []) {
+                    $valid = true;
+                }
+                if ($excludedProducts !== [] && array_intersect($ids, $excludedProducts) !== []) {
+                    $valid = false;
+                }
+                if ($excludedCategories !== [] && array_intersect($cats, $excludedCategories) !== []) {
+                    $valid = false;
+                }
+                return $valid;
+            }
+
+            /**
+             * @param string $key
+             * @return array<int,int>
+             */
+            private function limitList($key) {
+                $all = (isset($GLOBALS['intersoccer_rr_bf_coupon_limits']) && is_array($GLOBALS['intersoccer_rr_bf_coupon_limits']))
+                    ? $GLOBALS['intersoccer_rr_bf_coupon_limits']
+                    : [];
+                $row = (isset($all[$this->id]) && is_array($all[$this->id])) ? $all[$this->id] : [];
+                $raw = (isset($row[$key]) && is_array($row[$key])) ? $row[$key] : [];
+                $ids = [];
+                foreach ($raw as $id) {
+                    $id = (int) $id;
+                    if ($id > 0) {
+                        $ids[$id] = $id;
+                    }
+                }
+                return array_values($ids);
+            }
         }
     }
 }
@@ -323,7 +422,25 @@ class DailyBfSalesEmailFixtureWpdb extends \InterSoccerTestWpdb {
         if (function_exists('intersoccer_rr_bf_note_db_call')) {
             \intersoccer_rr_bf_note_db_call();
         }
-        $this->queries[] = (string) $query;
+        $query = (string) $query;
+        $this->queries[] = $query;
+        if (strpos($query, "order_item_type = 'coupon'") !== false && preg_match('/order_id = (\d+)/', $query, $matches)) {
+            $orderId = (int) $matches[1];
+            foreach ($this->orders as $order) {
+                if ((int) ($order['id'] ?? 0) !== $orderId) {
+                    continue;
+                }
+                $coupons = (isset($order['coupons']) && is_array($order['coupons'])) ? $order['coupons'] : [];
+                $names = [];
+                foreach ($coupons as $coupon) {
+                    $coupon = trim((string) $coupon);
+                    if ($coupon !== '') {
+                        $names[] = $coupon;
+                    }
+                }
+                return $names;
+            }
+        }
         return [];
     }
 
@@ -455,6 +572,56 @@ class DailyBfSalesEmailFixtureWpdb extends \InterSoccerTestWpdb {
     }
 }
 
+class DailyBfCouponProductStub {
+    /** @var int */
+    private $id;
+
+    /** @var int */
+    private $parent;
+
+    /**
+     * @param int $id
+     * @param int $parent
+     */
+    public function __construct($id, $parent = 0) {
+        $this->id = (int) $id;
+        $this->parent = (int) $parent;
+    }
+
+    /**
+     * @return int
+     */
+    public function get_id() {
+        return $this->id;
+    }
+
+    /**
+     * @return int
+     */
+    public function get_parent_id() {
+        return $this->parent;
+    }
+
+    /**
+     * @param string $name
+     * @return string
+     */
+    public function get_attribute($name) {
+        return '';
+    }
+
+    /**
+     * @param string $type
+     * @return bool
+     */
+    public function is_type($type) {
+        if ($this->parent > 0) {
+            return (string) $type === 'variation';
+        }
+        return (string) $type === 'simple';
+    }
+}
+
 class DailyBfSalesEmailTest extends TestCase {
     /** @var DailyBfSalesEmailCapturingLogger */
     private $logger;
@@ -571,8 +738,11 @@ class DailyBfSalesEmailTest extends TestCase {
             $GLOBALS['intersoccer_test_get_posts_callback'],
             $GLOBALS['intersoccer_test_post_titles'],
             $GLOBALS['intersoccer_test_post_parents'],
+            $GLOBALS['intersoccer_test_apply_filters_callback'],
             $GLOBALS['intersoccer_rr_bf_coupon_ids'],
             $GLOBALS['intersoccer_rr_bf_coupon_expiries'],
+            $GLOBALS['intersoccer_rr_bf_coupon_limits'],
+            $GLOBALS['intersoccer_rr_bf_coupon_product_checks'],
             $GLOBALS['intersoccer_rr_bf_hpos_enabled']
         );
         global $intersoccer_test_wc_get_order_callback, $intersoccer_test_wc_get_orders_callback;
@@ -3259,13 +3429,10 @@ class DailyBfSalesEmailTest extends TestCase {
         $digest = $service->buildDigest($this->zurich('2026-11-29 08:00:00'));
         $html = $service->renderHtml($digest);
         $section = $this->htmlSection($html, '<h3>Season and type</h3>', '<h3>Products</h3>');
-        foreach (['Autumn Courses', 'Winter Courses', 'Spring Courses', 'Easter Camps', 'Summer Camps'] as $label) {
+        foreach (['Winter Courses', 'Spring Courses', 'Easter Camps', 'Summer Camps'] as $label) {
             $this->assertStringContainsString($label, $section, $label);
         }
-        $this->assertStringContainsString(
-            '>Autumn Courses</td><td>0</td><td>0.00</td><td>0</td><td>0.00</td><td>0.0%</td><td>0.0%</td><td>0.0%</td><td>0.0%</td>',
-            $section
-        );
+        $this->assertStringNotContainsString('>Autumn Courses</td>', $section);
         $this->assertStringContainsString(
             '>Easter Camps</td><td>0</td><td>0.00</td><td>0</td><td>0.00</td><td>0.0%</td><td>0.0%</td><td>0.0%</td><td>0.0%</td>',
             $section
@@ -3817,12 +3984,18 @@ class DailyBfSalesEmailTest extends TestCase {
         $winter = $this->rowIndex($column, 'Winter Camps', $winterCourses + 1);
         $spring = $this->rowIndex($column, 'Spring Courses', $winter + 1);
         $easter = $this->rowIndex($column, 'Easter Camps', $spring + 1);
-        $summer = $this->rowIndex($column, 'Summer Camps', $easter + 1);
-        $this->assertLessThan($genevaTotal, $summer);
+        $this->assertLessThan($genevaTotal, $easter);
+        $genevaLabels = [];
+        for ($cursor = $geneva + 1; $cursor < $genevaTotal; $cursor++) {
+            $genevaLabels[] = $column[$cursor];
+        }
+        $this->assertNotContains('Summer Camps', $genevaLabels);
+        $summer = $this->rowIndex($column, 'Summer Camps', $vaud + 1);
+        $this->assertLessThan($vaudTotal, $summer);
         $this->assertNumericCell($summary, 'B' . $winterCourses, 0, '0');
         $this->assertNumericCell($summary, 'B' . $spring, 0, '0');
         $this->assertNumericCell($summary, 'B' . $easter, 0, '0');
-        $this->assertNumericCell($summary, 'B' . $summer, 0, '0');
+        $this->assertNumericCell($summary, 'B' . $summer, 3, '0');
         $this->assertNumericCell($summary, 'B' . $winter, 5, '0');
         $this->assertNumericCell($summary, 'C' . $winter, 300, $money);
         $this->assertNumericCell($summary, 'D' . $winter, 5, '0');
@@ -3977,12 +4150,12 @@ class DailyBfSalesEmailTest extends TestCase {
         $column = $this->columnA($summary);
         $geneva = $this->rowIndex($column, 'Geneva/Versoix');
         $genevaTotal = $this->rowIndex($column, 'Total', $geneva + 1);
-        $this->assertSame('Autumn Courses', $column[$geneva + 1]);
-        $this->assertSame('Winter Courses', $column[$geneva + 2]);
-        $this->assertSame('Spring Courses', $column[$geneva + 3]);
-        $this->assertSame('Easter Camps', $column[$geneva + 4]);
-        $this->assertSame('Summer Camps', $column[$geneva + 5]);
-        $this->assertSame($geneva + 6, $genevaTotal);
+        $this->assertSame('Winter Courses', $column[$geneva + 1]);
+        $this->assertSame('Spring Courses', $column[$geneva + 2]);
+        $this->assertSame('Easter Camps', $column[$geneva + 3]);
+        $this->assertSame($geneva + 4, $genevaTotal);
+        $this->assertNotContains('Autumn Courses', $column);
+        $this->assertNotContains('Summer Camps', $column);
         $this->assertNotContains('Winter Camps', $column);
         $this->assertNotContains('Tournaments', $column);
         $this->assertCalculated($summary, 'B' . $genevaTotal, 0, '0');
@@ -4660,6 +4833,313 @@ class DailyBfSalesEmailTest extends TestCase {
         $this->assertSame('Unknown', $bucket->invoke($service, 'Ablex'));
         $this->assertSame('Unknown', $bucket->invoke($service, 'Absolute'));
         $this->assertSame('Unknown', $bucket->invoke($service, 'Neuchatel'));
+    }
+
+    public function test_mixed_cart_counts_only_coupon_eligible_lines(): void {
+        $service = $this->enabledService($this->novemberCoupon(), 'ops@example.com');
+        $GLOBALS['intersoccer_rr_bf_coupon_ids'] = ['BF' => 8801];
+        $GLOBALS['intersoccer_rr_bf_coupon_limits'] = [
+            8801 => [
+                'product_ids' => [8101, 8202],
+                'excluded_product_ids' => [],
+                'product_categories' => [],
+                'excluded_product_categories' => [],
+            ],
+        ];
+        $GLOBALS['intersoccer_rr_bf_coupon_product_checks'] = 0;
+        $this->stubCouponProducts([
+            8101 => new DailyBfCouponProductStub(8101, 0),
+            8109 => new DailyBfCouponProductStub(8109, 0),
+            8202 => new DailyBfCouponProductStub(8202, 8300),
+            8300 => new DailyBfCouponProductStub(8300, 0),
+        ]);
+        $GLOBALS['intersoccer_test_post_parents'] = [9202 => 9300];
+        $this->stubWpmlProductIds(
+            [9101 => 8101, 9300 => 8300],
+            [9202 => 8202]
+        );
+        $paid = (string) $this->unix('2026-11-28 10:00:00');
+        $this->wpdb->orders = [
+            [
+                'id' => 77101,
+                'post_date' => '2026-11-28 10:00:00',
+                'date_paid' => $paid,
+                'coupons' => ['BF'],
+                'items' => [
+                    $this->item(771011, 'Eligible Course', 8101, 0, 2, '20.00', '20.00', '0.00'),
+                    $this->item(771012, 'Ineligible Camp', 8109, 0, 5, '50.00', '50.00', '0.00'),
+                ],
+            ],
+            [
+                'id' => 77102,
+                'post_date' => '2026-11-28 11:00:00',
+                'date_paid' => $paid,
+                'items' => [
+                    $this->item(771021, 'Paid Course', 8101, 0, 1, '10.00', '10.00', '0.00'),
+                ],
+            ],
+            [
+                'id' => 77103,
+                'post_date' => '2026-11-28 12:00:00',
+                'date_paid' => $paid,
+                'coupons' => ['PLAY25'],
+                'items' => [
+                    $this->item(771031, 'Play Course', 8101, 0, 3, '30.00', '30.00', '0.00'),
+                ],
+            ],
+            [
+                'id' => 77104,
+                'post_date' => '2026-11-28 13:00:00',
+                'date_paid' => $paid,
+                'items' => [
+                    $this->item(771041, 'Translated Course', 9101, 0, 4, '40.00', '40.00', '0.00'),
+                ],
+            ],
+            [
+                'id' => 77105,
+                'post_date' => '2026-11-28 14:00:00',
+                'date_paid' => $paid,
+                'coupons' => ['BF'],
+                'items' => [
+                    $this->item(771051, 'Variation Course', 9300, 9202, 2, '16.00', '16.00', '0.00'),
+                ],
+            ],
+            [
+                'id' => 77106,
+                'post_date' => '2026-11-28 15:00:00',
+                'date_paid' => $paid,
+                'coupons' => ['BF'],
+                'items' => [
+                    $this->item(771061, 'Dropped Camp', 8109, 0, 7, '70.00', '70.00', '0.00'),
+                ],
+            ],
+        ];
+        $this->wpdb->itemMeta = [
+            771011 => ['Season' => 'Winter', '_intersoccer_canonical_activity_type' => 'course'],
+            771012 => ['Season' => 'Summer', '_intersoccer_canonical_activity_type' => 'camp'],
+            771021 => ['Season' => 'Winter', '_intersoccer_canonical_activity_type' => 'course'],
+            771031 => ['Season' => 'Winter', '_intersoccer_canonical_activity_type' => 'course'],
+            771041 => ['Season' => 'Winter', '_intersoccer_canonical_activity_type' => 'course'],
+            771051 => ['Season' => 'Winter', '_intersoccer_canonical_activity_type' => 'course'],
+            771061 => ['Season' => 'Summer', '_intersoccer_canonical_activity_type' => 'camp'],
+        ];
+
+        $digest = $service->buildDigest($this->zurich('2026-11-29 08:00:00'));
+        $this->assertSame(12, $this->summaryQuantity($digest['daily']));
+        $this->assertSame(12, $this->summaryQuantity($digest['campaign']));
+        $this->assertEqualsWithDelta(116.0, (float) $digest['daily']['net_inc_vat'], 0.001);
+        $this->assertEqualsWithDelta(116.0, (float) $digest['campaign']['net_inc_vat'], 0.001);
+        $this->assertSame(5, (int) $digest['daily']['order_count']);
+        $this->assertGreaterThan(0, (int) $GLOBALS['intersoccer_rr_bf_coupon_product_checks']);
+
+        $booked = [];
+        foreach ($digest['booking_lines'] as $line) {
+            $booked[] = (string) $line['product'];
+        }
+        sort($booked);
+        $this->assertSame(
+            ['Eligible Course', 'Paid Course', 'Play Course', 'Translated Course', 'Variation Course'],
+            $booked
+        );
+
+        $orderNets = [];
+        foreach ($digest['daily_orders'] as $order) {
+            $orderNets[(string) $order['order_number']] = (float) $order['net_inc_vat'];
+        }
+        $this->assertEqualsWithDelta(20.0, $orderNets['77101'], 0.001);
+        $this->assertArrayNotHasKey('77106', $orderNets);
+
+        $couponQty = [];
+        $workbookQty = 0;
+        foreach ($digest['workbook']['lines'] as $line) {
+            $number = (string) $line['order_number'];
+            $couponQty[$number] = (int) ($couponQty[$number] ?? 0) + (int) $line['coupon_qty'];
+            $workbookQty += (int) $line['quantity'];
+        }
+        $this->assertSame(12, $workbookQty);
+        $this->assertSame(2, $couponQty['77101']);
+        $this->assertSame(0, $couponQty['77102']);
+        $this->assertSame(0, $couponQty['77103']);
+        $this->assertSame(0, $couponQty['77104']);
+        $this->assertSame(2, $couponQty['77105']);
+        $this->assertArrayNotHasKey('77106', $couponQty);
+
+        $workbookProducts = [];
+        foreach ($digest['workbook']['orders'] as $order) {
+            $workbookProducts[(string) $order['order_number']] = (string) $order['products'];
+        }
+        $this->assertSame('2× Eligible Course', $workbookProducts['77101']);
+        $this->assertStringNotContainsString('Ineligible Camp', $workbookProducts['77101']);
+        $this->assertSame('2× Variation Course', $workbookProducts['77105']);
+
+        $html = $service->renderHtml($digest);
+        $bookings = $this->htmlSection($html, '<h3>Bookings</h3>', '<h3>Regions</h3>');
+        $this->assertStringContainsString('Eligible Course', $bookings);
+        $this->assertStringContainsString('Translated Course', $bookings);
+        $this->assertStringContainsString('Variation Course', $bookings);
+        $this->assertStringNotContainsString('Ineligible Camp', $bookings);
+        $this->assertStringNotContainsString('Dropped Camp', $bookings);
+        $season = $this->htmlSection($html, '<h3>Season and type</h3>', '<h3>Products</h3>');
+        $this->assertStringContainsString('Spring Courses', $season);
+        $this->assertStringNotContainsString('Spring/Summer Courses', $html);
+    }
+
+    public function test_excluded_variation_is_not_kept_through_its_parent(): void {
+        $service = $this->enabledService($this->novemberCoupon(), 'ops@example.com');
+        $GLOBALS['intersoccer_rr_bf_coupon_ids'] = ['BF' => 8802];
+        $GLOBALS['intersoccer_rr_bf_coupon_limits'] = [
+            8802 => [
+                'product_ids' => [],
+                'excluded_product_ids' => [8203],
+                'product_categories' => [],
+                'excluded_product_categories' => [],
+            ],
+        ];
+        $this->stubCouponProducts([
+            8101 => new DailyBfCouponProductStub(8101, 0),
+            8203 => new DailyBfCouponProductStub(8203, 8301),
+            8301 => new DailyBfCouponProductStub(8301, 0),
+        ]);
+        $GLOBALS['intersoccer_test_post_parents'] = [9203 => 9301];
+        $this->stubWpmlProductIds(
+            [9301 => 8301],
+            [9203 => 8203]
+        );
+        $paid = (string) $this->unix('2026-11-28 10:00:00');
+        $this->wpdb->orders = [[
+            'id' => 77201,
+            'post_date' => '2026-11-28 10:00:00',
+            'date_paid' => $paid,
+            'coupons' => ['BF'],
+            'items' => [
+                $this->item(772011, 'Kept Course', 8101, 0, 1, '10.00', '10.00', '0.00'),
+                $this->item(772012, 'Excluded Variation', 9301, 9203, 4, '40.00', '40.00', '0.00'),
+            ],
+        ]];
+        $this->wpdb->itemMeta = [
+            772011 => ['Season' => 'Winter', '_intersoccer_canonical_activity_type' => 'course'],
+            772012 => ['Season' => 'Winter', '_intersoccer_canonical_activity_type' => 'course'],
+        ];
+
+        $digest = $service->buildDigest($this->zurich('2026-11-29 08:00:00'));
+        $this->assertSame(1, $this->summaryQuantity($digest['daily']));
+        $this->assertEqualsWithDelta(10.0, (float) $digest['daily']['net_inc_vat'], 0.001);
+        $names = [];
+        foreach ($digest['booking_lines'] as $line) {
+            $names[] = (string) $line['product'];
+        }
+        $this->assertSame(['Kept Course'], $names);
+        $couponQty = 0;
+        foreach ($digest['workbook']['lines'] as $line) {
+            $couponQty += (int) $line['coupon_qty'];
+        }
+        $this->assertSame(1, $couponQty);
+        $products = (string) $digest['workbook']['orders'][0]['products'];
+        $this->assertSame('1× Kept Course', $products);
+        $this->assertStringNotContainsString('Excluded Variation', $products);
+    }
+
+    public function test_unrestricted_coupon_counts_every_line_and_logs_once(): void {
+        $service = $this->enabledService($this->novemberCoupon(), 'ops@example.com');
+        $GLOBALS['intersoccer_rr_bf_coupon_ids'] = ['BF' => 8803];
+        $GLOBALS['intersoccer_rr_bf_coupon_limits'] = [
+            8803 => [
+                'product_ids' => [],
+                'excluded_product_ids' => [],
+                'product_categories' => [],
+                'excluded_product_categories' => [],
+            ],
+        ];
+        $GLOBALS['intersoccer_rr_bf_coupon_product_checks'] = 0;
+        $this->stubCouponProducts([
+            8101 => new DailyBfCouponProductStub(8101, 0),
+            8109 => new DailyBfCouponProductStub(8109, 0),
+        ]);
+        $paid = (string) $this->unix('2026-11-28 10:00:00');
+        $this->wpdb->orders = [[
+            'id' => 77301,
+            'post_date' => '2026-11-28 10:00:00',
+            'date_paid' => $paid,
+            'coupons' => ['BF'],
+            'items' => [
+                $this->item(773011, 'Open Course', 8101, 0, 2, '20.00', '20.00', '0.00'),
+                $this->item(773012, 'Open Camp', 8109, 0, 5, '50.00', '50.00', '0.00'),
+            ],
+        ]];
+        $this->wpdb->itemMeta = [
+            773011 => ['Season' => 'Winter', '_intersoccer_canonical_activity_type' => 'course'],
+            773012 => ['Season' => 'Summer', '_intersoccer_canonical_activity_type' => 'camp'],
+        ];
+
+        $digest = $service->buildDigest($this->zurich('2026-11-29 08:00:00'));
+        $this->assertSame(7, $this->summaryQuantity($digest['daily']));
+        $this->assertSame(7, $this->summaryQuantity($digest['campaign']));
+        $this->assertEqualsWithDelta(70.0, (float) $digest['daily']['net_inc_vat'], 0.001);
+        $this->assertSame(0, (int) $GLOBALS['intersoccer_rr_bf_coupon_product_checks']);
+        $names = [];
+        foreach ($digest['booking_lines'] as $line) {
+            $names[] = (string) $line['product'];
+        }
+        sort($names);
+        $this->assertSame(['Open Camp', 'Open Course'], $names);
+        $couponQty = 0;
+        foreach ($digest['workbook']['lines'] as $line) {
+            $couponQty += (int) $line['coupon_qty'];
+        }
+        $this->assertSame(7, $couponQty);
+        $notes = 0;
+        foreach ($this->logger->entries as $entry) {
+            $reason = (isset($entry['context']['reason'])) ? (string) $entry['context']['reason'] : '';
+            if ($reason === 'coupon_unrestricted') {
+                $notes++;
+            }
+        }
+        $this->assertSame(1, $notes);
+    }
+
+    /**
+     * @param array<int,DailyBfCouponProductStub> $products
+     */
+    private function stubCouponProducts(array $products): void {
+        $GLOBALS['intersoccer_test_wc_get_product_callback'] = static function ($id) use ($products) {
+            $id = (int) $id;
+            return isset($products[$id]) ? $products[$id] : false;
+        };
+    }
+
+    /**
+     * @param array<int,int> $products
+     * @param array<int,int> $variations
+     */
+    private function stubWpmlProductIds(array $products, array $variations): void {
+        $GLOBALS['intersoccer_test_apply_filters_callback'] = static function ($hook, $value, ...$args) use ($products, $variations) {
+            if ($hook !== 'wpml_object_id') {
+                return $value;
+            }
+            $type = isset($args[0]) ? (string) $args[0] : '';
+            $id = (int) $value;
+            if ($type === 'product' && isset($products[$id])) {
+                return $products[$id];
+            }
+            if ($type === 'product_variation' && isset($variations[$id])) {
+                return $variations[$id];
+            }
+            return $value;
+        };
+    }
+
+    /**
+     * @param array<string,mixed> $summary
+     */
+    private function summaryQuantity(array $summary): int {
+        $qty = 0;
+        $types = (isset($summary['types']) && is_array($summary['types'])) ? $summary['types'] : [];
+        foreach ($types as $type) {
+            if (is_array($type)) {
+                $qty += (int) ($type['quantity'] ?? 0);
+            }
+        }
+        return $qty;
     }
 
     private function columnA(\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet): array {
