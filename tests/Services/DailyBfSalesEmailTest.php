@@ -5091,12 +5091,32 @@ class DailyBfSalesEmailTest extends TestCase {
 
     public function test_excluded_variation_of_listed_parent_is_kept_when_order_used_coupon(): void {
         $service = $this->installParentListedCoupon();
-        $this->seedParentListedOrder(77511, 'bf', 9401, 9402, 'Excluded Variation', 3, '30.00');
+        $this->seedParentListedOrder(77511, 'bf', 9401, 9402, 'Excluded Variation', 3, '24.00', '30.00');
 
         $digest = $service->buildDigest($this->zurich('2026-11-29 08:00:00'));
         $this->assertSame(['Excluded Variation'], $this->bookingProductNames($digest));
         $this->assertSame(3, $this->summaryQuantity($digest['daily']));
         $this->assertSame(3, $this->workbookCouponQuantity($digest));
+    }
+
+    public function test_excluded_variation_of_listed_parent_is_dropped_when_line_was_not_discounted(): void {
+        $service = $this->installParentListedCoupon();
+        $this->seedParentListedOrder(77514, 'bf', 9401, 9402, 'Excluded Variation', 3, '30.00', '30.00');
+
+        $digest = $service->buildDigest($this->zurich('2026-11-29 08:00:00'));
+        $this->assertSame([], $this->bookingProductNames($digest));
+        $this->assertSame(0, $this->summaryQuantity($digest['daily']));
+        $this->assertSame(0, $this->workbookCouponQuantity($digest));
+    }
+
+    public function test_excluded_variation_of_listed_parent_is_kept_when_line_was_discounted(): void {
+        $service = $this->installParentListedCoupon();
+        $this->seedParentListedOrder(77515, 'BF', 9401, 9402, 'Excluded Variation', 2, '16.00', '20.00');
+
+        $digest = $service->buildDigest($this->zurich('2026-11-29 08:00:00'));
+        $this->assertSame(['Excluded Variation'], $this->bookingProductNames($digest));
+        $this->assertSame(2, $this->summaryQuantity($digest['daily']));
+        $this->assertSame(2, $this->workbookCouponQuantity($digest));
     }
 
     public function test_excluded_variation_of_listed_parent_is_dropped_without_coupon(): void {
@@ -5360,24 +5380,28 @@ class DailyBfSalesEmailTest extends TestCase {
     }
 
     /**
-     * @param int    $orderId
-     * @param string $couponCode Empty when the order applied no coupon.
-     * @param int    $productId
-     * @param int    $variationId
-     * @param string $name
-     * @param int    $qty
-     * @param string $amount
+     * @param int         $orderId
+     * @param string      $couponCode Empty when the order applied no coupon.
+     * @param int         $productId
+     * @param int         $variationId
+     * @param string      $name
+     * @param int         $qty
+     * @param string      $amount    Order-item total.
+     * @param string|null $subtotal  Order-item subtotal. Same as the total when omitted.
      */
-    private function seedParentListedOrder($orderId, $couponCode, $productId, $variationId, $name, $qty, $amount): void {
+    private function seedParentListedOrder($orderId, $couponCode, $productId, $variationId, $name, $qty, $amount, $subtotal = null): void {
         $orderId = (int) $orderId;
         $itemId = $orderId * 10 + 1;
+        if ($subtotal === null || $subtotal === '') {
+            $subtotal = $amount;
+        }
         $paid = (string) $this->unix('2026-11-28 10:00:00');
         $order = [
             'id' => $orderId,
             'post_date' => '2026-11-28 10:00:00',
             'date_paid' => $paid,
             'items' => [
-                $this->item($itemId, $name, $productId, $variationId, $qty, $amount, $amount, '0.00'),
+                $this->item($itemId, $name, $productId, $variationId, $qty, $subtotal, $amount, '0.00'),
             ],
         ];
         $couponCode = trim((string) $couponCode);
@@ -5388,6 +5412,80 @@ class DailyBfSalesEmailTest extends TestCase {
         $this->wpdb->itemMeta = [
             $itemId => ['Season' => 'Winter', '_intersoccer_canonical_activity_type' => 'course'],
         ];
+        $this->stubWooLineTotalsFromOrders();
+    }
+
+    /**
+     * Expose each fixture line through WooCommerce get_subtotal() and get_total().
+     */
+    private function stubWooLineTotalsFromOrders(): void {
+        $byOrder = [];
+        foreach ($this->wpdb->orders as $order) {
+            $orderId = (int) ($order['id'] ?? 0);
+            if ($orderId <= 0) {
+                continue;
+            }
+            $lines = [];
+            $items = (isset($order['items']) && is_array($order['items'])) ? $order['items'] : [];
+            foreach ($items as $item) {
+                $itemId = (int) ($item['id'] ?? 0);
+                if ($itemId <= 0) {
+                    continue;
+                }
+                $line = new \WC_Order_Item_Product($itemId);
+                $line->set_subtotal($item['subtotal'] ?? 0);
+                $line->set_total($item['total'] ?? 0);
+                $lines[$itemId] = $line;
+            }
+            $byOrder[$orderId] = $lines;
+        }
+        $GLOBALS['intersoccer_test_wc_get_order_callback'] = static function ($orderId) use ($byOrder) {
+            $orderId = (int) $orderId;
+            if (!isset($byOrder[$orderId])) {
+                return false;
+            }
+            return new class($orderId, $byOrder[$orderId]) {
+                /** @var int */
+                private $id;
+
+                /** @var array<int,object> */
+                private $items;
+
+                /**
+                 * @param int                $id
+                 * @param array<int,object>  $items
+                 */
+                public function __construct($id, array $items) {
+                    $this->id = (int) $id;
+                    $this->items = $items;
+                }
+
+                /**
+                 * @param int $itemId
+                 * @return object|null
+                 */
+                public function get_item($itemId) {
+                    $itemId = (int) $itemId;
+                    return isset($this->items[$itemId]) ? $this->items[$itemId] : null;
+                }
+
+                /**
+                 * @return string
+                 */
+                public function get_order_number() {
+                    return (string) $this->id;
+                }
+
+                /**
+                 * @param string $key
+                 * @param bool   $single
+                 * @return string
+                 */
+                public function get_meta($key, $single = true) {
+                    return '';
+                }
+            };
+        };
     }
 
     /**

@@ -29,9 +29,10 @@
  * Paid totals count processing and completed orders whose paid date falls in
  * the Europe/Zurich window. Each paid line is kept when the configured
  * coupon's product rules accept it. A rejected line is still kept when the
- * order used that coupon and the line's default-language parent is on the
- * coupon's product list. A coupon with no product ids, excluded products,
- * categories, or excluded categories counts every line. On-hold
+ * order used that coupon, the line's default-language parent is on the
+ * coupon's product list, and WooCommerce discounted that line. A coupon
+ * with no product ids, excluded products, categories, or excluded categories
+ * counts every line. On-hold
  * orders are counted separately by the date they were created and are not
  * added in. Orders with no paid date are omitted from the paid totals.
  *
@@ -1624,8 +1625,9 @@ class DailyBfSalesEmail {
     /**
      * One filter for the paid daily report, the booking list, and the workbook.
      * A line the coupon accepts is kept. A line it rejects is kept only when
-     * the order used the configured coupon and the line's default-language
-     * parent is in the coupon's product id list.
+     * the order used the configured coupon, the line's default-language
+     * parent is in the coupon's product id list, and WooCommerce discounted
+     * that line (order-item subtotal greater than total).
      *
      * An unrestricted coupon has no product ids, excluded product ids, product
      * categories, or excluded categories. That case is logged once per run and
@@ -1740,8 +1742,8 @@ class DailyBfSalesEmail {
      * id list. Simple lines use the default-language product id.
      *
      * A line those rules reject stays only when the order applied the
-     * configured coupon and the line's default-language parent is in the
-     * coupon product id list.
+     * configured coupon, the line's default-language parent is in the
+     * coupon product id list, and WooCommerce discounted that line.
      *
      * @param object              $coupon
      * @param array<string,mixed> $row
@@ -1754,7 +1756,49 @@ class DailyBfSalesEmail {
         if (!$this->rowUsedCouponCode($row, $this->settings()['coupon_code'])) {
             return false;
         }
-        return $this->parentListedOnCoupon($coupon, $row);
+        if (!$this->parentListedOnCoupon($coupon, $row)) {
+            return false;
+        }
+        return $this->wooDiscountedOrderLine($row);
+    }
+
+    /**
+     * WooCommerce discounted the line when the order item subtotal is greater
+     * than its total, past a small float tolerance. This uses the order item
+     * totals, not the report discount amount. A missing item is not discounted.
+     *
+     * @param array<string,mixed> $row
+     * @return bool
+     */
+    private function wooDiscountedOrderLine(array $row) {
+        $item = $this->wooOrderLineItem($row);
+        if (!is_object($item) || !method_exists($item, 'get_subtotal') || !method_exists($item, 'get_total')) {
+            return false;
+        }
+        $subtotal = (float) $item->get_subtotal();
+        $total = (float) $item->get_total();
+        return ($subtotal - $total) > 0.0001;
+    }
+
+    /**
+     * @param array<string,mixed> $row
+     * @return object|null
+     */
+    private function wooOrderLineItem(array $row) {
+        if (!function_exists('wc_get_order')) {
+            return null;
+        }
+        $orderId = (int) ($row['order_id'] ?? 0);
+        $itemId = (int) ($row['order_item_id'] ?? 0);
+        if ($orderId <= 0 || $itemId <= 0) {
+            return null;
+        }
+        $order = wc_get_order($orderId);
+        if (!is_object($order) || !method_exists($order, 'get_item')) {
+            return null;
+        }
+        $item = $order->get_item($itemId);
+        return is_object($item) ? $item : null;
     }
 
     /**
