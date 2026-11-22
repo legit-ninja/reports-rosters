@@ -149,6 +149,20 @@ class DailyBfSalesEmail {
     private $loggedUnrestrictedCoupon = false;
 
     /**
+     * Default-language ids already resolved in this run, keyed by type and id.
+     *
+     * @var array<string,int>
+     */
+    private $defaultLanguageIds = [];
+
+    /**
+     * Null until the translation table is checked. False when it is missing.
+     *
+     * @var bool|null
+     */
+    private $translationTableExists = null;
+
+    /**
      * @param Logger|null                  $logger
      * @param FinancialReportService|null  $reports
      * @param callable|null                $couponLoader
@@ -1783,19 +1797,7 @@ class DailyBfSalesEmail {
         if ($variationId <= 0) {
             return 0;
         }
-        if (!function_exists('apply_filters')) {
-            return $variationId;
-        }
-        $language = 'en';
-        if (function_exists('wpml_get_default_language')) {
-            $detected = wpml_get_default_language();
-            if (is_string($detected) && $detected !== '') {
-                $language = $detected;
-            }
-        }
-        $mapped = apply_filters('wpml_object_id', $variationId, 'product_variation', true, $language);
-        $mapped = (int) $mapped;
-        return $mapped > 0 ? $mapped : $variationId;
+        return $this->defaultLanguageElementId($variationId, 'product_variation');
     }
 
     /**
@@ -2324,8 +2326,64 @@ class DailyBfSalesEmail {
                 $productId = $parent;
             }
         }
-        if (!function_exists('apply_filters')) {
-            return $productId;
+        return $this->defaultLanguageElementId($productId, 'product');
+    }
+
+    /**
+     * Default-language id for a product or variation. The object-id filter
+     * wins when it is loaded. Otherwise the translation table supplies the
+     * original row (source language null) for the same trid.
+     *
+     * @param int    $elementId
+     * @param string $wpmlType product or product_variation
+     * @return int
+     */
+    private function defaultLanguageElementId($elementId, $wpmlType) {
+        $elementId = (int) $elementId;
+        if ($elementId <= 0) {
+            return 0;
+        }
+        $wpmlType = ($wpmlType === 'product_variation') ? 'product_variation' : 'product';
+        $cacheKey = $wpmlType . ':' . $elementId;
+        if (array_key_exists($cacheKey, $this->defaultLanguageIds)) {
+            return $this->defaultLanguageIds[$cacheKey];
+        }
+        $mapped = $elementId;
+        if (!$this->wpmlObjectIdAvailable()) {
+            $fromTable = $this->defaultLanguageIdFromTranslations($elementId, $wpmlType);
+            if ($fromTable > 0) {
+                $mapped = $fromTable;
+            }
+        }
+        if ($mapped === $elementId) {
+            $viaFilter = $this->defaultLanguageIdFromFilter($elementId, $wpmlType);
+            if ($viaFilter > 0) {
+                $mapped = $viaFilter;
+            }
+        }
+        $this->defaultLanguageIds[$cacheKey] = $mapped;
+        return $mapped;
+    }
+
+    /**
+     * @return bool
+     */
+    private function wpmlObjectIdAvailable() {
+        if (function_exists('wpml_object_id')) {
+            return true;
+        }
+        return function_exists('has_filter') && (bool) has_filter('wpml_object_id');
+    }
+
+    /**
+     * @param int    $elementId
+     * @param string $wpmlType
+     * @return int
+     */
+    private function defaultLanguageIdFromFilter($elementId, $wpmlType) {
+        $elementId = (int) $elementId;
+        if ($elementId <= 0 || !function_exists('apply_filters')) {
+            return $elementId;
         }
         $language = 'en';
         if (function_exists('wpml_get_default_language')) {
@@ -2334,9 +2392,67 @@ class DailyBfSalesEmail {
                 $language = $detected;
             }
         }
-        $mapped = apply_filters('wpml_object_id', $productId, 'product', true, $language);
+        $mapped = apply_filters('wpml_object_id', $elementId, $wpmlType, true, $language);
         $mapped = (int) $mapped;
-        return $mapped > 0 ? $mapped : $productId;
+        return $mapped > 0 ? $mapped : $elementId;
+    }
+
+    /**
+     * Original element id from the translation table. Zero when the table is
+     * missing or the id has no row.
+     *
+     * @param int    $elementId
+     * @param string $wpmlType
+     * @return int
+     */
+    private function defaultLanguageIdFromTranslations($elementId, $wpmlType) {
+        $elementId = (int) $elementId;
+        if ($elementId <= 0) {
+            return 0;
+        }
+        $elementType = ($wpmlType === 'product_variation') ? 'post_product_variation' : 'post_product';
+        $wpdb = $this->db();
+        if (!is_object($wpdb) || !isset($wpdb->prefix) || !method_exists($wpdb, 'prepare') || !method_exists($wpdb, 'get_var')) {
+            return 0;
+        }
+        $table = $wpdb->prefix . 'icl_translations';
+        if (!$this->translationTablePresent($wpdb, $table)) {
+            return 0;
+        }
+        $trid = $wpdb->get_var($wpdb->prepare(
+            "SELECT trid FROM {$table} WHERE element_id = %d AND element_type = %s LIMIT 1",
+            $elementId,
+            $elementType
+        ));
+        $trid = (int) $trid;
+        if ($trid <= 0) {
+            return 0;
+        }
+        $original = $wpdb->get_var($wpdb->prepare(
+            "SELECT element_id FROM {$table} WHERE trid = %d AND element_type = %s AND source_language_code IS NULL LIMIT 1",
+            $trid,
+            $elementType
+        ));
+        $original = (int) $original;
+        return $original > 0 ? $original : 0;
+    }
+
+    /**
+     * @param object $wpdb
+     * @param string $table
+     * @return bool
+     */
+    private function translationTablePresent($wpdb, $table) {
+        if ($this->translationTableExists !== null) {
+            return $this->translationTableExists;
+        }
+        $like = $table;
+        if (method_exists($wpdb, 'esc_like')) {
+            $like = $wpdb->esc_like($table);
+        }
+        $found = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $like));
+        $this->translationTableExists = ($found === $table);
+        return $this->translationTableExists;
     }
 
     /**

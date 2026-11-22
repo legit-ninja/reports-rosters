@@ -332,6 +332,56 @@ class DailyBfSalesEmailFixtureWpdb extends \InterSoccerTestWpdb {
     public $orders = [];
     public $itemMeta = [];
 
+    /**
+     * Null means the translation table is missing. An array is the table's rows.
+     *
+     * @var array<int,array<string,mixed>>|null
+     */
+    public $translationRows = null;
+
+    public function get_var($query = null, $x = 0, $y = 0) {
+        $query = (string) $query;
+        $plain = str_replace('\\', '', $query);
+        if (stripos($plain, 'icl_translations') === false) {
+            return parent::get_var($query, $x, $y);
+        }
+        if (function_exists('intersoccer_rr_bf_note_db_call')) {
+            \intersoccer_rr_bf_note_db_call();
+        }
+        $this->queries[] = $query;
+        if (stripos($query, 'SHOW TABLES') !== false) {
+            return is_array($this->translationRows) ? ($this->prefix . 'icl_translations') : null;
+        }
+        if (!is_array($this->translationRows)) {
+            return null;
+        }
+        if (preg_match('/element_id = (\d+) AND element_type = \'([^\']+)\'/', $query, $matches)) {
+            $id = (int) $matches[1];
+            $type = (string) $matches[2];
+            foreach ($this->translationRows as $row) {
+                if ((int) ($row['element_id'] ?? 0) === $id && (string) ($row['element_type'] ?? '') === $type) {
+                    return (string) (int) ($row['trid'] ?? 0);
+                }
+            }
+            return null;
+        }
+        if (preg_match('/trid = (\d+) AND element_type = \'([^\']+)\' AND source_language_code IS NULL/', $query, $matches)) {
+            $trid = (int) $matches[1];
+            $type = (string) $matches[2];
+            foreach ($this->translationRows as $row) {
+                $source = array_key_exists('source_language_code', $row) ? $row['source_language_code'] : null;
+                if ((int) ($row['trid'] ?? 0) === $trid
+                    && (string) ($row['element_type'] ?? '') === $type
+                    && $source === null
+                ) {
+                    return (string) (int) ($row['element_id'] ?? 0);
+                }
+            }
+            return null;
+        }
+        return null;
+    }
+
     public function get_results($query = null, $output = OBJECT) {
         if (function_exists('intersoccer_rr_bf_note_db_call')) {
             \intersoccer_rr_bf_note_db_call();
@@ -5095,6 +5145,137 @@ class DailyBfSalesEmailTest extends TestCase {
             }
         }
         $this->assertSame(1, $notes);
+    }
+
+    public function test_translated_line_maps_through_the_translation_table_when_wpml_is_not_loaded(): void {
+        $this->assertFalse(function_exists('wpml_object_id'));
+        $this->assertFalse((bool) has_filter('wpml_object_id'));
+        $service = $this->enabledService($this->novemberCoupon(), 'ops@example.com');
+        $GLOBALS['intersoccer_rr_bf_coupon_ids'] = ['BF' => 8804];
+        $GLOBALS['intersoccer_rr_bf_coupon_limits'] = [
+            8804 => [
+                'product_ids' => [8101, 8300],
+                'excluded_product_ids' => [],
+                'product_categories' => [],
+                'excluded_product_categories' => [],
+            ],
+        ];
+        $this->stubCouponProducts([
+            8101 => new DailyBfCouponProductStub(8101, 0),
+            8202 => new DailyBfCouponProductStub(8202, 8300),
+            8300 => new DailyBfCouponProductStub(8300, 0),
+            9202 => new DailyBfCouponProductStub(9202, 9300),
+            9300 => new DailyBfCouponProductStub(9300, 0),
+        ]);
+        $GLOBALS['intersoccer_test_post_parents'] = [9202 => 9300];
+        $this->wpdb->translationRows = [
+            [
+                'element_id' => 9101,
+                'element_type' => 'post_product',
+                'trid' => 610,
+                'source_language_code' => 'fr',
+            ],
+            [
+                'element_id' => 8101,
+                'element_type' => 'post_product',
+                'trid' => 610,
+                'source_language_code' => null,
+            ],
+            [
+                'element_id' => 9101,
+                'element_type' => 'post_product_variation',
+                'trid' => 699,
+                'source_language_code' => 'de',
+            ],
+            [
+                'element_id' => 6666,
+                'element_type' => 'post_product_variation',
+                'trid' => 699,
+                'source_language_code' => null,
+            ],
+            [
+                'element_id' => 9300,
+                'element_type' => 'post_product',
+                'trid' => 611,
+                'source_language_code' => 'fr',
+            ],
+            [
+                'element_id' => 8300,
+                'element_type' => 'post_product',
+                'trid' => 611,
+                'source_language_code' => null,
+            ],
+            [
+                'element_id' => 9202,
+                'element_type' => 'post_product_variation',
+                'trid' => 612,
+                'source_language_code' => 'de',
+            ],
+            [
+                'element_id' => 8202,
+                'element_type' => 'post_product_variation',
+                'trid' => 612,
+                'source_language_code' => null,
+            ],
+        ];
+        $paid = (string) $this->unix('2026-11-28 10:00:00');
+        $this->wpdb->orders = [
+            [
+                'id' => 77401,
+                'post_date' => '2026-11-28 10:00:00',
+                'date_paid' => $paid,
+                'coupons' => ['BF'],
+                'items' => [
+                    $this->item(774011, 'Translated Course', 9101, 0, 3, '30.00', '30.00', '0.00'),
+                ],
+            ],
+            [
+                'id' => 77402,
+                'post_date' => '2026-11-28 11:00:00',
+                'date_paid' => $paid,
+                'coupons' => ['BF'],
+                'items' => [
+                    $this->item(774021, 'Translated Variation', 9300, 9202, 2, '16.00', '16.00', '0.00'),
+                ],
+            ],
+        ];
+        $this->wpdb->itemMeta = [
+            774011 => ['Season' => 'Winter', '_intersoccer_canonical_activity_type' => 'course'],
+            774021 => ['Season' => 'Winter', '_intersoccer_canonical_activity_type' => 'course'],
+        ];
+
+        $digest = $service->buildDigest($this->zurich('2026-11-29 08:00:00'));
+        $this->assertSame(5, $this->summaryQuantity($digest['daily']));
+        $this->assertSame(5, $this->summaryQuantity($digest['campaign']));
+        $booked = [];
+        foreach ($digest['booking_lines'] as $line) {
+            $booked[] = (string) $line['product'];
+        }
+        sort($booked);
+        $this->assertSame(['Translated Course', 'Translated Variation'], $booked);
+        $couponQty = [];
+        foreach ($digest['workbook']['lines'] as $line) {
+            $number = (string) $line['order_number'];
+            $couponQty[$number] = (int) ($couponQty[$number] ?? 0) + (int) $line['coupon_qty'];
+        }
+        $this->assertSame(3, $couponQty['77401']);
+        $this->assertSame(2, $couponQty['77402']);
+
+        $sawTrid = false;
+        $sawOriginal = false;
+        foreach ($this->wpdb->queries as $query) {
+            if (strpos($query, 'icl_translations') === false) {
+                continue;
+            }
+            if (strpos($query, 'SELECT trid') !== false && strpos($query, 'post_product') !== false) {
+                $sawTrid = true;
+            }
+            if (strpos($query, 'source_language_code IS NULL') !== false) {
+                $sawOriginal = true;
+            }
+        }
+        $this->assertTrue($sawTrid);
+        $this->assertTrue($sawOriginal);
     }
 
     /**
