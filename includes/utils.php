@@ -4249,7 +4249,11 @@ function intersoccer_update_roster_entry($order_id, $item_id) {
         'term' => substr((string)(($normalized_camp_terms ?: $normalized_course_day) ?: 'N/A'), 0, 200),
         'times' => substr((string)($normalized_times ?: 'N/A'), 0, 50),
         'days_selected' => substr((string)($selected_days_en ?: 'N/A'), 0, 200),
-        'season' => substr((string)($normalized_season ?: 'N/A'), 0, 50),
+        'season' => substr((string)(
+            function_exists('intersoccer_roster_season_name_for_storage')
+                ? intersoccer_roster_season_name_for_storage($original_event_data, $normalized_season ?: 'N/A')
+                : ($normalized_season ?: 'N/A')
+        ), 0, 50),
         'canton_region' => substr((string)($normalized_canton_region ?: ''), 0, 100),
         'city' => substr((string)($normalized_city ?: ''), 0, 100),
         'avs_number' => substr((string)($avs_number ?: 'N/A'), 0, 50),
@@ -5743,15 +5747,21 @@ if (!function_exists('intersoccer_event_signature_from_event_data')) {
             return '';
         }
         $original_season = (string) ($event_data['season'] ?? '');
-        $original_has_year = false;
-        if (function_exists('intersoccer_extract_year_from_season')) {
-            $original_has_year = intersoccer_extract_year_from_season($original_season) !== null;
-        } elseif ($original_season !== '' && preg_match('/(\d{4})/', $original_season)) {
-            $original_has_year = true;
-        }
-        if ($original_has_year) {
-            // Kept off the hashed component list. Stops a later term-name
-            // normalization from looking yearless and appending program_year.
+        $original_has_year = function_exists('intersoccer_season_text_has_year')
+            ? intersoccer_season_text_has_year($original_season)
+            : (function_exists('intersoccer_extract_year_from_season')
+                ? intersoccer_extract_year_from_season($original_season) !== null
+                : ($original_season !== '' && (bool) preg_match('/(\d{4})/', $original_season)));
+        $product_term = function_exists('intersoccer_resolve_product_program_season_term')
+            ? intersoccer_resolve_product_program_season_term((int) ($event_data['product_id'] ?? 0))
+            : null;
+        $product_term_evergreen = $product_term
+            && isset($product_term->name)
+            && !intersoccer_season_text_has_year((string) $product_term->name);
+        if ($original_has_year && !$product_term_evergreen) {
+            // Kept off the hashed component list for year-qualified seasons whose
+            // product term is still year-qualified (or missing). Renamed evergreen
+            // product terms must still append program_year so old/new rows merge.
             $event_data['signature_omit_program_year'] = 1;
         }
         $event_data = intersoccer_roster_apply_signature_date_fields($event_data);
@@ -7905,6 +7915,174 @@ if (!function_exists('intersoccer_resolve_program_year')) {
     }
 }
 
+if (!function_exists('intersoccer_season_text_has_year')) {
+    /**
+     * True when season text already embeds a four-digit year.
+     *
+     * @param string $season
+     * @return bool
+     */
+    function intersoccer_season_text_has_year($season) {
+        $season = trim((string) $season);
+        if ($season === '') {
+            return false;
+        }
+        if (function_exists('intersoccer_extract_year_from_season')) {
+            return intersoccer_extract_year_from_season($season) !== null;
+        }
+        return (bool) preg_match('/(\d{4})/', $season);
+    }
+}
+
+if (!function_exists('intersoccer_resolve_product_program_season_term')) {
+    /**
+     * Current pa_program-season term on the default-language parent product, if any.
+     *
+     * @param int $product_id Product or variation id.
+     * @return object|null Term-like object with slug/name/term_id in default language.
+     */
+    function intersoccer_resolve_product_program_season_term($product_id) {
+        $product_id = (int) $product_id;
+        if ($product_id <= 0) {
+            return null;
+        }
+
+        if (function_exists('intersoccer_wpml_canonical_product_id')) {
+            $product_id = (int) intersoccer_wpml_canonical_product_id($product_id);
+        } elseif (function_exists('intersoccer_program_year_default_language_post_id')) {
+            $product_id = (int) intersoccer_program_year_default_language_post_id($product_id);
+        }
+        if ($product_id <= 0) {
+            return null;
+        }
+
+        $terms = null;
+        if (function_exists('wc_get_product_terms')) {
+            $terms = wc_get_product_terms($product_id, 'pa_program-season', ['fields' => 'all']);
+        } elseif (function_exists('get_the_terms')) {
+            $terms = get_the_terms($product_id, 'pa_program-season');
+        } elseif (function_exists('wp_get_post_terms')) {
+            $terms = wp_get_post_terms($product_id, 'pa_program-season');
+        }
+        if (!is_array($terms) || $terms === []) {
+            return null;
+        }
+
+        foreach ($terms as $term) {
+            if (!is_object($term)) {
+                continue;
+            }
+            $slug = isset($term->slug) ? (string) $term->slug : '';
+            $name = isset($term->name) ? (string) $term->name : '';
+            $term_id = isset($term->term_id) ? (int) $term->term_id : 0;
+            if ($slug === '' && $name === '') {
+                continue;
+            }
+            if ($term_id > 0 && function_exists('apply_filters')) {
+                $default = function_exists('wpml_get_default_language') ? wpml_get_default_language() : null;
+                if ($default) {
+                    $original_id = apply_filters('wpml_object_id', $term_id, 'pa_program-season', true, $default);
+                    if ($original_id && (int) $original_id !== $term_id && function_exists('get_term')) {
+                        $original = get_term((int) $original_id, 'pa_program-season');
+                        if ($original && !is_wp_error($original)) {
+                            return $original;
+                        }
+                    }
+                }
+            }
+            return $term;
+        }
+
+        return null;
+    }
+}
+
+if (!function_exists('intersoccer_signature_resolve_season_for_hash')) {
+    /**
+     * Season slug + optional program_year for the event signature string.
+     *
+     * When the default-language product currently has a pa_program-season term,
+     * use that term's slug and decide program_year from the CURRENT term name
+     * (evergreen = no year). Otherwise keep the historical text-based path.
+     *
+     * @param array $event_data
+     * @param int   $canonical_product_id Already WPML-normalized parent product id when known.
+     * @return array{season_slug:string,program_year:string,term:?object}
+     */
+    function intersoccer_signature_resolve_season_for_hash(array $event_data, $canonical_product_id = 0) {
+        $canonical_product_id = (int) $canonical_product_id;
+        if ($canonical_product_id <= 0) {
+            $canonical_product_id = (int) ($event_data['product_id'] ?? 0);
+        }
+
+        $term = intersoccer_resolve_product_program_season_term($canonical_product_id);
+        if ($term) {
+            $slug = isset($term->slug) ? (string) $term->slug : '';
+            $term_name = isset($term->name) ? (string) $term->name : '';
+            $program_year = '';
+            // Evergreen = current term name has no year. Ignore signature_omit_program_year
+            // from a year-qualified *saved* season label so renamed rows merge with new ones.
+            if ($term_name !== '' && !intersoccer_season_text_has_year($term_name)
+                && function_exists('intersoccer_resolve_program_year')
+            ) {
+                $year = intersoccer_resolve_program_year(
+                    $event_data,
+                    (int) ($event_data['variation_id'] ?? 0),
+                    $canonical_product_id,
+                    ''
+                );
+                if ($year === null) {
+                    $year = intersoccer_resolve_program_year(
+                        [],
+                        0,
+                        0,
+                        (string) ($event_data['season'] ?? '')
+                    );
+                }
+                if ($year !== null) {
+                    $program_year = (string) (int) $year;
+                }
+            }
+            return [
+                'season_slug' => $slug,
+                'program_year' => $program_year,
+                'term' => $term,
+            ];
+        }
+
+        $slug = function_exists('intersoccer_get_term_slug_by_name')
+            ? (string) intersoccer_get_term_slug_by_name($event_data['season'] ?? '', 'pa_program-season')
+            : (string) ($event_data['season'] ?? '');
+        $program_year = function_exists('intersoccer_signature_program_year_component')
+            ? intersoccer_signature_program_year_component($event_data)
+            : '';
+        return [
+            'season_slug' => $slug,
+            'program_year' => $program_year,
+            'term' => null,
+        ];
+    }
+}
+
+if (!function_exists('intersoccer_roster_season_name_for_storage')) {
+    /**
+     * Season value to store on the roster row: current EN term name when the
+     * product has a pa_program-season term, otherwise the provided fallback.
+     *
+     * @param array  $event_data
+     * @param string $fallback_season
+     * @return string
+     */
+    function intersoccer_roster_season_name_for_storage(array $event_data, $fallback_season = '') {
+        $product_id = (int) ($event_data['product_id'] ?? 0);
+        $term = intersoccer_resolve_product_program_season_term($product_id);
+        if ($term && isset($term->name) && trim((string) $term->name) !== '') {
+            return (string) $term->name;
+        }
+        return (string) $fallback_season;
+    }
+}
+
 if (!function_exists('intersoccer_signature_program_year_component')) {
     /**
      * Program year to append to an event signature, or '' when the signature must stay as before.
@@ -7921,13 +8099,7 @@ if (!function_exists('intersoccer_signature_program_year_component')) {
             return '';
         }
         $season = (string) ($event_data['season'] ?? '');
-        $season_has_year = false;
-        if (function_exists('intersoccer_extract_year_from_season')) {
-            $season_has_year = intersoccer_extract_year_from_season($season) !== null;
-        } elseif ($season !== '' && preg_match('/(\d{4})/', $season)) {
-            $season_has_year = true;
-        }
-        if ($season_has_year || !function_exists('intersoccer_resolve_program_year')) {
+        if (intersoccer_season_text_has_year($season) || !function_exists('intersoccer_resolve_program_year')) {
             return '';
         }
         $year = intersoccer_resolve_program_year(
@@ -8063,6 +8235,15 @@ function intersoccer_event_signature_input_string($event_data) {
     
     // Signature parity with pre-2.10.16 rows: use stored activity_type and girls_only column only
     // (no canonical activity map or girls-only text inference — those change hashes for legacy DB shapes).
+    $season_resolution = function_exists('intersoccer_signature_resolve_season_for_hash')
+        ? intersoccer_signature_resolve_season_for_hash($event_data, (int) $product_id)
+        : [
+            'season_slug' => intersoccer_get_term_slug_by_name($event_data['season'] ?? '', 'pa_program-season'),
+            'program_year' => function_exists('intersoccer_signature_program_year_component')
+                ? intersoccer_signature_program_year_component($event_data)
+                : '',
+            'term' => null,
+        ];
     $normalized_components = [
         'activity_type' => $event_data['activity_type'] ?? '',
         'venue' => intersoccer_get_term_slug_by_name($event_data['venue'] ?? '', 'pa_intersoccer-venues'),
@@ -8070,7 +8251,7 @@ function intersoccer_event_signature_input_string($event_data) {
         'camp_terms' => intersoccer_get_term_slug_by_name($event_data['camp_terms'] ?? '', 'pa_camp-terms'),
         'course_day' => intersoccer_get_term_slug_by_name($event_data['course_day'] ?? '', 'pa_course-day'),
         'times' => intersoccer_resolve_times_slug_for_signature($event_data['times'] ?? ''),
-        'season' => intersoccer_get_term_slug_by_name($event_data['season'] ?? '', 'pa_program-season'),
+        'season' => $season_resolution['season_slug'],
         'girls_only' => !empty($event_data['girls_only']) ? '1' : '0',
         'city' => intersoccer_get_term_slug_by_name($event_data['city'] ?? '', 'pa_city'),
         'canton_region' => intersoccer_get_term_slug_by_name($event_data['canton_region'] ?? '', 'pa_canton-region'),
@@ -8106,12 +8287,9 @@ function intersoccer_event_signature_input_string($event_data) {
         $normalized_components['start_date'] = $date_value;
     }
 
-    // Evergreen seasons have no year in the Season text. Append Program Year only
-    // then, as the last component, so a Season value that already contains a year
-    // keeps the master signature string and hash.
-    $program_year_component = function_exists('intersoccer_signature_program_year_component')
-        ? intersoccer_signature_program_year_component($event_data)
-        : '';
+    // Evergreen seasons (no year in the current product term name, or in saved Season
+    // text when no product term) append Program Year as the last component.
+    $program_year_component = (string) ($season_resolution['program_year'] ?? '');
     if ($program_year_component !== '') {
         $normalized_components['program_year'] = $program_year_component;
     }

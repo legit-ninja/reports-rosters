@@ -78,6 +78,7 @@
             <file>tests/Reports/FinalReportsUrgencyTest.php</file>
             <file>tests/Reports/EvergreenYearIsolationTest.php</file>
             <file>tests/Reports/ProgramYearResolveTest.php</file>
+            <file>tests/Reports/SeasonRenameSignatureReconcileTest.php</file>
             <file>tests/Reports/CanonicalOrderMetaPreferenceTest.php</file>
             <file>tests/Reports/DistressedVariationIdsTest.php</file>
             <file>tests/Reports/PlayerCampStatusTest.php</file>

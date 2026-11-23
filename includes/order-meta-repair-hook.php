@@ -8,6 +8,31 @@
 defined('ABSPATH') or die('Restricted access');
 
 add_action('intersoccer_order_line_meta_repaired', 'intersoccer_handle_order_line_meta_repaired', 10, 2);
+add_action('intersoccer_pv_order_season_labels_repaired', 'intersoccer_handle_pv_order_season_labels_repaired', 10, 1);
+
+/**
+ * Scoped reconcile after Product Variations rewrites order-item Season labels.
+ *
+ * @param array $order_ids Order ids whose Season labels were repaired.
+ */
+function intersoccer_handle_pv_order_season_labels_repaired($order_ids) {
+    $order_ids = function_exists('intersoccer_reconcile_normalize_id_list')
+        ? intersoccer_reconcile_normalize_id_list($order_ids)
+        : array_values(array_filter(array_map('intval', (array) $order_ids)));
+    if ($order_ids === []) {
+        return;
+    }
+
+    if (!function_exists('intersoccer_reconcile_rosters')) {
+        return;
+    }
+
+    intersoccer_reconcile_rosters([
+        'order_ids' => $order_ids,
+        'include_product_siblings' => true,
+        'delete_obsolete' => false,
+    ]);
+}
 
 /**
  * Queue roster refresh for an order after meta repair.
