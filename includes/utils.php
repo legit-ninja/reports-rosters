@@ -7997,6 +7997,32 @@ if (!function_exists('intersoccer_resolve_product_program_season_term')) {
     }
 }
 
+if (!function_exists('intersoccer_product_program_season_is_evergreen')) {
+    /**
+     * True when the default-language product's current pa_program-season term
+     * name (EN) has no four-digit year (renamed evergreen seasons).
+     *
+     * Products with no season term, or a year-qualified term name, are not
+     * evergreen — season/signature reconcile must leave those rows untouched.
+     *
+     * @param int $product_id
+     * @return bool
+     */
+    function intersoccer_product_program_season_is_evergreen($product_id) {
+        $term = intersoccer_resolve_product_program_season_term((int) $product_id);
+        if (!$term || !isset($term->name)) {
+            return false;
+        }
+        $name = trim((string) $term->name);
+        if ($name === '') {
+            return false;
+        }
+        return function_exists('intersoccer_season_text_has_year')
+            ? !intersoccer_season_text_has_year($name)
+            : !preg_match('/(\d{4})/', $name);
+    }
+}
+
 if (!function_exists('intersoccer_signature_resolve_season_for_hash')) {
     /**
      * Season slug + optional program_year for the event signature string.

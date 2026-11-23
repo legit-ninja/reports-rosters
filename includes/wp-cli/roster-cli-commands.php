@@ -155,10 +155,12 @@ final class Intersoccer_Rr_Wp_Cli {
         }
 
         \WP_CLI::log(sprintf(
-            '%s examined %d, would-change/updated %d, unchanged %d, synced %d',
+            '%s examined %d, rows needing rename merge %d, rows changed %d, rows skipped (not evergreen) %d, unchanged %d, synced %d',
             $dry_run ? 'Dry run' : 'Apply',
             (int) ($season['examined'] ?? 0),
+            (int) ($season['needing_rename_merge'] ?? 0),
             (int) ($season['updated'] ?? 0),
+            (int) ($season['skipped_not_evergreen'] ?? 0),
             (int) ($season['unchanged'] ?? 0),
             (int) ($result['synced'] ?? 0)
         ));

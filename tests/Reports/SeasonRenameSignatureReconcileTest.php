@@ -255,7 +255,9 @@ class SeasonRenameSignatureReconcileTest extends TestCase {
             'order_ids' => [100, 200],
             'include_product_siblings' => false,
         ]);
+        $this->assertSame(2, $first['needing_rename_merge']);
         $this->assertSame(2, $first['updated']);
+        $this->assertSame(0, $first['skipped_not_evergreen']);
         $this->assertSame(0, $first['unchanged']);
         $this->assertCount(2, $db->updates);
         foreach ($db->updates as $update) {
@@ -286,6 +288,7 @@ class SeasonRenameSignatureReconcileTest extends TestCase {
             'order_ids' => [100, 200],
             'include_product_siblings' => false,
         ]);
+        $this->assertSame(0, $second['needing_rename_merge']);
         $this->assertSame(0, $second['updated']);
         $this->assertSame(2, $second['unchanged']);
         $this->assertSame([], $db->updates);
@@ -347,7 +350,9 @@ class SeasonRenameSignatureReconcileTest extends TestCase {
             'dry_run' => true,
         ]);
         $this->assertTrue($result['dry_run']);
-        $this->assertSame(2, $result['updated']);
+        $this->assertSame(2, $result['needing_rename_merge']);
+        $this->assertSame(0, $result['updated']);
+        $this->assertSame(0, $result['skipped_not_evergreen']);
         $this->assertSame([], $db->updates);
         $this->assertCount(2, $result['group_counts_before'][$product_id]);
         $this->assertCount(1, $result['group_counts_after'][$product_id]);
@@ -406,8 +411,196 @@ class SeasonRenameSignatureReconcileTest extends TestCase {
             'order_ids' => [100],
             'include_product_siblings' => true,
         ]);
+        $this->assertSame(2, $result['needing_rename_merge']);
         $this->assertSame(2, $result['updated']);
         $this->assertCount(2, $db->updates);
+    }
+
+    /**
+     * Unscoped season pass must not re-sign year-qualified-term drift.
+     */
+    public function test_unscoped_reconcile_leaves_year_qualified_term_drift_untouched(): void {
+        global $wpdb;
+        $year_product = 6101;
+        $evergreen_product = 6102;
+        $this->seedProductSeasonTerm($year_product, 'Winter 2026', 'winter-2026', 9301);
+        $this->seedProductSeasonTerm($evergreen_product, 'Winter Courses', 'winter-2027', 9302);
+
+        $stale_year_sig = md5('stale-year-qualified-drift');
+        $stale_evergreen_sig = md5('stale-evergreen');
+        $db = new SeasonRenameReconcileWpdb([
+            [
+                'id' => 31,
+                'order_id' => 401,
+                'order_item_id' => 4001,
+                'product_id' => $year_product,
+                'variation_id' => 0,
+                'activity_type' => 'Camp',
+                'venue' => 'geneva-venue',
+                'age_group' => '5-12',
+                'camp_terms' => 'summer-week-1',
+                'course_day' => '',
+                'times' => '0900-1200',
+                'season' => 'Winter 2026',
+                'girls_only' => 0,
+                'city' => '',
+                'canton_region' => '',
+                'start_date' => '',
+                'event_signature' => $stale_year_sig,
+            ],
+            [
+                'id' => 32,
+                'order_id' => 402,
+                'order_item_id' => 4002,
+                'product_id' => $evergreen_product,
+                'variation_id' => 0,
+                'activity_type' => 'Course',
+                'venue' => 'geneva-venue',
+                'age_group' => '5-12',
+                'camp_terms' => '',
+                'course_day' => 'monday',
+                'times' => '0900-1200',
+                'season' => 'Winter 2027',
+                'girls_only' => 0,
+                'city' => 'geneva',
+                'canton_region' => '',
+                'start_date' => '',
+                'event_signature' => $stale_evergreen_sig,
+            ],
+        ]);
+        $wpdb = $db;
+        $GLOBALS['intersoccer_test_wc_order_item_meta'][4002] = ['Year' => '2027'];
+
+        $result = intersoccer_reconcile_roster_season_signatures(['scope_all' => true]);
+        $this->assertSame(1, $result['needing_rename_merge']);
+        $this->assertSame(1, $result['updated']);
+        $this->assertSame(1, $result['skipped_not_evergreen']);
+        $this->assertSame(0, $result['unchanged']);
+        $this->assertCount(1, $db->updates);
+        $this->assertSame(32, (int) $db->updates[0]['where']['id']);
+        $this->assertSame($stale_year_sig, $db->rows[0]['event_signature']);
+        $this->assertSame('Winter 2026', $db->rows[0]['season']);
+    }
+
+    /**
+     * Drifted rows on products with no pa_program-season term stay untouched.
+     */
+    public function test_drifted_row_with_no_season_term_is_untouched(): void {
+        global $wpdb;
+        $stale = md5('no-term-drift');
+        $db = new SeasonRenameReconcileWpdb([
+            [
+                'id' => 41,
+                'order_id' => 501,
+                'order_item_id' => 5001,
+                'product_id' => 7200,
+                'variation_id' => 0,
+                'activity_type' => 'Camp',
+                'venue' => 'geneva-venue',
+                'age_group' => '5-12',
+                'camp_terms' => 'summer-week-1',
+                'course_day' => '',
+                'times' => '0900-1200',
+                'season' => 'Winter 2027',
+                'girls_only' => 0,
+                'city' => '',
+                'canton_region' => '',
+                'start_date' => '',
+                'event_signature' => $stale,
+            ],
+        ]);
+        $wpdb = $db;
+
+        $result = intersoccer_reconcile_roster_season_signatures([
+            'product_ids' => [7200],
+        ]);
+        $this->assertSame(0, $result['needing_rename_merge']);
+        $this->assertSame(0, $result['updated']);
+        $this->assertSame(1, $result['skipped_not_evergreen']);
+        $this->assertSame(0, $result['unchanged']);
+        $this->assertSame([], $db->updates);
+        $this->assertSame($stale, $db->rows[0]['event_signature']);
+        $this->assertSame('Winter 2027', $db->rows[0]['season']);
+    }
+
+    /**
+     * Evergreen rename candidates still merge under unscoped reconcile; second run is a no-op.
+     */
+    public function test_unscoped_evergreen_rows_merge_and_second_run_changes_zero(): void {
+        global $wpdb;
+        $product_id = 5555;
+        $this->seedProductSeasonTerm($product_id, 'Winter Courses', 'winter-2027', 9401);
+        $db = new SeasonRenameReconcileWpdb([
+            [
+                'id' => 51,
+                'order_id' => 601,
+                'order_item_id' => 6001,
+                'product_id' => $product_id,
+                'variation_id' => 0,
+                'activity_type' => 'Course',
+                'venue' => 'geneva-venue',
+                'age_group' => '5-12',
+                'camp_terms' => '',
+                'course_day' => 'monday',
+                'times' => '0900-1200',
+                'season' => 'Winter 2027',
+                'girls_only' => 0,
+                'city' => 'geneva',
+                'canton_region' => '',
+                'start_date' => '',
+                'event_signature' => md5('old-label'),
+            ],
+            [
+                'id' => 52,
+                'order_id' => 602,
+                'order_item_id' => 6002,
+                'product_id' => $product_id,
+                'variation_id' => 0,
+                'activity_type' => 'Course',
+                'venue' => 'geneva-venue',
+                'age_group' => '5-12',
+                'camp_terms' => '',
+                'course_day' => 'monday',
+                'times' => '0900-1200',
+                'season' => 'Winter Courses',
+                'girls_only' => 0,
+                'city' => 'geneva',
+                'canton_region' => '',
+                'start_date' => '',
+                'event_signature' => md5('new-label'),
+            ],
+        ]);
+        $wpdb = $db;
+        $GLOBALS['intersoccer_test_wc_order_item_meta'][6001] = ['Year' => '2027'];
+        $GLOBALS['intersoccer_test_wc_order_item_meta'][6002] = ['Year' => '2027'];
+
+        $first = intersoccer_reconcile_roster_season_signatures(['scope_all' => true]);
+        $this->assertSame(2, $first['needing_rename_merge']);
+        $this->assertSame(2, $first['updated']);
+        $this->assertSame(0, $first['skipped_not_evergreen']);
+        $this->assertCount(2, $db->updates);
+        $this->assertSame(
+            $db->updates[0]['data']['event_signature'],
+            $db->updates[1]['data']['event_signature']
+        );
+
+        foreach ($db->updates as $update) {
+            $id = (int) $update['where']['id'];
+            foreach ($db->rows as &$row) {
+                if ((int) $row['id'] === $id) {
+                    $row['season'] = $update['data']['season'];
+                    $row['event_signature'] = $update['data']['event_signature'];
+                }
+            }
+            unset($row);
+        }
+        $db->updates = [];
+
+        $second = intersoccer_reconcile_roster_season_signatures(['scope_all' => true]);
+        $this->assertSame(0, $second['needing_rename_merge']);
+        $this->assertSame(0, $second['updated']);
+        $this->assertSame(2, $second['unchanged']);
+        $this->assertSame([], $db->updates);
     }
 }
 

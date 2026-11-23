@@ -857,7 +857,8 @@ class RosterBuilder {
                 'scope_all' => false,
             ];
             if ($scoped_order_ids === [] && $scoped_product_ids === []) {
-                // Full admin reconcile: re-sign every roster row (incl. closed events that skipped full update).
+                // Full admin reconcile: examine all rows, but season/signature pass
+                // only rewrites evergreen rename-merge candidates (never a global re-sign).
                 $season_options['scope_all'] = true;
                 $season_options['order_ids'] = [];
                 $season_options['product_ids'] = [];

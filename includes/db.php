@@ -930,7 +930,12 @@ function intersoccer_reconcile_normalize_id_list($ids) {
 }
 
 /**
- * Recompute roster season display + event_signature for a scoped set of rows.
+ * Recompute roster season display + event_signature for rename-merge candidates only.
+ *
+ * Only evergreen products qualify: default-language product currently has a
+ * pa_program-season term whose EN name has no year. Year-qualified-term and
+ * no-term rows are left untouched even when recomputing would change the hash
+ * (pre-existing facet drift must not be "fixed" here).
  *
  * Updates only season and event_signature (never truncates, never deletes rows,
  * never overwrites player / move-history / manually edited columns).
@@ -940,8 +945,19 @@ function intersoccer_reconcile_normalize_id_list($ids) {
  *     @type int[]  $product_ids
  *     @type bool   $include_product_siblings Expand order scope to all rows of products those orders touch.
  *     @type bool   $dry_run                 List changes without writing.
+ *     @type bool   $scope_all               Examine all roster rows (still evergreen-gated).
  * }
- * @return array
+ * @return array{
+ *     needing_rename_merge:int,
+ *     updated:int,
+ *     skipped_not_evergreen:int,
+ *     unchanged:int,
+ *     examined:int,
+ *     dry_run:bool,
+ *     changes:list<array<string,mixed>>,
+ *     group_counts_before:array<int,array<string,int>>,
+ *     group_counts_after:array<int,array<string,int>>
+ * }
  */
 function intersoccer_reconcile_roster_season_signatures(array $options = []) {
     global $wpdb;
@@ -951,6 +967,18 @@ function intersoccer_reconcile_roster_season_signatures(array $options = []) {
     $order_ids = intersoccer_reconcile_normalize_id_list($options['order_ids'] ?? []);
     $product_ids = intersoccer_reconcile_normalize_id_list($options['product_ids'] ?? []);
     $include_siblings = !empty($options['include_product_siblings']);
+
+    $empty = [
+        'needing_rename_merge' => 0,
+        'updated' => 0,
+        'skipped_not_evergreen' => 0,
+        'unchanged' => 0,
+        'examined' => 0,
+        'dry_run' => $dry_run,
+        'changes' => [],
+        'group_counts_before' => [],
+        'group_counts_after' => [],
+    ];
 
     $table = $wpdb->prefix . 'intersoccer_rosters';
     $where = [];
@@ -980,15 +1008,7 @@ function intersoccer_reconcile_roster_season_signatures(array $options = []) {
         $where[] = "order_id IN ({$placeholders})";
         $params = array_merge($params, $order_ids);
     } else {
-        return [
-            'updated' => 0,
-            'unchanged' => 0,
-            'examined' => 0,
-            'dry_run' => $dry_run,
-            'changes' => [],
-            'group_counts_before' => [],
-            'group_counts_after' => [],
-        ];
+        return $empty;
     }
 
     $sql = "SELECT id, order_id, order_item_id, product_id, variation_id, activity_type, venue, age_group,
@@ -1015,9 +1035,12 @@ function intersoccer_reconcile_roster_season_signatures(array $options = []) {
         $group_before[$pid][$sig]++;
     }
 
+    $needing_rename_merge = 0;
     $updated = 0;
+    $skipped_not_evergreen = 0;
     $unchanged = 0;
     $changes = [];
+    $evergreen_cache = [];
     $quiet = function_exists('intersoccer_set_bulk_normalize_quiet');
     if ($quiet) {
         intersoccer_set_bulk_normalize_quiet(true);
@@ -1025,6 +1048,17 @@ function intersoccer_reconcile_roster_season_signatures(array $options = []) {
 
     try {
         foreach ($rows as $row) {
+            $product_id = (int) ($row['product_id'] ?? 0);
+            if (!array_key_exists($product_id, $evergreen_cache)) {
+                $evergreen_cache[$product_id] = function_exists('intersoccer_product_program_season_is_evergreen')
+                    ? intersoccer_product_program_season_is_evergreen($product_id)
+                    : false;
+            }
+            if (!$evergreen_cache[$product_id]) {
+                $skipped_not_evergreen++;
+                continue;
+            }
+
             $event_data = [
                 'activity_type' => $row['activity_type'] ?? '',
                 'venue' => $row['venue'] ?? '',
@@ -1036,7 +1070,7 @@ function intersoccer_reconcile_roster_season_signatures(array $options = []) {
                 'girls_only' => $row['girls_only'] ?? 0,
                 'city' => $row['city'] ?? '',
                 'canton_region' => $row['canton_region'] ?? '',
-                'product_id' => (int) ($row['product_id'] ?? 0),
+                'product_id' => $product_id,
                 'variation_id' => (int) ($row['variation_id'] ?? 0),
                 'start_date' => $row['start_date'] ?? '',
                 'order_item_id' => (int) ($row['order_item_id'] ?? 0),
@@ -1068,11 +1102,12 @@ function intersoccer_reconcile_roster_season_signatures(array $options = []) {
                 continue;
             }
 
+            $needing_rename_merge++;
             $changes[] = [
                 'id' => (int) ($row['id'] ?? 0),
                 'order_id' => (int) ($row['order_id'] ?? 0),
                 'order_item_id' => $order_item_id,
-                'product_id' => (int) ($row['product_id'] ?? 0),
+                'product_id' => $product_id,
                 'old_season' => $old_season,
                 'new_season' => $new_season,
                 'old_signature' => $old_signature,
@@ -1080,7 +1115,6 @@ function intersoccer_reconcile_roster_season_signatures(array $options = []) {
             ];
 
             if ($dry_run) {
-                $updated++;
                 continue;
             }
 
@@ -1152,7 +1186,9 @@ function intersoccer_reconcile_roster_season_signatures(array $options = []) {
     }
 
     return [
+        'needing_rename_merge' => $needing_rename_merge,
         'updated' => $updated,
+        'skipped_not_evergreen' => $skipped_not_evergreen,
         'unchanged' => $unchanged,
         'examined' => count($rows),
         'dry_run' => $dry_run,
@@ -1204,10 +1240,14 @@ function intersoccer_reconcile_rosters($options = []) {
                 intval($result['synced'] ?? 0),
                 intval($result['deleted'] ?? 0)
             );
-            if (!empty($season['updated'])) {
+            if (!empty($season['needing_rename_merge']) || !empty($season['skipped_not_evergreen']) || !empty($season['updated'])) {
                 $message .= ' ' . sprintf(
-                    __('Updated season/signature on %d roster row(s).', 'intersoccer-reports-rosters'),
-                    (int) $season['updated']
+                    /* translators: 1: rows needing rename merge, 2: rows changed, 3: rows skipped (not evergreen), 4: unchanged */
+                    __('Season/signature: rows needing rename merge %1$d / rows changed %2$d / rows skipped (not evergreen) %3$d / unchanged %4$d.', 'intersoccer-reports-rosters'),
+                    (int) ($season['needing_rename_merge'] ?? 0),
+                    (int) ($season['updated'] ?? 0),
+                    (int) ($season['skipped_not_evergreen'] ?? 0),
+                    (int) ($season['unchanged'] ?? 0)
                 );
             }
             if ($girls_only_backfilled > 0) {
@@ -1339,10 +1379,14 @@ function intersoccer_reconcile_rosters($options = []) {
             $girls_only_backfilled = intersoccer_reconcile_backfill_girls_only_flags();
         }
         $message = __('Reconciled rosters: Synced ' . $synced . ' entries, deleted ' . $deleted . ' obsolete ones.', 'intersoccer-reports-rosters');
-        if (!empty($season['updated'])) {
+        if (!empty($season['needing_rename_merge']) || !empty($season['skipped_not_evergreen']) || !empty($season['updated'])) {
             $message .= ' ' . sprintf(
-                __('Updated season/signature on %d roster row(s).', 'intersoccer-reports-rosters'),
-                (int) $season['updated']
+                /* translators: 1: rows needing rename merge, 2: rows changed, 3: rows skipped (not evergreen), 4: unchanged */
+                __('Season/signature: rows needing rename merge %1$d / rows changed %2$d / rows skipped (not evergreen) %3$d / unchanged %4$d.', 'intersoccer-reports-rosters'),
+                (int) ($season['needing_rename_merge'] ?? 0),
+                (int) ($season['updated'] ?? 0),
+                (int) ($season['skipped_not_evergreen'] ?? 0),
+                (int) ($season['unchanged'] ?? 0)
             );
         }
         if ($girls_only_backfilled > 0) {
