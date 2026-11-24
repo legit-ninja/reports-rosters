@@ -937,8 +937,9 @@ function intersoccer_reconcile_normalize_id_list($ids) {
  * no-term rows are left untouched even when recomputing would change the hash
  * (pre-existing facet drift must not be "fixed" here).
  *
- * Updates only season and event_signature (never truncates, never deletes rows,
- * never overwrites player / move-history / manually edited columns).
+ * Updates season and event_signature; when course_day is a recognisable FR/DE
+ * weekday it is rewritten to English on the same rows. Never truncates, never
+ * deletes rows, never overwrites player / move-history / manually edited columns.
  *
  * @param array $options {
  *     @type int[]  $order_ids
@@ -1094,6 +1095,13 @@ function intersoccer_reconcile_roster_season_signatures(array $options = []) {
             $new_signature = function_exists('intersoccer_event_signature_from_event_data')
                 ? intersoccer_event_signature_from_event_data($event_data)
                 : '';
+            $old_course_day = (string) ($row['course_day'] ?? '');
+            $new_course_day = function_exists('intersoccer_roster_course_day_for_storage')
+                ? intersoccer_roster_course_day_for_storage($old_course_day)
+                : $old_course_day;
+            if ($new_course_day === '' || strcasecmp($new_course_day, 'N/A') === 0) {
+                $new_course_day = $old_course_day;
+            }
 
             $old_season = (string) ($row['season'] ?? '');
             $old_signature = (string) ($row['event_signature'] ?? '');
@@ -1112,20 +1120,29 @@ function intersoccer_reconcile_roster_season_signatures(array $options = []) {
                 'new_season' => $new_season,
                 'old_signature' => $old_signature,
                 'new_signature' => $new_signature,
+                'old_course_day' => $old_course_day,
+                'new_course_day' => $new_course_day,
             ];
 
             if ($dry_run) {
                 continue;
             }
 
+            $update_fields = [
+                'season' => substr($new_season, 0, 50),
+                'event_signature' => $new_signature,
+            ];
+            $update_formats = ['%s', '%s'];
+            if ($new_course_day !== $old_course_day) {
+                $update_fields['course_day'] = substr($new_course_day, 0, 20);
+                $update_formats[] = '%s';
+            }
+
             $ok = $wpdb->update(
                 $table,
-                [
-                    'season' => substr($new_season, 0, 50),
-                    'event_signature' => $new_signature,
-                ],
+                $update_fields,
                 ['id' => (int) $row['id']],
-                ['%s', '%s'],
+                $update_formats,
                 ['%d']
             );
             if ($ok !== false) {

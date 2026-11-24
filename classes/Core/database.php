@@ -852,6 +852,9 @@ class Database {
      * @return string[]
      */
     public function get_listing_allowed_order_statuses() {
+        if (function_exists('intersoccer_roster_listing_allowed_order_statuses')) {
+            return intersoccer_roster_listing_allowed_order_statuses();
+        }
         return ['wc-completed', 'wc-processing', 'wc-pending', 'wc-on-hold'];
     }
 

@@ -170,4 +170,50 @@ class RosterBuilderRr178CourseTermEnglishTest extends TestCase {
         $row = $this->buildCourseRoster(['course_day' => 'dimanche', 'activity_type' => '']);
         $this->assertSame('Sunday', $row['term']);
     }
+
+    /**
+     * When FR/DE pa_course-day terms are missing translations, weekday tokens still store English.
+     */
+    public function test_rr178_missing_term_translations_still_store_english_weekday(): void {
+        unset(
+            $GLOBALS['intersoccer_test_terms_by_slug'],
+            $GLOBALS['intersoccer_test_terms_by_id'],
+            $GLOBALS['intersoccer_test_terms_by_name'],
+            $GLOBALS['intersoccer_test_apply_filters_callback']
+        );
+        $GLOBALS['intersoccer_test_wpml_current_language'] = 'fr';
+
+        $player = new Player([
+            'customer_id' => 1,
+            'player_index' => 0,
+            'first_name' => 'Test',
+            'last_name' => 'Player',
+            'dob' => '2015-06-01',
+            'gender' => 'male',
+        ]);
+        $customer = [
+            'email' => 'parent@example.com',
+            'phone' => '0790000000',
+            'first_name' => 'Parent',
+            'last_name' => 'Example',
+            'emergency_contact' => 'Parent Example',
+            'emergency_phone' => '0790000000',
+        ];
+        $method = (new ReflectionClass($this->rosterBuilder))->getMethod('buildRosterData');
+        $method->setAccessible(true);
+
+        foreach (['Dimanche', 'Sonntag', 'Lundi', 'Montag'] as $input) {
+            $row = $method->invoke($this->rosterBuilder, [
+                'activity_type' => 'Course',
+                'product_id' => 91001,
+                'variation_id' => 0,
+                'order_id' => 91002,
+                'order_item_id' => 91003,
+                'course_day' => $input,
+            ], $player, $customer);
+            $expected = in_array($input, ['Dimanche', 'Sonntag'], true) ? 'Sunday' : 'Monday';
+            $this->assertSame($expected, $row['course_day'], "course_day for {$input}");
+            $this->assertSame($expected, $row['term'], "term for {$input}");
+        }
+    }
 }

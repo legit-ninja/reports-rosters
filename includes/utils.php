@@ -1673,6 +1673,93 @@ if (!function_exists('intersoccer_roster_is_empty_season')) {
     }
 }
 
+if (!function_exists('intersoccer_roster_listing_allowed_order_statuses')) {
+    /**
+     * WooCommerce order post_status values counted on roster listing cards and shown in details.
+     *
+     * Keep listing aggregates and roster-details queries on this exact set so card
+     * total_players matches the View Roster row count for the same group.
+     *
+     * @return string[]
+     */
+    function intersoccer_roster_listing_allowed_order_statuses() {
+        return ['wc-completed', 'wc-processing', 'wc-pending', 'wc-on-hold'];
+    }
+}
+
+if (!function_exists('intersoccer_roster_course_day_for_storage')) {
+    /**
+     * Canonical English weekday for roster course_day storage (admin-English).
+     *
+     * Prefer WPML/default-language term name; when FR/DE weekday labels have no
+     * translated term, map recognisable weekday tokens (Lundi..Dimanche, Montag..Sonntag).
+     *
+     * @param mixed $value Raw course_day slug or label.
+     * @return string English weekday, term name, or trimmed original when unrecognised.
+     */
+    function intersoccer_roster_course_day_for_storage($value) {
+        $raw = trim((string) ($value ?? ''));
+        if ($raw === '' || strcasecmp($raw, 'N/A') === 0) {
+            return $raw;
+        }
+
+        // Weekday tokens first: missing FR/DE term translations still store English.
+        if (function_exists('intersoccer_normalize_weekday_token')) {
+            $day = intersoccer_normalize_weekday_token($raw);
+            if ($day) {
+                return $day;
+            }
+        }
+
+        if (function_exists('intersoccer_get_term_in_default_language')) {
+            $term = intersoccer_get_term_in_default_language($raw, 'pa_course-day');
+            if ($term && !is_wp_error($term) && !empty($term->name)) {
+                if (function_exists('intersoccer_normalize_weekday_token')) {
+                    $day = intersoccer_normalize_weekday_token($term->name);
+                    if ($day) {
+                        return $day;
+                    }
+                }
+                return (string) $term->name;
+            }
+        } elseif (function_exists('intersoccer_get_term_by_translated_name')) {
+            $term = intersoccer_get_term_by_translated_name($raw, 'pa_course-day');
+            if ($term && !is_wp_error($term) && !empty($term->name)) {
+                if (function_exists('intersoccer_normalize_weekday_token')) {
+                    $day = intersoccer_normalize_weekday_token($term->name);
+                    if ($day) {
+                        return $day;
+                    }
+                }
+                return (string) $term->name;
+            }
+        }
+
+        return $raw;
+    }
+}
+
+if (!function_exists('intersoccer_roster_normalize_listing_course_day')) {
+    /**
+     * Normalize course_day for listing facet compare / bucket keys (EN weekday when known).
+     *
+     * @param mixed $value
+     * @return string Lowercase token for equality.
+     */
+    function intersoccer_roster_normalize_listing_course_day($value) {
+        if (function_exists('intersoccer_roster_facet_for_grouping')) {
+            return intersoccer_roster_facet_for_grouping($value, 'pa_course-day');
+        }
+        if (function_exists('intersoccer_normalize_weekday_token')) {
+            $day = intersoccer_normalize_weekday_token($value);
+            if ($day) {
+                return strtolower($day);
+            }
+        }
+        return strtolower(trim((string) ($value ?? '')));
+    }
+}
+
 if (!function_exists('intersoccer_roster_course_groups_share_listing_facets')) {
     /**
      * Whether two course listing groups describe the same event aside from season text.
@@ -1684,10 +1771,14 @@ if (!function_exists('intersoccer_roster_course_groups_share_listing_facets')) {
         $norm = static function ($v) {
             return strtolower(trim((string) $v));
         };
-        foreach (['venue', 'course_day', 'age_group', 'times'] as $field) {
+        foreach (['venue', 'age_group', 'times'] as $field) {
             if ($norm($a[$field] ?? '') !== $norm($b[$field] ?? '')) {
                 return false;
             }
+        }
+        if (intersoccer_roster_normalize_listing_course_day($a['course_day'] ?? '')
+            !== intersoccer_roster_normalize_listing_course_day($b['course_day'] ?? '')) {
+            return false;
         }
         $varsA = array_values(array_unique(array_map('intval', (array) ($a['variation_ids'] ?? []))));
         $varsB = array_values(array_unique(array_map('intval', (array) ($b['variation_ids'] ?? []))));
@@ -1759,7 +1850,7 @@ if (!function_exists('intersoccer_roster_course_group_facet_key')) {
         }
         return md5(implode('|', [
             $norm($group['venue'] ?? ''),
-            $norm($group['course_day'] ?? ''),
+            intersoccer_roster_normalize_listing_course_day($group['course_day'] ?? ''),
             $norm($group['age_group'] ?? ''),
             $norm($group['times'] ?? ''),
             implode(',', $vars),
@@ -6162,16 +6253,21 @@ function intersoccer_normalize_event_data_for_signature($event_data) {
             }
         }
 
-        // Normalize course_day (taxonomy term name)
+        // Normalize course_day (English weekday / default-language term name)
         if (!empty($event_data['course_day'])) {
             $term = function_exists('intersoccer_get_term_in_default_language')
                 ? intersoccer_get_term_in_default_language($event_data['course_day'], 'pa_course-day')
-                : intersoccer_get_term_by_translated_name($event_data['course_day'], 'pa_course-day');
+                : (function_exists('intersoccer_get_term_by_translated_name')
+                    ? intersoccer_get_term_by_translated_name($event_data['course_day'], 'pa_course-day')
+                    : null);
 
             if ($term && !is_wp_error($term)) {
                 $normalized['course_day'] = $term->name;
+            } elseif (function_exists('intersoccer_normalize_weekday_token')
+                && ($day = intersoccer_normalize_weekday_token($event_data['course_day']))) {
+                // Missing FR/DE term translations still store English weekday.
+                $normalized['course_day'] = $day;
             } else {
-                // Use fallback normalization to ensure consistent signatures
                 $normalized['course_day'] = intersoccer_normalize_term_fallback($event_data['course_day']);
             }
         }

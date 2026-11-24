@@ -714,6 +714,38 @@ class UtilsTest extends TestCase {
         $this->assertArrayHasKey(3144, $group['order_item_ids']);
     }
 
+    public function test_merge_course_groups_by_shared_facets_combines_fr_and_en_course_day() {
+        if (!function_exists('intersoccer_roster_merge_course_groups_by_shared_facets')) {
+            $this->markTestSkipped('intersoccer_roster_merge_course_groups_by_shared_facets not loaded');
+        }
+        $facets = [
+            'venue' => 'Lausanne',
+            'age_group' => '3-12y',
+            'times' => '1000-1130',
+            'variation_ids' => [37638 => 37638],
+            'season' => 'Winter Courses',
+            'season_raw' => 'Winter Courses',
+            'merged_event_signatures' => [],
+            'start_dates' => [],
+            'end_dates' => [],
+        ];
+        $merged = intersoccer_roster_merge_course_groups_by_shared_facets([
+            'sig_fr' => $facets + [
+                'course_day' => 'Dimanche',
+                'order_item_ids' => [4760 => true],
+            ],
+            'sig_en' => $facets + [
+                'course_day' => 'Sunday',
+                'order_item_ids' => [5127 => true, 5128 => true],
+            ],
+        ]);
+        $this->assertCount(1, $merged);
+        $group = reset($merged);
+        $this->assertCount(3, $group['order_item_ids']);
+        $this->assertArrayHasKey(4760, $group['order_item_ids']);
+        $this->assertArrayHasKey(5127, $group['order_item_ids']);
+    }
+
     public function test_backfill_player_name_fields_from_player_name_column() {
         if (!function_exists('intersoccer_roster_backfill_player_name_fields')) {
             $this->markTestSkipped('intersoccer_roster_backfill_player_name_fields not loaded');

@@ -3067,6 +3067,13 @@ class RosterBuilder {
             if ($english !== null) {
                 return $english;
             }
+            // Missing FR/DE course-day term translations: still store English weekday.
+            if ($taxonomy === 'pa_course-day' && function_exists('intersoccer_normalize_weekday_token')) {
+                $weekday = intersoccer_normalize_weekday_token((string) $value);
+                if ($weekday) {
+                    return $weekday;
+                }
+            }
         }
         if (function_exists('intersoccer_get_term_name')) {
             $name = intersoccer_get_term_name($value, $taxonomy);
@@ -3078,6 +3085,12 @@ class RosterBuilder {
                 if ($name !== 'N/A') {
                     return $name;
                 }
+            }
+        }
+        if ($taxonomy === 'pa_course-day' && function_exists('intersoccer_normalize_weekday_token')) {
+            $weekday = intersoccer_normalize_weekday_token((string) $value);
+            if ($weekday) {
+                return $weekday;
             }
         }
         return (string) $value;

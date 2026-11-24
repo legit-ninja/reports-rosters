@@ -875,7 +875,12 @@ function intersoccer_render_roster_details_page() {
         $where_clauses = [];
         $query_params = [];
 
-        $where_clauses[] = "p.post_status IN ('wc-completed', 'wc-processing', 'wc-pending', 'wc-on-hold')";
+        $listing_statuses = function_exists('intersoccer_roster_listing_allowed_order_statuses')
+            ? intersoccer_roster_listing_allowed_order_statuses()
+            : ['wc-completed', 'wc-processing', 'wc-pending', 'wc-on-hold'];
+        $status_placeholders = implode(',', array_fill(0, count($listing_statuses), '%s'));
+        $where_clauses[] = "p.post_status IN ({$status_placeholders})";
+        $query_params = array_merge($query_params, $listing_statuses);
 
         if ($is_from_girls_only_page || $girls_only) {
             $where_clauses[] = "r.girls_only = 1";
@@ -915,17 +920,22 @@ function intersoccer_render_roster_details_page() {
             $query_params = array_merge($query_params, $variation_ids);
         }
 
-        if (!empty($event_signatures)) {
+        // Prefer order_item_ids from listing cards so details lists exactly the counted rows.
+        // Signature-only links identify the event without season/facet equality filters.
+        // Old-style links (no ids, no signature) keep venue/day/age/times/season equality.
+        $has_event_signature_scope = !empty($event_signatures)
+            || ($event_signature && $event_signature !== 'N/A');
+        if (!empty($order_item_ids)) {
+            $placeholders = implode(',', array_fill(0, count($order_item_ids), '%d'));
+            $where_clauses[] = "r.order_item_id IN ($placeholders)";
+            $query_params = array_merge($query_params, $order_item_ids);
+        } elseif (!empty($event_signatures)) {
             $placeholders = implode(',', array_fill(0, count($event_signatures), '%s'));
             $where_clauses[] = "r.event_signature IN ($placeholders)";
             $query_params = array_merge($query_params, $event_signatures);
         } elseif ($event_signature && $event_signature !== 'N/A') {
             $where_clauses[] = "r.event_signature = %s";
             $query_params[] = $event_signature;
-        } elseif (!empty($order_item_ids)) {
-            $placeholders = implode(',', array_fill(0, count($order_item_ids), '%d'));
-            $where_clauses[] = "r.order_item_id IN ($placeholders)";
-            $query_params = array_merge($query_params, $order_item_ids);
         } else {
             if ($camp_terms && $camp_terms !== 'N/A') {
                 $where_clauses[] = "r.camp_terms = %s";
@@ -953,7 +963,8 @@ function intersoccer_render_roster_details_page() {
             }
         }
 
-        if ($season && strcasecmp($season, 'N/A') !== 0) {
+        if (!$has_event_signature_scope && empty($order_item_ids)
+            && $season && strcasecmp($season, 'N/A') !== 0) {
             $where_clauses[] = "r.season = %s";
             $query_params[] = $season;
         }
