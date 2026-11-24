@@ -5368,8 +5368,8 @@ class DailyBfSalesEmail {
         }
 
         $this->sheetText($sheet, 'A' . $plan['general_row'], 'General');
-        $this->writeAddedTotals($sheet, (int) $plan['french_row'], 'Swiss French', $plan['french_totals'], $tps, $money, $percent);
-        $this->writeAddedTotals($sheet, (int) $plan['german_row'], 'Swiss German', $plan['german_totals'], $tps, $money, $percent);
+        $this->writeAddedTotals($sheet, (int) $plan['french_row'], 'French-speaking regions', $plan['french_totals'], $tps, $money, $percent);
+        $this->writeAddedTotals($sheet, (int) $plan['german_row'], 'German-speaking regions', $plan['german_totals'], $tps, $money, $percent);
         $scope = !empty($model['includes_tournaments']) ? 'Courses/Camps/Tournaments' : 'Courses/Camps';
         $this->sheetText($sheet, 'A' . $tps, 'Total Products Sold (' . $scope . ')');
         $this->sheetFormula($sheet, 'B' . $tps, $this->sumCellFormula('B', $plan['region_totals']), '0');
@@ -5717,7 +5717,7 @@ class DailyBfSalesEmail {
     /**
      * Arial 11 bold, centred, wrapped, thin black borders, then the reference fills.
      *
-     * Swiss French and Swiss German match product rows: blue on column A only.
+     * French-speaking regions and German-speaking regions match product rows: blue on column A only.
      *
      * @param \PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet
      * @param int                                           $last

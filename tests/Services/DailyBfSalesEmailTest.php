@@ -4067,8 +4067,8 @@ class DailyBfSalesEmailTest extends TestCase {
         $this->assertNotContains('Winter Camps', $vaudLabels);
         $this->assertNotContains('Tournaments', $vaudLabels);
 
-        $french = $this->rowIndex($column, 'Swiss French');
-        $german = $this->rowIndex($column, 'Swiss German', $french + 1);
+        $french = $this->rowIndex($column, 'French-speaking regions');
+        $german = $this->rowIndex($column, 'German-speaking regions', $french + 1);
         $baselTotal = $this->rowIndex($column, 'Total', $this->rowIndex($column, 'Basel') + 1);
         $zugTotal = $this->rowIndex($column, 'Total', $this->rowIndex($column, 'Zug/Cham') + 1);
         $zurichTotal = $this->rowIndex($column, 'Total', $this->rowIndex($column, 'Zurich') + 1);
