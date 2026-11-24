@@ -159,6 +159,11 @@ if (file_exists($order_meta_repair_hook)) {
     require_once $order_meta_repair_hook;
 }
 
+$intersoccer_season_rename_admin = plugin_dir_path(__FILE__) . 'includes/season-rename-reconcile-admin.php';
+if (is_admin() && file_exists($intersoccer_season_rename_admin)) {
+    require_once $intersoccer_season_rename_admin;
+}
+
 // PCS / win-back cache warm-up: hook registration on every request; heavy report files load in cron/event callbacks only.
 $intersoccer_pcs_cache_gate = plugin_dir_path(__FILE__) . 'includes/player-course-status-cache-gate.php';
 if (file_exists($intersoccer_pcs_cache_gate)) {
