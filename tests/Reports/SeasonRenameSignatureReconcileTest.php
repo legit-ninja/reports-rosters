@@ -526,6 +526,64 @@ class SeasonRenameSignatureReconcileTest extends TestCase {
     /**
      * Evergreen rename candidates still merge under unscoped reconcile; second run is a no-op.
      */
+    public function test_rename_only_pass_merges_dimanche_and_sunday_to_one_signature(): void {
+        global $wpdb;
+        $product_id = 5556;
+        $this->seedProductSeasonTerm($product_id, 'Winter Courses', 'winter-2027', 9402);
+        $base = [
+            'order_id' => 0,
+            'order_item_id' => 0,
+            'product_id' => $product_id,
+            'variation_id' => 60979,
+            'activity_type' => 'Course',
+            'venue' => 'pully',
+            'age_group' => '5-12',
+            'camp_terms' => '',
+            'times' => '1000-1130',
+            'season' => 'Winter Courses',
+            'girls_only' => 0,
+            'city' => 'pully',
+            'canton_region' => '',
+            'start_date' => '',
+        ];
+        $en = array_merge($base, ['id' => 61, 'order_id' => 701, 'order_item_id' => 7001, 'course_day' => 'Sunday', 'event_signature' => md5('en-stale')]);
+        $fr = array_merge($base, ['id' => 62, 'order_id' => 702, 'order_item_id' => 7002, 'course_day' => 'Dimanche', 'season' => 'Winter 2027', 'event_signature' => md5('fr-stale')]);
+        $db = new SeasonRenameReconcileWpdb([$en, $fr]);
+        $wpdb = $db;
+        $GLOBALS['intersoccer_test_wc_order_item_meta'][7001] = ['Year' => '2027'];
+        $GLOBALS['intersoccer_test_wc_order_item_meta'][7002] = ['Year' => '2027'];
+
+        $first = intersoccer_reconcile_roster_season_signatures(['scope_all' => true]);
+        $this->assertCount(2, $db->updates);
+        $by_id = [];
+        foreach ($db->updates as $update) {
+            $by_id[(int) $update['where']['id']] = $update['data'];
+        }
+        $this->assertSame($by_id[61]['event_signature'], $by_id[62]['event_signature']);
+        $this->assertSame('Sunday', $by_id[62]['course_day']);
+        $this->assertArrayNotHasKey('course_day', $by_id[61]);
+
+        // Same value the order sync computes for this course from FR or EN line meta.
+        $sync_payload = array_merge($base, ['course_day' => 'Dimanche', 'Year' => '2027', 'order_item_id' => 7002]);
+        $this->assertSame($by_id[62]['event_signature'], intersoccer_event_signature_from_event_data($sync_payload));
+        $sync_payload['course_day'] = 'Sunday';
+        $this->assertSame($by_id[62]['event_signature'], intersoccer_event_signature_from_event_data($sync_payload));
+
+        foreach ($db->updates as $update) {
+            foreach ($db->rows as &$row) {
+                if ((int) $row['id'] === (int) $update['where']['id']) {
+                    $row = array_merge($row, $update['data']);
+                }
+            }
+            unset($row);
+        }
+        $db->updates = [];
+        $second = intersoccer_reconcile_roster_season_signatures(['scope_all' => true]);
+        $this->assertSame(0, $second['needing_rename_merge']);
+        $this->assertCount(0, $db->updates);
+        $this->assertSame(2, $first['updated']);
+    }
+
     public function test_unscoped_evergreen_rows_merge_and_second_run_changes_zero(): void {
         global $wpdb;
         $product_id = 5555;

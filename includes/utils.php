@@ -5855,6 +5855,15 @@ if (!function_exists('intersoccer_event_signature_from_event_data')) {
             // product terms must still append program_year so old/new rows merge.
             $event_data['signature_omit_program_year'] = 1;
         }
+        // FR/DE weekday labels (Dimanche, Sonntag, ...) hash as the English weekday so the
+        // order sync and the season/signature pass agree for the same course even when a
+        // stray untranslated course-day term exists. English inputs are unchanged.
+        if (!empty($event_data['course_day']) && function_exists('intersoccer_normalize_weekday_token')) {
+            $weekday = intersoccer_normalize_weekday_token((string) $event_data['course_day']);
+            if ($weekday) {
+                $event_data['course_day'] = $weekday;
+            }
+        }
         $event_data = intersoccer_roster_apply_signature_date_fields($event_data);
         $normalized = intersoccer_normalize_event_data_for_signature($event_data);
         if (array_key_exists('start_date', $event_data)) {

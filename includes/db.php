@@ -1089,23 +1089,29 @@ function intersoccer_reconcile_roster_season_signatures(array $options = []) {
                 }
             }
 
+            // English course_day first (stored and hashed), same as the order sync.
+            $old_course_day = (string) ($row['course_day'] ?? '');
+            $new_course_day = function_exists('intersoccer_roster_course_day_for_storage')
+                ? intersoccer_roster_course_day_for_storage($old_course_day)
+                : $old_course_day;
+            if ($new_course_day === '' || strcasecmp($new_course_day, 'N/A') === 0
+                || strcasecmp($new_course_day, $old_course_day) === 0) {
+                // Case-only differences (monday/Monday) are not rewritten.
+                $new_course_day = $old_course_day;
+            }
+            $event_data['course_day'] = $new_course_day;
+
             $new_season = function_exists('intersoccer_roster_season_name_for_storage')
                 ? intersoccer_roster_season_name_for_storage($event_data, (string) ($row['season'] ?? ''))
                 : (string) ($row['season'] ?? '');
             $new_signature = function_exists('intersoccer_event_signature_from_event_data')
                 ? intersoccer_event_signature_from_event_data($event_data)
                 : '';
-            $old_course_day = (string) ($row['course_day'] ?? '');
-            $new_course_day = function_exists('intersoccer_roster_course_day_for_storage')
-                ? intersoccer_roster_course_day_for_storage($old_course_day)
-                : $old_course_day;
-            if ($new_course_day === '' || strcasecmp($new_course_day, 'N/A') === 0) {
-                $new_course_day = $old_course_day;
-            }
 
             $old_season = (string) ($row['season'] ?? '');
             $old_signature = (string) ($row['event_signature'] ?? '');
-            if ($new_season === $old_season && $new_signature === $old_signature) {
+            if ($new_season === $old_season && $new_signature === $old_signature
+                && $new_course_day === $old_course_day) {
                 $unchanged++;
                 continue;
             }
