@@ -78,6 +78,11 @@ final class Intersoccer_Rr_Wp_Cli {
      * [--products=<ids>]
      * : Comma-separated product ids (all roster rows for those products).
      *
+     * [--all-season-renames]
+     * : Instead of --orders/--products, examine every roster row and re-sign only rows
+     * whose product's current season term has no year (renamed/evergreen seasons).
+     * Season/signature pass only: no order re-sync, no deletes. Other seasons untouched.
+     *
      * [--dry-run]
      * : List rows whose season/signature would change; zero writes.
      *
@@ -88,6 +93,7 @@ final class Intersoccer_Rr_Wp_Cli {
      *
      *     wp intersoccer-rr reconcile-orders --orders=101,102 --dry-run
      *     wp intersoccer-rr reconcile-orders --products=4242
+     *     wp intersoccer-rr reconcile-orders --all-season-renames --dry-run
      *
      * @subcommand reconcile-orders
      * @alias reconcile_orders
@@ -97,8 +103,14 @@ final class Intersoccer_Rr_Wp_Cli {
      * @param array<string,mixed> $assoc_args
      */
     public function reconcile_orders(array $args, array $assoc_args): void {
-        if (!function_exists('intersoccer_reconcile_rosters')) {
-            \WP_CLI::error('intersoccer_reconcile_rosters is not available.');
+        if (!function_exists('intersoccer_rr_load_reconcile')) {
+            $hook = dirname(__DIR__) . '/order-meta-repair-hook.php';
+            if (is_readable($hook)) {
+                require_once $hook;
+            }
+        }
+        if (!function_exists('intersoccer_rr_load_reconcile') || !intersoccer_rr_load_reconcile()) {
+            \WP_CLI::error('Roster reconcile could not be loaded (includes/db.php).');
         }
 
         $order_ids = isset($assoc_args['orders']) ? (string) $assoc_args['orders'] : '';
@@ -106,8 +118,26 @@ final class Intersoccer_Rr_Wp_Cli {
         $dry_run = \WP_CLI\Utils\get_flag_value($assoc_args, 'dry-run', false) === true;
         $no_siblings = \WP_CLI\Utils\get_flag_value($assoc_args, 'no-product-siblings', false) === true;
 
-        if ($order_ids === '' && $product_ids === '') {
-            \WP_CLI::error('Provide --orders=<ids> and/or --products=<ids>.');
+        $all_renames = \WP_CLI\Utils\get_flag_value($assoc_args, 'all-season-renames', false) === true;
+
+        if ($all_renames && ($order_ids !== '' || $product_ids !== '')) {
+            \WP_CLI::error('Use either --all-season-renames or --orders/--products, not both.');
+        }
+        if (!$all_renames && $order_ids === '' && $product_ids === '') {
+            \WP_CLI::error(
+                "Nothing to reconcile. Usage:\n"
+                . "  wp intersoccer-rr reconcile-orders --orders=<ids> [--dry-run]\n"
+                . "  wp intersoccer-rr reconcile-orders --products=<ids> [--dry-run]\n"
+                . "  wp intersoccer-rr reconcile-orders --all-season-renames [--dry-run]"
+            );
+        }
+
+        if ($all_renames) {
+            $season = intersoccer_reconcile_roster_season_signatures([
+                'scope_all' => true,
+                'dry_run' => $dry_run,
+            ]);
+            $result = ['season_signature' => $season];
         }
 
         $options = [
@@ -119,7 +149,9 @@ final class Intersoccer_Rr_Wp_Cli {
             'skip_order_sync' => $dry_run,
         ];
 
-        $result = intersoccer_reconcile_rosters($options);
+        if (!$all_renames) {
+            $result = intersoccer_reconcile_rosters($options);
+        }
         $season = is_array($result['season_signature'] ?? null) ? $result['season_signature'] : [];
         $changes = is_array($season['changes'] ?? null) ? $season['changes'] : [];
 

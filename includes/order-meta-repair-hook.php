@@ -10,6 +10,28 @@ defined('ABSPATH') or die('Restricted access');
 add_action('intersoccer_order_line_meta_repaired', 'intersoccer_handle_order_line_meta_repaired', 10, 2);
 add_action('intersoccer_pv_order_season_labels_repaired', 'intersoccer_handle_pv_order_season_labels_repaired', 10, 1);
 
+if (!function_exists('intersoccer_rr_load_reconcile')) {
+    /**
+     * Load includes/db.php (reconcile functions) on demand.
+     *
+     * db.php is only required by admin screens, so WP-CLI and cron contexts
+     * (PV season-label repair hook, `wp intersoccer-rr reconcile-orders`) must
+     * load it explicitly.
+     *
+     * @return bool True when intersoccer_reconcile_rosters() is callable.
+     */
+    function intersoccer_rr_load_reconcile() {
+        if (!function_exists('intersoccer_reconcile_rosters')) {
+            $db_file = __DIR__ . '/db.php';
+            if (is_readable($db_file)) {
+                require_once $db_file;
+            }
+        }
+        return function_exists('intersoccer_reconcile_rosters')
+            && function_exists('intersoccer_reconcile_roster_season_signatures');
+    }
+}
+
 /**
  * Scoped reconcile after Product Variations rewrites order-item Season labels.
  *
@@ -23,11 +45,14 @@ function intersoccer_handle_pv_order_season_labels_repaired($order_ids) {
         return;
     }
 
-    if (!function_exists('intersoccer_reconcile_rosters')) {
+    if (!intersoccer_rr_load_reconcile()) {
+        if (function_exists('do_action')) {
+            do_action('intersoccer_rr_pv_season_reconcile_unavailable', $order_ids);
+        }
         return;
     }
 
-    intersoccer_reconcile_rosters([
+    return intersoccer_reconcile_rosters([
         'order_ids' => $order_ids,
         'include_product_siblings' => true,
         'delete_obsolete' => false,
