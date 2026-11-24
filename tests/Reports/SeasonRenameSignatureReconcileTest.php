@@ -660,6 +660,185 @@ class SeasonRenameSignatureReconcileTest extends TestCase {
         $this->assertSame(2, $second['unchanged']);
         $this->assertSame([], $db->updates);
     }
+
+    public function test_weekday_repair_merges_mercredi_in_named_season_and_skips_other_seasons(): void {
+        $product = 30713;
+        $other_product = 60933;
+        $this->seedProductSeasonTerm($product, 'Autumn 2026', 'autumn-2026', 856);
+        $this->seedProductSeasonTerm($other_product, 'Winter Courses', 'winter-courses', 983);
+
+        $base = [
+            'product_id' => $product,
+            'variation_id' => 30714,
+            'activity_type' => 'Course',
+            'venue' => 'versoix-venue',
+            'age_group' => '3-7y',
+            'camp_terms' => '',
+            'times' => '1600-1700',
+            'season' => 'Autumn 2026',
+            'girls_only' => 0,
+            'city' => 'Versoix',
+            'canton_region' => 'Geneva',
+            'start_date' => '2026-08-26',
+        ];
+        $canonical = intersoccer_event_signature_from_event_data(array_merge($base, [
+            'course_day' => 'Wednesday',
+            'order_item_id' => 8001,
+        ]));
+        $en = array_merge($base, [
+            'id' => 71,
+            'order_id' => 801,
+            'order_item_id' => 8001,
+            'course_day' => 'Wednesday',
+            'event_signature' => $canonical,
+        ]);
+        $fr = array_merge($base, [
+            'id' => 72,
+            'order_id' => 802,
+            'order_item_id' => 8002,
+            'course_day' => 'Mercredi',
+            'event_signature' => md5('fr-stale'),
+        ]);
+        $other = array_merge($base, [
+            'id' => 73,
+            'order_id' => 803,
+            'order_item_id' => 8003,
+            'product_id' => $other_product,
+            'variation_id' => 60979,
+            'season' => 'Winter Courses',
+            'course_day' => 'Dimanche',
+            'event_signature' => md5('winter-stale'),
+        ]);
+
+        global $wpdb;
+        $wpdb = new SeasonRenameReconcileWpdb([$en, $fr, $other]);
+
+        $first = intersoccer_reconcile_roster_season_signatures([
+            'season' => 'Autumn 2026',
+            'weekday_repair' => true,
+        ]);
+        $this->assertSame(2, $first['examined']);
+        $this->assertSame(1, $first['needing_rename_merge']);
+        $this->assertSame(1, $first['updated']);
+        $this->assertSame(1, $first['unchanged']);
+        $this->assertSame(0, $first['skipped_not_evergreen']);
+        $this->assertSame('Autumn 2026', $first['season']);
+        $this->assertTrue($first['weekday_repair']);
+
+        $by_id = [];
+        foreach ($wpdb->updates as $update) {
+            $by_id[(int) $update['where']['id']] = $update['data'];
+        }
+        $this->assertArrayHasKey(72, $by_id);
+        $this->assertArrayNotHasKey(71, $by_id);
+        $this->assertArrayNotHasKey(73, $by_id);
+        $this->assertSame('Wednesday', $by_id[72]['course_day']);
+        $this->assertSame('Autumn 2026', $by_id[72]['season']);
+        $this->assertSame($canonical, $by_id[72]['event_signature']);
+        $this->assertNotSame(md5('fr-stale'), $by_id[72]['event_signature']);
+
+        // Apply the first update to the in-memory table and confirm a second run is a no-op.
+        foreach ($wpdb->rows as $i => $row) {
+            if ((int) $row['id'] === 72) {
+                $wpdb->rows[$i]['course_day'] = $by_id[72]['course_day'];
+                $wpdb->rows[$i]['event_signature'] = $by_id[72]['event_signature'];
+                $wpdb->rows[$i]['season'] = $by_id[72]['season'];
+            }
+        }
+        $wpdb->updates = [];
+        $second = intersoccer_reconcile_roster_season_signatures([
+            'season' => 'Autumn 2026',
+            'weekday_repair' => true,
+        ]);
+        $this->assertSame(0, $second['needing_rename_merge']);
+        $this->assertSame(0, $second['updated']);
+        $this->assertSame(2, $second['unchanged']);
+        $this->assertSame([], $wpdb->updates);
+    }
+
+    public function test_weekday_repair_dry_run_writes_nothing(): void {
+        $this->seedProductSeasonTerm(30713, 'Autumn 2026', 'autumn-2026', 856);
+        $row = [
+            'id' => 81,
+            'order_id' => 901,
+            'order_item_id' => 9001,
+            'product_id' => 30713,
+            'variation_id' => 30714,
+            'activity_type' => 'Course',
+            'venue' => 'versoix-venue',
+            'age_group' => '3-7y',
+            'camp_terms' => '',
+            'course_day' => 'Mercredi',
+            'times' => '1600-1700',
+            'season' => 'Autumn 2026',
+            'girls_only' => 0,
+            'city' => 'Versoix',
+            'canton_region' => 'Geneva',
+            'start_date' => '2026-08-26',
+            'event_signature' => md5('stale'),
+        ];
+        global $wpdb;
+        $wpdb = new SeasonRenameReconcileWpdb([$row]);
+        $result = intersoccer_reconcile_roster_season_signatures([
+            'season' => 'Autumn 2026',
+            'dry_run' => true,
+        ]);
+        $this->assertTrue($result['dry_run']);
+        $this->assertSame(1, $result['needing_rename_merge']);
+        $this->assertSame(0, $result['updated']);
+        $this->assertSame([], $wpdb->updates);
+        $this->assertSame('Mercredi', $result['changes'][0]['old_course_day']);
+        $this->assertSame('Wednesday', $result['changes'][0]['new_course_day']);
+        $this->assertSame('Autumn 2026', $result['changes'][0]['new_season']);
+    }
+
+    public function test_weekday_repair_does_not_merge_rows_that_differ_only_by_time(): void {
+        $this->seedProductSeasonTerm(52686, 'Autumn 2026', 'autumn-2026', 856);
+        $base = [
+            'product_id' => 52686,
+            'variation_id' => 52687,
+            'activity_type' => 'Course',
+            'venue' => 'zug-eizmoos',
+            'age_group' => '3-8y',
+            'camp_terms' => '',
+            'course_day' => 'Tuesday',
+            'season' => 'Autumn 2026',
+            'girls_only' => 0,
+            'city' => 'Zug',
+            'canton_region' => 'Zug',
+            'start_date' => '2026-08-18',
+        ];
+        $early = array_merge($base, [
+            'id' => 91,
+            'order_id' => 1001,
+            'order_item_id' => 10001,
+            'times' => '1630-1730',
+            'event_signature' => md5('early'),
+        ]);
+        $late = array_merge($base, [
+            'id' => 92,
+            'order_id' => 1002,
+            'order_item_id' => 10002,
+            'times' => '1615-1715',
+            'event_signature' => md5('late'),
+        ]);
+        global $wpdb;
+        $wpdb = new SeasonRenameReconcileWpdb([$early, $late]);
+        $result = intersoccer_reconcile_roster_season_signatures([
+            'season' => 'Autumn 2026',
+            'weekday_repair' => true,
+        ]);
+        $this->assertSame(0, $result['needing_rename_merge']);
+        $this->assertSame(2, $result['unchanged']);
+        $this->assertSame([], $wpdb->updates);
+        $this->assertCount(1, $result['remaining_splits']);
+        $this->assertSame(52687, $result['remaining_splits'][0]['variation_id']);
+        $this->assertSame(52686, $result['remaining_splits'][0]['product_id']);
+        $this->assertSame(2, $result['remaining_splits'][0]['groups']);
+        $this->assertSame(['1630-1730', '1615-1715'], $result['remaining_splits'][0]['times']);
+    }
+
+
 }
 
 class SeasonRenameReconcileWpdb extends \InterSoccerTestWpdb {
@@ -711,6 +890,12 @@ class SeasonRenameReconcileWpdb extends \InterSoccerTestWpdb {
             $wanted = array_map('intval', preg_split('/\s*,\s*/', $m[1]) ?: []);
             $filtered = array_values(array_filter($filtered, static function ($row) use ($wanted) {
                 return in_array((int) ($row['product_id'] ?? 0), $wanted, true);
+            }));
+        }
+        if (preg_match("/season = '([^']*)'/", $sql, $m)) {
+            $wanted = $m[1];
+            $filtered = array_values(array_filter($filtered, static function ($row) use ($wanted) {
+                return (string) ($row['season'] ?? '') === $wanted;
             }));
         }
         if (stripos($sql, 'SELECT product_id, event_signature') !== false) {

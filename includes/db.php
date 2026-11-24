@@ -946,7 +946,12 @@ function intersoccer_reconcile_normalize_id_list($ids) {
  *     @type int[]  $product_ids
  *     @type bool   $include_product_siblings Expand order scope to all rows of products those orders touch.
  *     @type bool   $dry_run                 List changes without writing.
- *     @type bool   $scope_all               Examine all roster rows (still evergreen-gated).
+ *     @type bool   $scope_all               Examine all roster rows (still evergreen-gated unless weekday_repair).
+ *     @type string $season                  Limit to this exact roster season label.
+ *     @type bool   $weekday_repair          Year-qualified seasons allowed. Only rows whose
+ *                                           course_day normalizes to a different English weekday
+ *                                           are updated (course_day + event_signature). Season
+ *                                           labels are never rewritten. Implied when $season is set.
  * }
  * @return array{
  *     needing_rename_merge:int,
@@ -968,6 +973,8 @@ function intersoccer_reconcile_roster_season_signatures(array $options = []) {
     $order_ids = intersoccer_reconcile_normalize_id_list($options['order_ids'] ?? []);
     $product_ids = intersoccer_reconcile_normalize_id_list($options['product_ids'] ?? []);
     $include_siblings = !empty($options['include_product_siblings']);
+    $season_filter = isset($options['season']) ? trim((string) $options['season']) : '';
+    $weekday_repair = !empty($options['weekday_repair']) || $season_filter !== '';
 
     $empty = [
         'needing_rename_merge' => 0,
@@ -979,6 +986,9 @@ function intersoccer_reconcile_roster_season_signatures(array $options = []) {
         'changes' => [],
         'group_counts_before' => [],
         'group_counts_after' => [],
+        'remaining_splits' => [],
+        'weekday_repair' => $weekday_repair,
+        'season' => $season_filter,
     ];
 
     $table = $wpdb->prefix . 'intersoccer_rosters';
@@ -998,8 +1008,15 @@ function intersoccer_reconcile_roster_season_signatures(array $options = []) {
         $order_ids = [];
     }
 
+    if ($season_filter !== '') {
+        $where[] = 'season = %s';
+        $params[] = $season_filter;
+    }
+
     if ($scope_all) {
-        $where[] = '1=1';
+        if ($where === []) {
+            $where[] = '1=1';
+        }
     } elseif ($product_ids !== []) {
         $placeholders = implode(',', array_fill(0, count($product_ids), '%d'));
         $where[] = "product_id IN ({$placeholders})";
@@ -1008,6 +1025,8 @@ function intersoccer_reconcile_roster_season_signatures(array $options = []) {
         $placeholders = implode(',', array_fill(0, count($order_ids), '%d'));
         $where[] = "order_id IN ({$placeholders})";
         $params = array_merge($params, $order_ids);
+    } elseif ($season_filter !== '') {
+        // Season clause already added; do not examine other seasons.
     } else {
         return $empty;
     }
@@ -1050,14 +1069,16 @@ function intersoccer_reconcile_roster_season_signatures(array $options = []) {
     try {
         foreach ($rows as $row) {
             $product_id = (int) ($row['product_id'] ?? 0);
-            if (!array_key_exists($product_id, $evergreen_cache)) {
-                $evergreen_cache[$product_id] = function_exists('intersoccer_product_program_season_is_evergreen')
-                    ? intersoccer_product_program_season_is_evergreen($product_id)
-                    : false;
-            }
-            if (!$evergreen_cache[$product_id]) {
-                $skipped_not_evergreen++;
-                continue;
+            if (!$weekday_repair) {
+                if (!array_key_exists($product_id, $evergreen_cache)) {
+                    $evergreen_cache[$product_id] = function_exists('intersoccer_product_program_season_is_evergreen')
+                        ? intersoccer_product_program_season_is_evergreen($product_id)
+                        : false;
+                }
+                if (!$evergreen_cache[$product_id]) {
+                    $skipped_not_evergreen++;
+                    continue;
+                }
             }
 
             $event_data = [
@@ -1101,15 +1122,26 @@ function intersoccer_reconcile_roster_season_signatures(array $options = []) {
             }
             $event_data['course_day'] = $new_course_day;
 
-            $new_season = function_exists('intersoccer_roster_season_name_for_storage')
-                ? intersoccer_roster_season_name_for_storage($event_data, (string) ($row['season'] ?? ''))
-                : (string) ($row['season'] ?? '');
+            $old_season = (string) ($row['season'] ?? '');
+            $old_signature = (string) ($row['event_signature'] ?? '');
+            if ($weekday_repair) {
+                // Keep the stored season label. Only rewrite a FR/DE weekday
+                // and re-sign that row; pre-existing time/facet drift stays.
+                $new_season = $old_season;
+                $event_data['season'] = $old_season;
+                if ($new_course_day === $old_course_day) {
+                    $unchanged++;
+                    continue;
+                }
+            } else {
+                $new_season = function_exists('intersoccer_roster_season_name_for_storage')
+                    ? intersoccer_roster_season_name_for_storage($event_data, $old_season)
+                    : $old_season;
+            }
             $new_signature = function_exists('intersoccer_event_signature_from_event_data')
                 ? intersoccer_event_signature_from_event_data($event_data)
                 : '';
 
-            $old_season = (string) ($row['season'] ?? '');
-            $old_signature = (string) ($row['event_signature'] ?? '');
             if ($new_season === $old_season && $new_signature === $old_signature
                 && $new_course_day === $old_course_day) {
                 $unchanged++;
@@ -1208,6 +1240,56 @@ function intersoccer_reconcile_roster_season_signatures(array $options = []) {
         }
     }
 
+    $projected_splits = [];
+    foreach ($rows as $row) {
+        $id = (int) ($row['id'] ?? 0);
+        $projected_splits[$id] = $row;
+    }
+    foreach ($changes as $change) {
+        $id = (int) ($change['id'] ?? 0);
+        if (!isset($projected_splits[$id])) {
+            continue;
+        }
+        $projected_splits[$id]['season'] = $change['new_season'];
+        $projected_splits[$id]['event_signature'] = $change['new_signature'];
+        if (isset($change['new_course_day'])) {
+            $projected_splits[$id]['course_day'] = $change['new_course_day'];
+        }
+    }
+    $by_variation = [];
+    foreach ($projected_splits as $row) {
+        $vid = (int) ($row['variation_id'] ?? 0);
+        if ($vid <= 0) {
+            continue;
+        }
+        $by_variation[$vid][] = $row;
+    }
+    $remaining_splits = [];
+    foreach ($by_variation as $vid => $vrows) {
+        $sigs = [];
+        $times = [];
+        foreach ($vrows as $row) {
+            $sig = (string) ($row['event_signature'] ?? '');
+            if (!isset($sigs[$sig])) {
+                $sigs[$sig] = 0;
+            }
+            $sigs[$sig]++;
+            $time = (string) ($row['times'] ?? '');
+            if ($time !== '' && !in_array($time, $times, true)) {
+                $times[] = $time;
+            }
+        }
+        if (count($sigs) > 1) {
+            $remaining_splits[] = [
+                'product_id' => (int) ($vrows[0]['product_id'] ?? 0),
+                'variation_id' => (int) $vid,
+                'groups' => count($sigs),
+                'rows' => count($vrows),
+                'times' => $times,
+            ];
+        }
+    }
+
     return [
         'needing_rename_merge' => $needing_rename_merge,
         'updated' => $updated,
@@ -1218,6 +1300,9 @@ function intersoccer_reconcile_roster_season_signatures(array $options = []) {
         'changes' => $changes,
         'group_counts_before' => $group_before,
         'group_counts_after' => $group_after,
+        'remaining_splits' => $remaining_splits,
+        'weekday_repair' => $weekday_repair,
+        'season' => $season_filter,
     ];
 }
 

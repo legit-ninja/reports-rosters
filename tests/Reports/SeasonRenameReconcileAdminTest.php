@@ -103,4 +103,63 @@ class SeasonRenameReconcileAdminTest extends TestCase {
         $this->assertIsFloat($run['peak_memory_mb']);
         $this->assertStringContainsString('Peak memory: %7$s MB', $this->src());
     }
+
+    public function test_season_label_list_trims_and_drops_blanks(): void {
+        $labels = intersoccer_rr_season_repair_labels(['Autumn 2026', '', 'Winter Courses', 'Autumn 2026', '  ']);
+        $this->assertSame(['Autumn 2026', 'Winter Courses'], $labels);
+    }
+
+    public function test_weekday_preview_scopes_to_one_season_and_never_syncs_or_deletes(): void {
+        $seen = null;
+        $run = intersoccer_rr_season_weekday_reconcile(true, 'Autumn 2026', static function ($o) use (&$seen) {
+            $seen = $o;
+            return ['dry_run' => true, 'needing_rename_merge' => 1, 'updated' => 0, 'changes' => []];
+        });
+        $this->assertSame('Autumn 2026', $seen['season']);
+        $this->assertTrue($seen['weekday_repair']);
+        $this->assertTrue($seen['dry_run']);
+        $this->assertTrue($seen['skip_order_sync']);
+        $this->assertFalse($seen['delete_obsolete']);
+        $this->assertFalse($seen['include_product_siblings']);
+        $this->assertFalse($seen['scope_all']);
+        $this->assertSame('', $run['error']);
+        $this->assertSame(0, $run['result']['synced']);
+        $this->assertSame(0, $run['result']['deleted']);
+        $this->assertSame(1, $run['result']['season_signature']['needing_rename_merge']);
+    }
+
+    public function test_weekday_apply_stays_dry_run_false_without_order_sync(): void {
+        $seen = null;
+        intersoccer_rr_season_weekday_reconcile(false, 'Autumn 2026', static function ($o) use (&$seen) {
+            $seen = $o;
+            return ['dry_run' => false, 'updated' => 1];
+        });
+        $this->assertFalse($seen['dry_run']);
+        $this->assertTrue($seen['skip_order_sync']);
+        $this->assertFalse($seen['delete_obsolete']);
+        $this->assertSame('Autumn 2026', $seen['season']);
+    }
+
+    public function test_weekday_reconcile_requires_a_season(): void {
+        $called = false;
+        $run = intersoccer_rr_season_weekday_reconcile(false, '  ', static function () use (&$called) {
+            $called = true;
+            return [];
+        });
+        $this->assertFalse($called);
+        $this->assertNotSame('', $run['error']);
+    }
+
+    public function test_page_has_season_selector_and_does_not_use_global_rebuild(): void {
+        $src = $this->src();
+        $this->assertStringContainsString('intersoccer_rr_repair_season', $src);
+        $this->assertStringContainsString('intersoccer_rr_season_weekday_reconcile', $src);
+        $this->assertStringContainsString('does not re-sync orders', $src);
+        $this->assertStringContainsString('does not change session times', $src);
+        $this->assertStringContainsString('Rebuild Event Signatures', $src);
+        $this->assertStringNotContainsString('rebuild_event_signatures', $src);
+        $this->assertStringNotContainsString('TRUNCATE', $src);
+        $this->assertStringNotContainsString('->delete(', $src);
+    }
+
 }
