@@ -650,6 +650,23 @@ class RosterBuilder {
      * @param array $options Reconcile options
      * @return array Results containing synced, deleted, and error metrics
      */
+    /**
+     * Orders between runtime cache flushes during reconcile order sync.
+     */
+    const RECONCILE_CACHE_FLUSH_EVERY = 50;
+
+    /**
+     * Drop per-request caches between reconcile batches. Prefers the runtime-only
+     * flush so a persistent object cache shared with the live site is not wiped.
+     */
+    private function flushReconcileRuntimeCaches() {
+        if (function_exists('wp_cache_flush_runtime')) {
+            wp_cache_flush_runtime();
+        } elseif (function_exists('wp_cache_flush')) {
+            wp_cache_flush();
+        }
+    }
+
     public function reconcile(array $options = []) {
         $start_time = microtime(true);
 
@@ -817,15 +834,19 @@ class RosterBuilder {
                         }
 
                         unset($order);
+                        // Keep admin (512M) requests bounded: drop per-request object caches
+                        // (WC_Order / item meta) every RECONCILE_CACHE_FLUSH_EVERY orders.
+                        if (count($synced_order_ids) % self::RECONCILE_CACHE_FLUSH_EVERY === 0) {
+                            $this->flushReconcileRuntimeCaches();
+                        }
                     }
 
                     $offset += $batch_size;
                     unset($order_ids);
 
-                    if ($batch_count >= $batch_size && function_exists('wp_cache_flush')) {
-                        wp_cache_flush();
-                    }
+                    $this->flushReconcileRuntimeCaches();
                 } while ($batch_count === $batch_size);
+                $results['peak_memory_mb'] = round(memory_get_peak_usage(true) / 1048576, 1);
             } elseif ($scoped_order_ids !== []) {
                 $synced_order_ids = $scoped_order_ids;
                 $orders_fetched = count($scoped_order_ids);

@@ -85,4 +85,22 @@ class SeasonRenameReconcileAdminTest extends TestCase {
         $main = (string) file_get_contents(dirname(__DIR__, 2) . '/intersoccer-reports-rosters.php');
         $this->assertStringContainsString("includes/season-rename-reconcile-admin.php", $main);
     }
+
+    public function test_reconcile_order_sync_flushes_runtime_cache_in_small_batches(): void {
+        $src = (string) file_get_contents(dirname(__DIR__, 2) . '/classes/services/roster-builder.php');
+        $this->assertStringContainsString('const RECONCILE_CACHE_FLUSH_EVERY = 50;', $src);
+        $this->assertStringContainsString('wp_cache_flush_runtime()', $src);
+        $start = strpos($src, 'public function reconcile(array $options = [])');
+        $body = substr($src, $start, 12000);
+        $this->assertStringContainsString('% self::RECONCILE_CACHE_FLUSH_EVERY === 0', $body);
+        $this->assertStringContainsString('$this->flushReconcileRuntimeCaches();', $body);
+    }
+
+    public function test_admin_run_reports_peak_memory(): void {
+        $run = intersoccer_rr_season_rename_reconcile(true, [60933], static function () {
+            return [];
+        });
+        $this->assertIsFloat($run['peak_memory_mb']);
+        $this->assertStringContainsString('Peak memory: %7$s MB', $this->src());
+    }
 }

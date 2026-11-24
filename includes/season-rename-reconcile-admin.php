@@ -83,7 +83,7 @@ if (!function_exists('intersoccer_rr_season_rename_reconcile')) {
      * @return array{product_ids:int[],options:array,result:?array,error:string}
      */
     function intersoccer_rr_season_rename_reconcile($dry_run, $product_ids = null, $runner = null) {
-        $out = ['product_ids' => [], 'options' => [], 'result' => null, 'error' => ''];
+        $out = ['product_ids' => [], 'options' => [], 'result' => null, 'error' => '', 'peak_memory_mb' => null];
         if ($runner === null) {
             if (!function_exists('intersoccer_rr_load_reconcile') || !intersoccer_rr_load_reconcile()) {
                 $out['error'] = __('Roster reconcile could not be loaded.', 'intersoccer-reports-rosters');
@@ -111,6 +111,7 @@ if (!function_exists('intersoccer_rr_season_rename_reconcile')) {
         $out['options'] = $options;
         $result = call_user_func($runner, $options);
         $out['result'] = is_array($result) ? $result : null;
+        $out['peak_memory_mb'] = round(memory_get_peak_usage(true) / 1048576, 1);
         return $out;
     }
 }
@@ -199,14 +200,15 @@ if (!function_exists('intersoccer_rr_render_season_rename_page')) {
                 <h2><?php esc_html_e('Result', 'intersoccer-reports-rosters'); ?></h2>
                 <p><?php
                     echo esc_html(sprintf(
-                        /* translators: 1: mode, 2: products, 3: orders re-synced, 4: rows needing merge, 5: rows changed, 6: rows unchanged */
-                        __('Mode: %1$s | Products: %2$d | Order lines re-synced: %3$d | Rows needing rename merge: %4$d | Rows changed: %5$d | Rows unchanged: %6$d', 'intersoccer-reports-rosters'),
+                        /* translators: 1: mode, 2: products, 3: orders re-synced, 4: rows needing merge, 5: rows changed, 6: rows unchanged, 7: peak memory MB */
+                        __('Mode: %1$s | Products: %2$d | Order lines re-synced: %3$d | Rows needing rename merge: %4$d | Rows changed: %5$d | Rows unchanged: %6$d | Peak memory: %7$s MB', 'intersoccer-reports-rosters'),
                         !empty($run['options']['dry_run']) ? 'preview' : 'apply',
                         count($run['product_ids']),
                         (int) ($result['synced'] ?? 0),
                         (int) ($season['needing_rename_merge'] ?? 0),
                         (int) ($season['updated'] ?? 0),
-                        (int) ($season['unchanged'] ?? 0)
+                        (int) ($season['unchanged'] ?? 0),
+                        (string) ($run['peak_memory_mb'] ?? '?')
                     ));
                 ?></p>
                 <table class="widefat striped" style="max-width:640px">
