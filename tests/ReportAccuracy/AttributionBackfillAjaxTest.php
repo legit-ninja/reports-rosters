@@ -1,6 +1,7 @@
 <?php
 /**
- * Regression: Advanced-page AJAX financial attribution backfill dry-run gate.
+ * Legacy Advanced-page AJAX financial attribution backfill is refused.
+ * Preview and apply run only from the Advanced tools page.
  */
 
 namespace InterSoccer\ReportsRosters\Tests\ReportAccuracy {
@@ -47,6 +48,10 @@ class AttributionBackfillAjaxTest extends TestCase {
     }
 
     private static function ensureOopAdapterLoaded(): void {
+        if (!function_exists('intersoccer_rr_repair_block_legacy_ajax')) {
+            require_once dirname(__DIR__, 2) . '/includes/repair-contract.php';
+        }
+
         if (function_exists('intersoccer_oop_backfill_financial_attribution_ajax')) {
             return;
         }
@@ -85,6 +90,20 @@ class AttributionBackfillAjaxTest extends TestCase {
     }
 
     /**
+     * @param array<string,mixed> $response
+     */
+    private function assertLegacyBackfillRefused(array $response): void {
+        $this->assertFalse($response['success']);
+        $message = (string) ($response['data']['message'] ?? '');
+        $this->assertTrue(
+            str_contains($message, 'not available in admin')
+            || str_contains($message, 'only from Advanced tools')
+            || str_contains($message, 'permission to run repairs'),
+            'expected a legacy AJAX refusal message; got: ' . $message
+        );
+    }
+
+    /**
      * @param array<string,mixed> $post
      * @dataProvider dryRunPostProvider
      * @runInSeparateProcess
@@ -94,24 +113,11 @@ class AttributionBackfillAjaxTest extends TestCase {
         $service = $this->createMock(Attr::class);
         $service->expects($this->never())->method('backfillBatch');
         $service->expects($this->never())->method('applyMissingAttributionInDateRange');
-        $service->expects($this->once())->method('summarizeMissingAttributionInDateRange')
-            ->willReturn([
-                'order_count' => 2,
-                'applied_count' => 2,
-                'skipped_count' => 0,
-                'previously_skipped_count' => 0,
-                'failed_count' => 0,
-                'gross_chf' => 400.0,
-                'net_chf' => 360.0,
-                'skipped_reasons' => [],
-            ]);
+        $service->expects($this->never())->method('summarizeMissingAttributionInDateRange');
         $GLOBALS['intersoccer_test_attribution_service_override'] = $service;
 
         $response = $this->invokeBackfillAjax($post);
-
-        $this->assertTrue($response['success']);
-        $this->assertTrue($response['data']['dry_run']);
-        $this->assertSame(2, $response['data']['order_count']);
+        $this->assertLegacyBackfillRefused($response);
     }
 
     /** @return array<string,array{array<string,mixed>}> */
@@ -130,22 +136,12 @@ class AttributionBackfillAjaxTest extends TestCase {
     public function test_ajax_backfill_apply_without_confirm_stays_dry_run(): void {
         $service = $this->createMock(Attr::class);
         $service->expects($this->never())->method('backfillBatch');
-        $service->expects($this->once())->method('summarizeMissingAttributionInDateRange')
-            ->willReturn([
-                'order_count' => 0,
-                'applied_count' => 0,
-                'skipped_count' => 0,
-                'previously_skipped_count' => 0,
-                'failed_count' => 0,
-                'gross_chf' => 0.0,
-                'net_chf' => 0.0,
-                'skipped_reasons' => [],
-            ]);
+        $service->expects($this->never())->method('applyMissingAttributionInDateRange');
+        $service->expects($this->never())->method('summarizeMissingAttributionInDateRange');
         $GLOBALS['intersoccer_test_attribution_service_override'] = $service;
 
         $response = $this->invokeBackfillAjax(['apply' => 'true']);
-
-        $this->assertTrue($response['data']['dry_run']);
+        $this->assertLegacyBackfillRefused($response);
     }
 
     /**
@@ -156,19 +152,11 @@ class AttributionBackfillAjaxTest extends TestCase {
         $service = $this->createMock(Attr::class);
         $service->expects($this->never())->method('summarizeMissingAttributionInDateRange');
         $service->expects($this->never())->method('applyMissingAttributionInDateRange');
-        $service->expects($this->once())->method('backfillBatch')
-            ->with('2025-01-01', 100)
-            ->willReturn([
-                'migrated_count' => 5,
-                'remaining_count' => 0,
-                'more_remaining' => false,
-            ]);
+        $service->expects($this->never())->method('backfillBatch');
         $GLOBALS['intersoccer_test_attribution_service_override'] = $service;
 
         $response = $this->invokeBackfillAjax(['apply' => 'true', 'confirm' => 'true']);
-
-        $this->assertTrue($response['success']);
-        $this->assertFalse($response['data']['dry_run']);
+        $this->assertLegacyBackfillRefused($response);
     }
 
     /**
@@ -182,6 +170,7 @@ class AttributionBackfillAjaxTest extends TestCase {
         $service = $this->createMock(Attr::class);
         $service->expects($this->never())->method('backfillBatch');
         $service->expects($this->never())->method('summarizeMissingAttributionInDateRange');
+        $service->expects($this->never())->method('applyMissingAttributionInDateRange');
         $GLOBALS['intersoccer_test_attribution_service_override'] = $service;
 
         $_POST = ['nonce' => 'test_nonce', 'start_date' => '2025-01-01', 'batch_size' => '100'];
@@ -189,12 +178,18 @@ class AttributionBackfillAjaxTest extends TestCase {
         try {
             intersoccer_oop_backfill_financial_attribution_ajax();
             ob_end_clean();
-            $this->fail('expected permission denied JSON error');
+            $this->fail('expected JSON error refusing the legacy backfill AJAX');
         } catch (\RuntimeException $e) {
             if (ob_get_level() > 0) {
                 ob_end_clean();
             }
-            $this->assertStringContainsString('Permission denied', $e->getMessage());
+            $this->assertTrue(
+                str_contains($e->getMessage(), 'not available in admin')
+                || str_contains($e->getMessage(), 'only from Advanced tools')
+                || str_contains($e->getMessage(), 'permission to run repairs')
+                || str_contains($e->getMessage(), 'Permission denied'),
+                'expected a refusal or permission error; got: ' . $e->getMessage()
+            );
         }
     }
 }
