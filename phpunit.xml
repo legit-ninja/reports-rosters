@@ -78,6 +78,11 @@
             <file>tests/Reports/FinalReportsUrgencyTest.php</file>
             <file>tests/Reports/EvergreenYearIsolationTest.php</file>
             <file>tests/Reports/ProgramYearResolveTest.php</file>
+            <file>tests/Reports/SeasonRenameSignatureReconcileTest.php</file>
+            <file>tests/Reports/ReconcileOrdersCliLoadingTest.php</file>
+            <file>tests/Reports/SeasonRenameReconcileAdminTest.php</file>
+            <file>tests/Reports/AdvancedToolsContractTest.php</file>
+            <file>tests/Reports/AdvancedToolsRepairTest.php</file>
             <file>tests/Reports/CanonicalOrderMetaPreferenceTest.php</file>
             <file>tests/Reports/DistressedVariationIdsTest.php</file>
             <file>tests/Reports/PlayerCampStatusTest.php</file>
@@ -144,6 +149,7 @@
             <file>tests/Unit/MedicalAccessTest.php</file>
             <file>tests/Unit/RosterDetailsTitleVenue153Test.php</file>
             <file>tests/Unit/RosterDetailsMissingSelectorTest.php</file>
+            <file>tests/Unit/RosterListingCardDetailsParityTest.php</file>
             <file>tests/Unit/MedicalAccessSplitPermissionsTest.php</file>
             <file>tests/Unit/MedicalAccessPmMissingTest.php</file>
             <file>tests/Unit/MedicalRosterAjaxTest.php</file>

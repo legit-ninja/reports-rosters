@@ -141,7 +141,7 @@ class PaTwinOrderMetaReadersTest extends TestCase {
         return [
             'human tournament day first' => [
                 ['Tournament Day' => 'Sunday', 'attribute_pa_tournament-day' => 'saturday-slug'],
-                'sunday',
+                'Sunday',
             ],
             'attribute pa only' => [
                 ['attribute_pa_tournament-day' => 'saturday-slug'],

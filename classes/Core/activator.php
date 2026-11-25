@@ -454,6 +454,7 @@ class Activator {
                 'export_intersoccer_rosters' => ['administrator', 'shop_manager'],
                 'view_intersoccer_reports' => ['administrator', 'shop_manager', 'coach'],
                 'manage_intersoccer_settings' => ['administrator'],
+                'intersoccer_run_repairs' => ['administrator'],
             ];
             
             foreach ($capabilities as $capability => $roles) {
@@ -610,6 +611,7 @@ class Activator {
                 'export_intersoccer_rosters',
                 'view_intersoccer_reports',
                 'manage_intersoccer_settings',
+                'intersoccer_run_repairs',
             ];
             
             $roles = ['administrator', 'shop_manager', 'coach'];

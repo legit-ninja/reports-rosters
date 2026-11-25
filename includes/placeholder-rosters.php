@@ -446,27 +446,7 @@ function intersoccer_cleanup_placeholders_on_product_delete($post_id) {
 add_action('wp_ajax_intersoccer_sync_placeholders', 'intersoccer_sync_placeholders_ajax');
 
 function intersoccer_sync_placeholders_ajax() {
-    check_ajax_referer('intersoccer_rebuild_nonce', 'nonce');
-    
-    if (!current_user_can('manage_options')) {
-        wp_send_json_error(['message' => __('You do not have permission to sync placeholders.', 'intersoccer-reports-rosters')]);
-    }
-
-    try {
-        $result = intersoccer_sync_all_placeholders();
-        
-        wp_send_json_success([
-            'message' => sprintf(
-                __('Sync completed: Processed %d products, Created %d placeholders, Updated %d placeholders', 'intersoccer-reports-rosters'),
-                $result['processed'],
-                $result['created'],
-                $result['updated']
-            ),
-            'result' => $result,
-        ]);
-    } catch (Exception $e) {
-        error_log('InterSoccer Placeholder: Sync exception - ' . $e->getMessage());
-        wp_send_json_error(['message' => __('Sync failed: ' . $e->getMessage(), 'intersoccer-reports-rosters')]);
-    }
+            intersoccer_rr_repair_block_legacy_ajax('sync_placeholders');
+        return;
 }
 

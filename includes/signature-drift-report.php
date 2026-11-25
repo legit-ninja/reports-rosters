@@ -81,28 +81,6 @@ function intersoccer_render_signature_drift_report_page(): void {
         exit;
     }
 
-    $notice = '';
-    if (!empty($_POST['intersoccer_rebuild_signatures']) && !empty($_POST['_wpnonce']) && wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['_wpnonce'])), 'intersoccer_rebuild_drift_signatures')) {
-        $ids = isset($_POST['roster_ids']) ? array_map('intval', (array) $_POST['roster_ids']) : [];
-        $res = $service->rebuildSignaturesForIds($ids);
-        $notice = sprintf(
-            /* translators: 1: updated count, 2: failed count */
-            esc_html__('Signatures updated: %1$d, failed: %2$d.', 'intersoccer-reports-rosters'),
-            (int) $res['updated'],
-            (int) $res['failed']
-        );
-        $log_file = dirname(__FILE__) . '/roster-admin-log.php';
-        if (file_exists($log_file)) {
-            require_once $log_file;
-            if (function_exists('intersoccer_roster_admin_log_insert')) {
-                intersoccer_roster_admin_log_insert('signature_rebuild_batch', '', ['updated' => $res['updated'], 'failed' => $res['failed'], 'ids' => $ids]);
-            }
-        }
-        set_transient('intersoccer_admin_roster_notice', $notice, 60);
-        wp_safe_redirect(admin_url('admin.php?page=intersoccer-signature-drift'));
-        exit;
-    }
-
     $season = isset($_GET['season']) ? sanitize_text_field(wp_unslash($_GET['season'])) : '';
     $activity_type = isset($_GET['activity_type']) ? sanitize_text_field(wp_unslash($_GET['activity_type'])) : '';
     $girls_only = isset($_GET['girls_only']) ? sanitize_text_field(wp_unslash($_GET['girls_only'])) : '';
@@ -145,7 +123,6 @@ function intersoccer_render_signature_drift_report_page(): void {
         <h2 class="nav-tab-wrapper">
             <a href="<?php echo esc_url(add_query_arg(['view' => 'drift', 'cursor' => 0], $base_url)); ?>" class="nav-tab <?php echo $view === 'drift' ? 'nav-tab-active' : ''; ?>"><?php esc_html_e('Drift scan', 'intersoccer-reports-rosters'); ?></a>
             <a href="<?php echo esc_url(add_query_arg(['view' => 'splits'], $base_url)); ?>" class="nav-tab <?php echo $view === 'splits' ? 'nav-tab-active' : ''; ?>"><?php esc_html_e('Split groups', 'intersoccer-reports-rosters'); ?></a>
-            <a href="<?php echo esc_url(add_query_arg(['view' => 'merge'], $base_url)); ?>" class="nav-tab <?php echo $view === 'merge' ? 'nav-tab-active' : ''; ?>"><?php esc_html_e('Merge signatures', 'intersoccer-reports-rosters'); ?></a>
         </h2>
 
         <?php if ($view === 'drift') : ?>
@@ -199,55 +176,41 @@ function intersoccer_render_signature_drift_report_page(): void {
                 <?php endif; ?>
             </p>
 
-            <form method="post" action="">
-                <?php wp_nonce_field('intersoccer_rebuild_drift_signatures'); ?>
-                <table class="wp-list-table widefat striped">
-                    <thead>
-                        <tr>
-                            <th style="width:36px;"><input type="checkbox" id="intersoccer-check-all-drift"></th>
-                            <th><?php esc_html_e('ID', 'intersoccer-reports-rosters'); ?></th>
-                            <th><?php esc_html_e('Order', 'intersoccer-reports-rosters'); ?></th>
-                            <th><?php esc_html_e('Item', 'intersoccer-reports-rosters'); ?></th>
-                            <th><?php esc_html_e('Activity', 'intersoccer-reports-rosters'); ?></th>
-                            <th><?php esc_html_e('Venue', 'intersoccer-reports-rosters'); ?></th>
-                            <th><?php esc_html_e('Stored', 'intersoccer-reports-rosters'); ?></th>
-                            <th><?php esc_html_e('Expected', 'intersoccer-reports-rosters'); ?></th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php if (empty($scan['drifts'])) : ?>
-                            <tr><td colspan="8"><?php esc_html_e('No drift rows in this chunk (or end of table).', 'intersoccer-reports-rosters'); ?></td></tr>
-                        <?php else : ?>
-                            <?php foreach ($scan['drifts'] as $row) : ?>
-                                <tr>
-                                    <td><input type="checkbox" name="roster_ids[]" value="<?php echo esc_attr((string) ($row['id'] ?? '')); ?>"></td>
-                                    <td><?php echo esc_html((string) ($row['id'] ?? '')); ?></td>
-                                    <td><?php echo esc_html((string) ($row['order_id'] ?? '')); ?></td>
-                                    <td><?php echo esc_html((string) ($row['order_item_id'] ?? '')); ?></td>
-                                    <td><?php echo esc_html((string) ($row['activity_type'] ?? '')); ?></td>
-                                    <td><?php echo esc_html((string) ($row['venue'] ?? '')); ?></td>
-                                    <td><code><?php echo esc_html((string) ($row['event_signature'] ?? '')); ?></code></td>
-                                    <td><code><?php echo esc_html((string) ($row['expected_signature'] ?? '')); ?></code></td>
-                                </tr>
-                            <?php endforeach; ?>
-                        <?php endif; ?>
-                    </tbody>
-                </table>
-                <p>
-                    <button type="submit" name="intersoccer_rebuild_signatures" value="1" class="button button-primary" onclick="return confirm('<?php echo esc_js(__('Rebuild signatures for all selected rows? This updates only event_signature.', 'intersoccer-reports-rosters')); ?>');">
-                        <?php esc_html_e('Rebuild selected', 'intersoccer-reports-rosters'); ?>
-                    </button>
-                </p>
-            </form>
-            <script>
-            (function() {
-                var m = document.getElementById('intersoccer-check-all-drift');
-                if (!m) return;
-                m.addEventListener('change', function() {
-                    document.querySelectorAll('input[name="roster_ids[]"]').forEach(function(c) { c.checked = m.checked; });
-                });
-            })();
-            </script>
+            <p>
+                <a class="button" href="<?php echo esc_url(admin_url('admin.php?page=intersoccer-advanced-tools')); ?>">
+                    <?php esc_html_e('Rebuild selected and merge signatures are on Advanced tools.', 'intersoccer-reports-rosters'); ?>
+                </a>
+            </p>
+            <table class="wp-list-table widefat striped">
+                <thead>
+                    <tr>
+                        <th><?php esc_html_e('ID', 'intersoccer-reports-rosters'); ?></th>
+                        <th><?php esc_html_e('Order', 'intersoccer-reports-rosters'); ?></th>
+                        <th><?php esc_html_e('Item', 'intersoccer-reports-rosters'); ?></th>
+                        <th><?php esc_html_e('Activity', 'intersoccer-reports-rosters'); ?></th>
+                        <th><?php esc_html_e('Venue', 'intersoccer-reports-rosters'); ?></th>
+                        <th><?php esc_html_e('Stored', 'intersoccer-reports-rosters'); ?></th>
+                        <th><?php esc_html_e('Expected', 'intersoccer-reports-rosters'); ?></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if (empty($scan['drifts'])) : ?>
+                        <tr><td colspan="7"><?php esc_html_e('No drift rows in this chunk (or end of table).', 'intersoccer-reports-rosters'); ?></td></tr>
+                    <?php else : ?>
+                        <?php foreach ($scan['drifts'] as $row) : ?>
+                            <tr>
+                                <td><?php echo esc_html((string) ($row['id'] ?? '')); ?></td>
+                                <td><?php echo esc_html((string) ($row['order_id'] ?? '')); ?></td>
+                                <td><?php echo esc_html((string) ($row['order_item_id'] ?? '')); ?></td>
+                                <td><?php echo esc_html((string) ($row['activity_type'] ?? '')); ?></td>
+                                <td><?php echo esc_html((string) ($row['venue'] ?? '')); ?></td>
+                                <td><code><?php echo esc_html((string) ($row['event_signature'] ?? '')); ?></code></td>
+                                <td><code><?php echo esc_html((string) ($row['expected_signature'] ?? '')); ?></code></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+                </tbody>
+            </table>
         <?php elseif ($view === 'splits') : ?>
             <table class="wp-list-table widefat striped">
                 <thead>
@@ -280,53 +243,11 @@ function intersoccer_render_signature_drift_report_page(): void {
                 </tbody>
             </table>
         <?php else : ?>
-            <div id="intersoccer-merge-signature-ui" style="max-width:920px;">
-                <p><?php esc_html_e('Merge rewrites event_signature on all roster rows matching the source signature to the target signature. Use after verifying both refer to the same logical event.', 'intersoccer-reports-rosters'); ?></p>
-                <p>
-                    <label><?php esc_html_e('Source signature', 'intersoccer-reports-rosters'); ?><br>
-                        <input type="text" id="merge-source-sig" class="large-text" placeholder="md5…"></label>
-                </p>
-                <p>
-                    <label><?php esc_html_e('Target signature', 'intersoccer-reports-rosters'); ?><br>
-                        <input type="text" id="merge-target-sig" class="large-text" placeholder="md5…"></label>
-                </p>
-                <p>
-                    <button type="button" class="button" id="merge-preview-btn"><?php esc_html_e('Preview', 'intersoccer-reports-rosters'); ?></button>
-                    <button type="button" class="button button-primary" id="merge-apply-btn" disabled><?php esc_html_e('Apply merge', 'intersoccer-reports-rosters'); ?></button>
-                </p>
-                <pre id="merge-preview-out" style="background:#f6f7f7;padding:12px;min-height:60px;white-space:pre-wrap;"></pre>
-            </div>
-            <script>
-            jQuery(function($) {
-                var nonce = <?php echo wp_json_encode(wp_create_nonce('intersoccer_reports_rosters_nonce')); ?>;
-                $('#merge-preview-btn').on('click', function() {
-                    $('#merge-preview-out').text('…');
-                    $.post(ajaxurl, {
-                        action: 'intersoccer_merge_roster_signatures_preview',
-                        nonce: nonce,
-                        source_signature: ($('#merge-source-sig').val() || '').trim(),
-                        target_signature: ($('#merge-target-sig').val() || '').trim()
-                    }).done(function(r) {
-                        $('#merge-preview-out').text(JSON.stringify(r, null, 2));
-                        $('#merge-apply-btn').prop('disabled', !r || !r.success);
-                    }).fail(function(xhr) {
-                        $('#merge-preview-out').text(xhr.responseText || 'Error');
-                    });
-                });
-                $('#merge-apply-btn').on('click', function() {
-                    if (!confirm(<?php echo wp_json_encode(__('Apply merge? This cannot be automatically undone.', 'intersoccer-reports-rosters')); ?>)) return;
-                    $.post(ajaxurl, {
-                        action: 'intersoccer_merge_roster_signatures_apply',
-                        nonce: nonce,
-                        source_signature: ($('#merge-source-sig').val() || '').trim(),
-                        target_signature: ($('#merge-target-sig').val() || '').trim()
-                    }).done(function(r) {
-                        alert(r && r.data && r.data.message ? r.data.message : JSON.stringify(r));
-                        location.reload();
-                    });
-                });
-            });
-            </script>
+            <p>
+                <a class="button" href="<?php echo esc_url(admin_url('admin.php?page=intersoccer-advanced-tools')); ?>">
+                    <?php esc_html_e('Merge signatures runs from Advanced tools.', 'intersoccer-reports-rosters'); ?>
+                </a>
+            </p>
         <?php endif; ?>
     </div>
     <?php

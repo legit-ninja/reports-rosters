@@ -85,6 +85,11 @@ if (!file_exists($autoloader)) {
 
 require_once $autoloader;
 
+$intersoccer_rr_repair_contract = plugin_dir_path(__FILE__) . 'includes/repair-contract.php';
+if (is_readable($intersoccer_rr_repair_contract)) {
+    require_once $intersoccer_rr_repair_contract;
+}
+
 if (!defined('INTERSOCCER_ORDER_AUTO_COMPLETE_CRON_HOOK')) {
     define('INTERSOCCER_ORDER_AUTO_COMPLETE_CRON_HOOK', 'intersoccer_auto_complete_orders');
 }
@@ -157,6 +162,16 @@ if (file_exists($intersoccer_oop_adapter)) {
 $order_meta_repair_hook = plugin_dir_path(__FILE__) . 'includes/order-meta-repair-hook.php';
 if (file_exists($order_meta_repair_hook)) {
     require_once $order_meta_repair_hook;
+}
+
+$intersoccer_season_rename_admin = plugin_dir_path(__FILE__) . 'includes/season-rename-reconcile-admin.php';
+if (is_admin() && file_exists($intersoccer_season_rename_admin)) {
+    require_once $intersoccer_season_rename_admin;
+}
+
+$intersoccer_advanced_tools = plugin_dir_path(__FILE__) . 'includes/advanced-tools-admin.php';
+if (is_admin() && file_exists($intersoccer_advanced_tools)) {
+    require_once $intersoccer_advanced_tools;
 }
 
 // PCS / win-back cache warm-up: hook registration on every request; heavy report files load in cron/event callbacks only.

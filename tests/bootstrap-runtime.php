@@ -598,7 +598,28 @@ if (!function_exists('get_post_meta')) {
 
 if (!function_exists('wp_get_post_terms')) {
     function wp_get_post_terms($post_id, $taxonomy, $args = []) {
-        return [];
+        $map = $GLOBALS['intersoccer_test_product_terms'][(int) $post_id][$taxonomy] ?? null;
+        if (!is_array($map)) {
+            return [];
+        }
+        $terms = [];
+        foreach ($map as $row) {
+            $terms[] = is_object($row) ? $row : (object) $row;
+        }
+        return $terms;
+    }
+}
+
+if (!function_exists('get_the_terms')) {
+    function get_the_terms($post_id, $taxonomy) {
+        $terms = wp_get_post_terms($post_id, $taxonomy);
+        return $terms === [] ? false : $terms;
+    }
+}
+
+if (!function_exists('wc_get_product_terms')) {
+    function wc_get_product_terms($product_id, $taxonomy, $args = []) {
+        return wp_get_post_terms($product_id, $taxonomy, $args);
     }
 }
 
@@ -801,17 +822,30 @@ if (!function_exists('get_userdata')) {
 
 if (!function_exists('get_role')) {
     function get_role($role) {
-        return new class {
-            public $capabilities = [];
+        if (!isset($GLOBALS['intersoccer_test_roles']) || !is_array($GLOBALS['intersoccer_test_roles'])) {
+            $GLOBALS['intersoccer_test_roles'] = [];
+        }
+        $key = (string) $role;
+        if (!isset($GLOBALS['intersoccer_test_roles'][$key])) {
+            $GLOBALS['intersoccer_test_roles'][$key] = new class {
+                public $capabilities = [];
+                public $add_calls = 0;
 
-            public function add_cap($cap, $grant = true) {
-                $this->capabilities[$cap] = (bool) $grant;
-            }
+                public function add_cap($cap, $grant = true) {
+                    $this->add_calls++;
+                    $this->capabilities[$cap] = (bool) $grant;
+                }
 
-            public function remove_cap($cap) {
-                unset($this->capabilities[$cap]);
-            }
-        };
+                public function remove_cap($cap) {
+                    unset($this->capabilities[$cap]);
+                }
+
+                public function has_cap($cap) {
+                    return !empty($this->capabilities[$cap]);
+                }
+            };
+        }
+        return $GLOBALS['intersoccer_test_roles'][$key];
     }
 }
 

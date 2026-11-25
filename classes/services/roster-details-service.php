@@ -38,7 +38,7 @@ class RosterDetailsService {
     /**
      * @var array
      */
-    private $allowed_statuses = ['wc-completed', 'wc-processing', 'wc-pending', 'wc-on-hold'];
+    private $allowed_statuses;
 
     /**
      * Constructor.
@@ -47,6 +47,9 @@ class RosterDetailsService {
         $this->logger = $logger ?: new Logger();
         $this->database = $database ?: new Database($this->logger);
         $this->repository = $repository ?: new RosterRepository($this->logger, $this->database);
+        $this->allowed_statuses = function_exists('intersoccer_roster_listing_allowed_order_statuses')
+            ? intersoccer_roster_listing_allowed_order_statuses()
+            : ['wc-completed', 'wc-processing', 'wc-pending', 'wc-on-hold'];
     }
 
     /**
@@ -77,20 +80,28 @@ class RosterDetailsService {
         $supplementMerged = false;
         $stale_times_pin = false;
 
+        // Listing cards pass order_item_ids for every counted row — do not expand or
+        // season-filter those loads (mixed season labels / FR-EN day labels must stay).
+        // Signature-only loads skip season equality; old-style facet links still season-filter.
+        $scope_by_order_item_ids = !empty($filters['order_item_ids']);
+        $apply_listing_season = !$scope_by_order_item_ids && !$hasEventSignature && !empty($filters['season']);
+
         if (!empty($rosterModels)) {
             $primaryModels = $rosterModels;
-            $supplement = $this->fetchRosterModelsInConsolidatedGroup($filters, $context, $primaryModels);
+            $supplement = $scope_by_order_item_ids
+                ? []
+                : $this->fetchRosterModelsInConsolidatedGroup($filters, $context, $primaryModels);
             if (!empty($supplement)) {
                 $supplementMerged = true;
                 $this->logger->debug('RosterDetailsService: Merged roster rows in same consolidated event group', [
                     'added' => count($supplement),
                 ]);
-                if (!empty($filters['season'])) {
+                if ($apply_listing_season) {
                     $primaryModels = $this->filterModelsByListingSeason($primaryModels, $filters['season'], $context);
                     $supplement = $this->filterModelsByListingSeason($supplement, $filters['season'], $context);
                 }
                 $rosterModels = array_merge($primaryModels, $supplement);
-            } elseif (!empty($filters['season'])) {
+            } elseif ($apply_listing_season) {
                 $rosterModels = $this->filterModelsByListingSeason($rosterModels, $filters['season'], $context);
             }
         }
@@ -134,7 +145,8 @@ class RosterDetailsService {
                 $this->logger->debug('RosterDetailsService: Fallback (event_signature had no match)', $fallbackCriteria);
                 $collection = $this->repository->where($fallbackCriteria, ['skip_cache' => true]);
                 $rosterModels = $this->filterByValidOrderStatus($collection);
-                if (!empty($filters['season'])) {
+                // Signature-scoped fallbacks must not re-apply season equality (same as primary path).
+                if ($apply_listing_season) {
                     $rosterModels = $this->filterModelsByListingSeason($rosterModels, $filters['season'], $context);
                 }
                 if (!$stale_times_pin) {

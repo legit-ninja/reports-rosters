@@ -2,6 +2,16 @@
 
 # Compile Translation Files (.po → .mo)
 # Run before deployment to ensure .mo files are up to date
+#
+# InterSoccer wp-admin stays in English. Do not compile French or German
+# translations for Advanced tools or Season rename admin strings.
+# --use-fuzzy, if passed, applies only to the French and German catalogs
+# (fr_FR, fr_CH, de_DE, de_CH). en_CH is always compiled without
+# --use-fuzzy so stale fuzzy English drafts cannot appear in the .mo for
+# Swiss English admins; they see the source msgid instead. en_CH is kept
+# because the locale is in use; dropping it would fall back less
+# predictably. fr_FR/de_DE catalogs and the fr_*/de_* fallback exist so
+# customer-facing strings still load for those locales.
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -26,6 +36,28 @@ if ! command -v msgfmt &> /dev/null; then
     echo ""
     exit 1
 fi
+
+USE_FUZZY=0
+for arg in "$@"; do
+    case "$arg" in
+        --use-fuzzy)
+            USE_FUZZY=1
+            ;;
+        -h|--help)
+            echo "Usage: $0 [--use-fuzzy]"
+            echo "  --use-fuzzy  Include fuzzy draft translations in the French and"
+            echo "               German .mo files. Do not use this for Advanced tools"
+            echo "               or Season rename admin strings; wp-admin stays in"
+            echo "               English. en_CH is always compiled without --use-fuzzy."
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $arg" >&2
+            echo "Usage: $0 [--use-fuzzy]" >&2
+            exit 1
+            ;;
+    esac
+done
 
 # Check if languages directory exists
 if [ ! -d "languages" ]; then
@@ -56,13 +88,26 @@ for po_file in *.po; do
     
     echo -n "Compiling $po_file → $mo_file ... "
     
-    if msgfmt -o "$mo_file" "$po_file" 2>/dev/null; then
+    # Never compile English catalogs with --use-fuzzy, even when the
+    # flag is passed for the FR/DE drafts.
+    use_fuzzy_this=0
+    case "$po_file" in
+        *fr_FR.po|*fr_CH.po|*de_DE.po|*de_CH.po)
+            use_fuzzy_this=$USE_FUZZY
+            ;;
+    esac
+    MSGFMT_OPTS=(-c -o "$mo_file" "$po_file")
+    if [ "$use_fuzzy_this" -eq 1 ]; then
+        MSGFMT_OPTS=(--use-fuzzy -c -o "$mo_file" "$po_file")
+    fi
+
+    if msgfmt "${MSGFMT_OPTS[@]}" 2>/dev/null; then
         echo -e "${GREEN}✓${NC}"
         COMPILED=$((COMPILED + 1))
     else
         echo -e "${RED}✗ FAILED${NC}"
         echo "  Error compiling $po_file"
-        msgfmt -o "$mo_file" "$po_file"  # Show error
+        msgfmt "${MSGFMT_OPTS[@]}"  # Show error
         ERRORS=$((ERRORS + 1))
     fi
 done

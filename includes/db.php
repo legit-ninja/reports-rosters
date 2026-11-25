@@ -903,6 +903,409 @@ function intersoccer_rebuild_rosters_and_reports() {
     ];
 }
 
+/**
+ * Normalize a list of positive integer ids from arrays or comma/space-separated strings.
+ *
+ * @param mixed $ids
+ * @return int[]
+ */
+function intersoccer_reconcile_normalize_id_list($ids) {
+    if (!is_array($ids)) {
+        if (is_string($ids) && $ids !== '') {
+            $ids = preg_split('/[\s,]+/', $ids) ?: [];
+        } elseif (is_numeric($ids)) {
+            $ids = [(int) $ids];
+        } else {
+            return [];
+        }
+    }
+    $out = [];
+    foreach ($ids as $id) {
+        $id = (int) $id;
+        if ($id > 0) {
+            $out[$id] = $id;
+        }
+    }
+    return array_values($out);
+}
+
+/**
+ * Recompute roster season display + event_signature for rename-merge candidates only.
+ *
+ * Only evergreen products qualify: default-language product currently has a
+ * pa_program-season term whose EN name has no year. Year-qualified-term and
+ * no-term rows are left untouched even when recomputing would change the hash
+ * (pre-existing facet drift must not be "fixed" here).
+ *
+ * Updates season and event_signature; when course_day is a recognisable FR/DE
+ * weekday it is rewritten to English on the same rows. Never truncates, never
+ * deletes rows, never overwrites player / move-history / manually edited columns.
+ *
+ * @param array $options {
+ *     @type int[]  $order_ids
+ *     @type int[]  $product_ids
+ *     @type bool   $include_product_siblings Expand order scope to all rows of products those orders touch.
+ *     @type bool   $dry_run                 List changes without writing.
+ *     @type bool   $scope_all               Examine all roster rows (still evergreen-gated unless weekday_repair).
+ *     @type string $season                  Limit to this exact roster season label.
+ *     @type bool   $weekday_repair          Year-qualified seasons allowed. Only rows whose
+ *                                           course_day normalizes to a different English weekday
+ *                                           are updated (course_day + event_signature). Season
+ *                                           labels are never rewritten. Implied when $season is set.
+ * }
+ * @return array{
+ *     needing_rename_merge:int,
+ *     updated:int,
+ *     skipped_not_evergreen:int,
+ *     unchanged:int,
+ *     examined:int,
+ *     dry_run:bool,
+ *     changes:list<array<string,mixed>>,
+ *     group_counts_before:array<int,array<string,int>>,
+ *     group_counts_after:array<int,array<string,int>>
+ * }
+ */
+function intersoccer_reconcile_roster_season_signatures(array $options = []) {
+    global $wpdb;
+
+    $dry_run = !empty($options['dry_run']);
+    $scope_all = !empty($options['scope_all']);
+    $order_ids = intersoccer_reconcile_normalize_id_list($options['order_ids'] ?? []);
+    $product_ids = intersoccer_reconcile_normalize_id_list($options['product_ids'] ?? []);
+    $include_siblings = !empty($options['include_product_siblings']);
+    $season_filter = isset($options['season']) ? trim((string) $options['season']) : '';
+    $weekday_repair = !empty($options['weekday_repair']) || $season_filter !== '';
+
+    $empty = [
+        'needing_rename_merge' => 0,
+        'updated' => 0,
+        'skipped_not_evergreen' => 0,
+        'unchanged' => 0,
+        'examined' => 0,
+        'dry_run' => $dry_run,
+        'changes' => [],
+        'group_counts_before' => [],
+        'group_counts_after' => [],
+        'remaining_splits' => [],
+        'weekday_repair' => $weekday_repair,
+        'season' => $season_filter,
+    ];
+
+    $table = $wpdb->prefix . 'intersoccer_rosters';
+    $where = [];
+    $params = [];
+
+    if ($order_ids !== [] && $include_siblings) {
+        $placeholders = implode(',', array_fill(0, count($order_ids), '%d'));
+        $sibling_products = $wpdb->get_col($wpdb->prepare(
+            "SELECT DISTINCT product_id FROM {$table} WHERE order_id IN ({$placeholders}) AND product_id > 0",
+            ...$order_ids
+        ));
+        $product_ids = array_values(array_unique(array_merge(
+            $product_ids,
+            intersoccer_reconcile_normalize_id_list(is_array($sibling_products) ? $sibling_products : [])
+        )));
+        $order_ids = [];
+    }
+
+    if ($season_filter !== '') {
+        $where[] = 'season = %s';
+        $params[] = $season_filter;
+    }
+
+    if ($scope_all) {
+        if ($where === []) {
+            $where[] = '1=1';
+        }
+    } elseif ($product_ids !== []) {
+        $placeholders = implode(',', array_fill(0, count($product_ids), '%d'));
+        $where[] = "product_id IN ({$placeholders})";
+        $params = array_merge($params, $product_ids);
+    } elseif ($order_ids !== []) {
+        $placeholders = implode(',', array_fill(0, count($order_ids), '%d'));
+        $where[] = "order_id IN ({$placeholders})";
+        $params = array_merge($params, $order_ids);
+    } elseif ($season_filter !== '') {
+        // Season clause already added; do not examine other seasons.
+    } else {
+        return $empty;
+    }
+
+    $sql = "SELECT id, order_id, order_item_id, product_id, variation_id, activity_type, venue, age_group,
+            camp_terms, course_day, times, season, girls_only, city, canton_region, start_date, event_signature
+            FROM {$table} WHERE " . implode(' AND ', $where);
+    if ($params !== []) {
+        $sql = $wpdb->prepare($sql, ...$params);
+    }
+    $rows = $wpdb->get_results($sql, ARRAY_A);
+    if (!is_array($rows)) {
+        $rows = [];
+    }
+
+    $group_before = [];
+    foreach ($rows as $row) {
+        $pid = (int) ($row['product_id'] ?? 0);
+        $sig = (string) ($row['event_signature'] ?? '');
+        if (!isset($group_before[$pid])) {
+            $group_before[$pid] = [];
+        }
+        if (!isset($group_before[$pid][$sig])) {
+            $group_before[$pid][$sig] = 0;
+        }
+        $group_before[$pid][$sig]++;
+    }
+
+    $needing_rename_merge = 0;
+    $updated = 0;
+    $skipped_not_evergreen = 0;
+    $unchanged = 0;
+    $changes = [];
+    $evergreen_cache = [];
+    $quiet = function_exists('intersoccer_set_bulk_normalize_quiet');
+    if ($quiet) {
+        intersoccer_set_bulk_normalize_quiet(true);
+    }
+
+    try {
+        foreach ($rows as $row) {
+            $product_id = (int) ($row['product_id'] ?? 0);
+            if (!$weekday_repair) {
+                if (!array_key_exists($product_id, $evergreen_cache)) {
+                    $evergreen_cache[$product_id] = function_exists('intersoccer_product_program_season_is_evergreen')
+                        ? intersoccer_product_program_season_is_evergreen($product_id)
+                        : false;
+                }
+                if (!$evergreen_cache[$product_id]) {
+                    $skipped_not_evergreen++;
+                    continue;
+                }
+            }
+
+            $event_data = [
+                'activity_type' => $row['activity_type'] ?? '',
+                'venue' => $row['venue'] ?? '',
+                'age_group' => $row['age_group'] ?? '',
+                'camp_terms' => $row['camp_terms'] ?? '',
+                'course_day' => $row['course_day'] ?? '',
+                'times' => $row['times'] ?? '',
+                'season' => $row['season'] ?? '',
+                'girls_only' => $row['girls_only'] ?? 0,
+                'city' => $row['city'] ?? '',
+                'canton_region' => $row['canton_region'] ?? '',
+                'product_id' => $product_id,
+                'variation_id' => (int) ($row['variation_id'] ?? 0),
+                'start_date' => $row['start_date'] ?? '',
+                'order_item_id' => (int) ($row['order_item_id'] ?? 0),
+            ];
+            $order_item_id = (int) ($row['order_item_id'] ?? 0);
+            if ($order_item_id > 0 && function_exists('wc_get_order_item_meta') && function_exists('intersoccer_program_year_order_meta_keys')) {
+                foreach (intersoccer_program_year_order_meta_keys() as $year_key) {
+                    if ($year_key === 'program_year') {
+                        continue;
+                    }
+                    $year_value = wc_get_order_item_meta($order_item_id, $year_key, true);
+                    if ($year_value !== '' && $year_value !== null && $year_value !== false) {
+                        $event_data[$year_key] = is_array($year_value) ? ($year_value[0] ?? '') : $year_value;
+                    }
+                }
+            }
+
+            // English course_day first (stored and hashed), same as the order sync.
+            $old_course_day = (string) ($row['course_day'] ?? '');
+            $new_course_day = function_exists('intersoccer_roster_course_day_for_storage')
+                ? intersoccer_roster_course_day_for_storage($old_course_day)
+                : $old_course_day;
+            if ($new_course_day === '' || strcasecmp($new_course_day, 'N/A') === 0
+                || strcasecmp($new_course_day, $old_course_day) === 0) {
+                // Case-only differences (monday/Monday) are not rewritten.
+                $new_course_day = $old_course_day;
+            }
+            $event_data['course_day'] = $new_course_day;
+
+            $old_season = (string) ($row['season'] ?? '');
+            $old_signature = (string) ($row['event_signature'] ?? '');
+            if ($weekday_repair) {
+                // Keep the stored season label. Only rewrite a FR/DE weekday
+                // and re-sign that row; pre-existing time/facet drift stays.
+                $new_season = $old_season;
+                $event_data['season'] = $old_season;
+                if ($new_course_day === $old_course_day) {
+                    $unchanged++;
+                    continue;
+                }
+            } else {
+                $new_season = function_exists('intersoccer_roster_season_name_for_storage')
+                    ? intersoccer_roster_season_name_for_storage($event_data, $old_season)
+                    : $old_season;
+            }
+            $new_signature = function_exists('intersoccer_event_signature_from_event_data')
+                ? intersoccer_event_signature_from_event_data($event_data)
+                : '';
+
+            if ($new_season === $old_season && $new_signature === $old_signature
+                && $new_course_day === $old_course_day) {
+                $unchanged++;
+                continue;
+            }
+
+            $needing_rename_merge++;
+            $changes[] = [
+                'id' => (int) ($row['id'] ?? 0),
+                'order_id' => (int) ($row['order_id'] ?? 0),
+                'order_item_id' => $order_item_id,
+                'product_id' => $product_id,
+                'old_season' => $old_season,
+                'new_season' => $new_season,
+                'old_signature' => $old_signature,
+                'new_signature' => $new_signature,
+                'old_course_day' => $old_course_day,
+                'new_course_day' => $new_course_day,
+            ];
+
+            if ($dry_run) {
+                continue;
+            }
+
+            $update_fields = [
+                'season' => substr($new_season, 0, 50),
+                'event_signature' => $new_signature,
+            ];
+            $update_formats = ['%s', '%s'];
+            if ($new_course_day !== $old_course_day) {
+                $update_fields['course_day'] = substr($new_course_day, 0, 20);
+                $update_formats[] = '%s';
+            }
+
+            $ok = $wpdb->update(
+                $table,
+                $update_fields,
+                ['id' => (int) $row['id']],
+                $update_formats,
+                ['%d']
+            );
+            if ($ok !== false) {
+                $updated++;
+            }
+        }
+    } finally {
+        if ($quiet) {
+            intersoccer_set_bulk_normalize_quiet(false);
+        }
+    }
+
+    $group_after = [];
+    if ($dry_run) {
+        $projected = [];
+        foreach ($rows as $row) {
+            $id = (int) ($row['id'] ?? 0);
+            $projected[$id] = $row;
+        }
+        foreach ($changes as $change) {
+            $id = (int) $change['id'];
+            if (!isset($projected[$id])) {
+                continue;
+            }
+            $projected[$id]['season'] = $change['new_season'];
+            $projected[$id]['event_signature'] = $change['new_signature'];
+        }
+        foreach ($projected as $row) {
+            $pid = (int) ($row['product_id'] ?? 0);
+            $sig = (string) ($row['event_signature'] ?? '');
+            if (!isset($group_after[$pid])) {
+                $group_after[$pid] = [];
+            }
+            if (!isset($group_after[$pid][$sig])) {
+                $group_after[$pid][$sig] = 0;
+            }
+            $group_after[$pid][$sig]++;
+        }
+    } else {
+        $sql_after = "SELECT product_id, event_signature FROM {$table} WHERE " . implode(' AND ', $where);
+        if ($params !== []) {
+            $sql_after = $wpdb->prepare($sql_after, ...$params);
+        }
+        $after_rows = $wpdb->get_results($sql_after, ARRAY_A);
+        if (is_array($after_rows)) {
+            foreach ($after_rows as $row) {
+                $pid = (int) ($row['product_id'] ?? 0);
+                $sig = (string) ($row['event_signature'] ?? '');
+                if (!isset($group_after[$pid])) {
+                    $group_after[$pid] = [];
+                }
+                if (!isset($group_after[$pid][$sig])) {
+                    $group_after[$pid][$sig] = 0;
+                }
+                $group_after[$pid][$sig]++;
+            }
+        }
+    }
+
+    $projected_splits = [];
+    foreach ($rows as $row) {
+        $id = (int) ($row['id'] ?? 0);
+        $projected_splits[$id] = $row;
+    }
+    foreach ($changes as $change) {
+        $id = (int) ($change['id'] ?? 0);
+        if (!isset($projected_splits[$id])) {
+            continue;
+        }
+        $projected_splits[$id]['season'] = $change['new_season'];
+        $projected_splits[$id]['event_signature'] = $change['new_signature'];
+        if (isset($change['new_course_day'])) {
+            $projected_splits[$id]['course_day'] = $change['new_course_day'];
+        }
+    }
+    $by_variation = [];
+    foreach ($projected_splits as $row) {
+        $vid = (int) ($row['variation_id'] ?? 0);
+        if ($vid <= 0) {
+            continue;
+        }
+        $by_variation[$vid][] = $row;
+    }
+    $remaining_splits = [];
+    foreach ($by_variation as $vid => $vrows) {
+        $sigs = [];
+        $times = [];
+        foreach ($vrows as $row) {
+            $sig = (string) ($row['event_signature'] ?? '');
+            if (!isset($sigs[$sig])) {
+                $sigs[$sig] = 0;
+            }
+            $sigs[$sig]++;
+            $time = (string) ($row['times'] ?? '');
+            if ($time !== '' && !in_array($time, $times, true)) {
+                $times[] = $time;
+            }
+        }
+        if (count($sigs) > 1) {
+            $remaining_splits[] = [
+                'product_id' => (int) ($vrows[0]['product_id'] ?? 0),
+                'variation_id' => (int) $vid,
+                'groups' => count($sigs),
+                'rows' => count($vrows),
+                'times' => $times,
+            ];
+        }
+    }
+
+    return [
+        'needing_rename_merge' => $needing_rename_merge,
+        'updated' => $updated,
+        'skipped_not_evergreen' => $skipped_not_evergreen,
+        'unchanged' => $unchanged,
+        'examined' => count($rows),
+        'dry_run' => $dry_run,
+        'changes' => $changes,
+        'group_counts_before' => $group_before,
+        'group_counts_after' => $group_after,
+        'remaining_splits' => $remaining_splits,
+        'weekday_repair' => $weekday_repair,
+        'season' => $season_filter,
+    ];
+}
+
 function intersoccer_reconcile_rosters($options = []) {
     if (function_exists('wp_raise_memory_limit')) {
         wp_raise_memory_limit('admin');
@@ -911,32 +1314,50 @@ function intersoccer_reconcile_rosters($options = []) {
         @set_time_limit(0);
     }
 
+    $options = is_array($options) ? $options : [];
+    if (!empty($_POST['date_from'])) {
+        $options['date_from'] = sanitize_text_field($_POST['date_from']);
+    }
+    if (!empty($_POST['date_to'])) {
+        $options['date_to'] = sanitize_text_field($_POST['date_to']);
+    }
+
     if (defined('INTERSOCCER_OOP_ACTIVE') && INTERSOCCER_OOP_ACTIVE && function_exists('intersoccer_use_oop_for') && intersoccer_use_oop_for('database')) {
         error_log('InterSoccer: Routing roster reconciliation through OOP RosterBuilder');
 
-        $oop_options = array_merge(['delete_obsolete' => true], is_array($options) ? $options : []);
-        if (!empty($_POST['date_from'])) {
-            $oop_options['date_from'] = sanitize_text_field($_POST['date_from']);
-        }
-        if (!empty($_POST['date_to'])) {
-            $oop_options['date_to'] = sanitize_text_field($_POST['date_to']);
-        }
-        if (!empty($oop_options['date_from']) || !empty($oop_options['date_to'])) {
+        $oop_options = array_merge(['delete_obsolete' => true], $options);
+        if (!empty($oop_options['date_from']) || !empty($oop_options['date_to'])
+            || !empty($oop_options['order_ids']) || !empty($oop_options['product_ids'])
+        ) {
             $oop_options['delete_obsolete'] = false;
         }
 
         try {
             $result = intersoccer_oop_reconcile_rosters($oop_options);
 
-            $girls_only_backfilled = function_exists('intersoccer_reconcile_backfill_girls_only_flags')
-                ? intersoccer_reconcile_backfill_girls_only_flags()
-                : 0;
+            $girls_only_backfilled = 0;
+            if (empty($oop_options['dry_run']) && empty($oop_options['order_ids']) && empty($oop_options['product_ids'])
+                && function_exists('intersoccer_reconcile_backfill_girls_only_flags')
+            ) {
+                $girls_only_backfilled = intersoccer_reconcile_backfill_girls_only_flags();
+            }
 
+            $season = is_array($result['season_signature'] ?? null) ? $result['season_signature'] : [];
             $message = sprintf(
                 __('Reconciled rosters via OOP engine: Synced %1$d entries, deleted %2$d obsolete ones.', 'intersoccer-reports-rosters'),
                 intval($result['synced'] ?? 0),
                 intval($result['deleted'] ?? 0)
             );
+            if (!empty($season['needing_rename_merge']) || !empty($season['skipped_not_evergreen']) || !empty($season['updated'])) {
+                $message .= ' ' . sprintf(
+                    /* translators: 1: rows needing rename merge, 2: rows changed, 3: rows skipped (not evergreen), 4: unchanged */
+                    __('Season/signature: rows needing rename merge %1$d / rows changed %2$d / rows skipped (not evergreen) %3$d / unchanged %4$d.', 'intersoccer-reports-rosters'),
+                    (int) ($season['needing_rename_merge'] ?? 0),
+                    (int) ($season['updated'] ?? 0),
+                    (int) ($season['skipped_not_evergreen'] ?? 0),
+                    (int) ($season['unchanged'] ?? 0)
+                );
+            }
             if ($girls_only_backfilled > 0) {
                 $message .= ' ' . sprintf(
                     __('Corrected girls-only flag on %d roster row(s).', 'intersoccer-reports-rosters'),
@@ -955,6 +1376,7 @@ function intersoccer_reconcile_rosters($options = []) {
                 'errors' => intval($result['errors'] ?? 0),
                 'warnings' => $result['error_messages'] ?? [],
                 'girls_only_backfilled' => $girls_only_backfilled,
+                'season_signature' => $season,
                 'message' => $message,
             ];
 
@@ -976,20 +1398,49 @@ function intersoccer_reconcile_rosters($options = []) {
 
     error_log('InterSoccer: Starting roster reconciliation');
 
-    $orders = wc_get_orders([
+    $scoped_order_ids = intersoccer_reconcile_normalize_id_list($options['order_ids'] ?? []);
+    $scoped_product_ids = intersoccer_reconcile_normalize_id_list($options['product_ids'] ?? []);
+    $delete_requested = !array_key_exists('delete_obsolete', $options) || !empty($options['delete_obsolete']);
+    $delete_obsolete = $delete_requested
+        && empty($options['date_from']) && empty($options['date_to'])
+        && $scoped_order_ids === [] && $scoped_product_ids === []
+        && empty($options['dry_run']);
+    $dry_run = !empty($options['dry_run']);
+
+    if ($scoped_product_ids !== [] && $scoped_order_ids === []) {
+        $placeholders = implode(',', array_fill(0, count($scoped_product_ids), '%d'));
+        $from_products = $wpdb->get_col($wpdb->prepare(
+            "SELECT DISTINCT order_id FROM {$rosters_table} WHERE product_id IN ({$placeholders}) AND order_id > 0",
+            ...$scoped_product_ids
+        ));
+        $scoped_order_ids = intersoccer_reconcile_normalize_id_list(is_array($from_products) ? $from_products : []);
+    }
+
+    $order_query = [
         'limit' => -1,
         'status' => ['wc-completed', 'wc-processing', 'wc-pending', 'wc-on-hold'],
-    ]);
+    ];
+    if ($scoped_order_ids !== []) {
+        $order_query['include'] = $scoped_order_ids;
+    }
+    $orders = $dry_run ? [] : wc_get_orders($order_query);
+    if (!is_array($orders)) {
+        $orders = [];
+    }
     error_log('InterSoccer: Found ' . count($orders) . ' orders for reconciliation');
 
     $synced = 0;
     $deleted = 0;
+    $synced_order_ids = [];
 
     try {
-        $existing_items = $wpdb->get_col("SELECT order_item_id FROM $rosters_table");
+        $existing_items = $delete_obsolete
+            ? $wpdb->get_col("SELECT order_item_id FROM $rosters_table")
+            : [];
 
         foreach ($orders as $order) {
             $order_id = $order->get_id();
+            $synced_order_ids[] = (int) $order_id;
             if (defined('WP_DEBUG') && WP_DEBUG) {
                 error_log('InterSoccer: Reconciling order during roster reconciliation');
             }
@@ -1006,19 +1457,48 @@ function intersoccer_reconcile_rosters($options = []) {
             }
         }
 
-        foreach ($existing_items as $obsolete_item_id) {
-            $wpdb->delete($rosters_table, ['order_item_id' => $obsolete_item_id]);
-            $deleted++;
-            if (defined('WP_DEBUG') && WP_DEBUG) {
-                error_log('InterSoccer: Deleted obsolete roster entry during reconciliation');
+        if ($delete_obsolete) {
+            foreach ($existing_items as $obsolete_item_id) {
+                $wpdb->delete($rosters_table, ['order_item_id' => $obsolete_item_id]);
+                $deleted++;
+                if (defined('WP_DEBUG') && WP_DEBUG) {
+                    error_log('InterSoccer: Deleted obsolete roster entry during reconciliation');
+                }
             }
         }
 
+        $season_opts = [
+            'order_ids' => $scoped_order_ids !== [] ? $scoped_order_ids : $synced_order_ids,
+            'product_ids' => $scoped_product_ids,
+            'include_product_siblings' => !empty($options['include_product_siblings']),
+            'dry_run' => $dry_run,
+            'scope_all' => false,
+        ];
+        if ($scoped_order_ids === [] && $scoped_product_ids === []) {
+            $season_opts['scope_all'] = true;
+            $season_opts['order_ids'] = [];
+            $season_opts['product_ids'] = [];
+        }
+        $season = intersoccer_reconcile_roster_season_signatures($season_opts);
+
         error_log('InterSoccer: Reconciliation completed. Synced: ' . $synced . ', Deleted: ' . $deleted);
-        $girls_only_backfilled = function_exists('intersoccer_reconcile_backfill_girls_only_flags')
-            ? intersoccer_reconcile_backfill_girls_only_flags()
-            : 0;
+        $girls_only_backfilled = 0;
+        if (!$dry_run && $scoped_order_ids === [] && $scoped_product_ids === []
+            && function_exists('intersoccer_reconcile_backfill_girls_only_flags')
+        ) {
+            $girls_only_backfilled = intersoccer_reconcile_backfill_girls_only_flags();
+        }
         $message = __('Reconciled rosters: Synced ' . $synced . ' entries, deleted ' . $deleted . ' obsolete ones.', 'intersoccer-reports-rosters');
+        if (!empty($season['needing_rename_merge']) || !empty($season['skipped_not_evergreen']) || !empty($season['updated'])) {
+            $message .= ' ' . sprintf(
+                /* translators: 1: rows needing rename merge, 2: rows changed, 3: rows skipped (not evergreen), 4: unchanged */
+                __('Season/signature: rows needing rename merge %1$d / rows changed %2$d / rows skipped (not evergreen) %3$d / unchanged %4$d.', 'intersoccer-reports-rosters'),
+                (int) ($season['needing_rename_merge'] ?? 0),
+                (int) ($season['updated'] ?? 0),
+                (int) ($season['skipped_not_evergreen'] ?? 0),
+                (int) ($season['unchanged'] ?? 0)
+            );
+        }
         if ($girls_only_backfilled > 0) {
             $message .= ' ' . sprintf(
                 __('Corrected girls-only flag on %d roster row(s).', 'intersoccer-reports-rosters'),
@@ -1030,6 +1510,7 @@ function intersoccer_reconcile_rosters($options = []) {
             'synced' => $synced,
             'deleted' => $deleted,
             'girls_only_backfilled' => $girls_only_backfilled,
+            'season_signature' => $season,
             'message' => $message,
         ];
     } catch (Exception $e) {
@@ -1048,107 +1529,15 @@ if (defined('INTERSOCCER_OOP_ACTIVE') && INTERSOCCER_OOP_ACTIVE && function_exis
 } else {
     if (!function_exists('intersoccer_rebuild_rosters_and_reports_ajax')) {
         function intersoccer_rebuild_rosters_and_reports_ajax() {
-            ob_start();
-
-            $nonce_valid = false;
-            if (isset($_POST['nonce'])) {
-                $nonce_valid = wp_verify_nonce(sanitize_text_field($_POST['nonce']), 'intersoccer_rebuild_nonce');
-            } elseif (isset($_POST['intersoccer_rebuild_nonce_field'])) {
-                $nonce_valid = wp_verify_nonce(sanitize_text_field($_POST['intersoccer_rebuild_nonce_field']), 'intersoccer_rebuild_nonce');
-            }
-
-            if (!$nonce_valid) {
-                ob_clean();
-                wp_send_json_error(['message' => __('Security check failed. Please refresh the page and try again.', 'intersoccer-reports-rosters')]);
-            }
-
-            if (!current_user_can('manage_options')) {
-                ob_clean();
-                wp_send_json_error(['message' => __('You do not have permission to rebuild rosters.', 'intersoccer-reports-rosters')]);
-            }
-            if (defined('WP_DEBUG') && WP_DEBUG) {
-                error_log(
-                    'InterSoccer: AJAX rebuild request received with POST keys: '
-                    . implode(',', array_keys($_POST))
-                );
-            }
-
-            try {
-                $result = intersoccer_rebuild_rosters_and_reports();
-                ob_clean();
-                if ($result['status'] === 'success') {
-                    $stats = is_array($result['stats'] ?? null) ? $result['stats'] : [];
-                    $mismatch_count = is_array($stats['age_mismatches'] ?? null) ? count($stats['age_mismatches']) : 0;
-                    $not_checked_count = (int) ($stats['not_checked']['count'] ?? 0);
-                    $detail = $mismatch_count || $not_checked_count
-                        ? sprintf(
-                            ' Age outside group: %d. Age not checked: %d.',
-                            $mismatch_count,
-                            $not_checked_count
-                        )
-                        : '';
-                    wp_send_json_success([
-                        'inserted' => $result['inserted'],
-                        'message' => ($result['message'] ?? '') . $detail,
-                        'results' => $stats,
-                        'age_mismatches' => $stats['age_mismatches'] ?? [],
-                        'not_checked' => $stats['not_checked'] ?? ['count' => 0, 'order_item_ids' => []],
-                    ]);
-                } else {
-                    wp_send_json_error(['message' => __('Rebuild failed: ' . $result['message'], 'intersoccer-reports-rosters')]);
-                }
-            } catch (Exception $e) {
-                error_log('InterSoccer: Rebuild exception: ' . $e->getMessage());
-                ob_clean();
-                wp_send_json_error(['message' => __('Rebuild failed with exception: ' . $e->getMessage(), 'intersoccer-reports-rosters')]);
-            }
+            intersoccer_rr_repair_block_legacy_ajax('rebuild_rosters');
+            return;
         }
     }
 
     if (!function_exists('intersoccer_reconcile_rosters_ajax')) {
         function intersoccer_reconcile_rosters_ajax() {
-            ob_start();
-
-            $nonce_valid = false;
-            if (isset($_POST['nonce'])) {
-                $nonce_valid = wp_verify_nonce(sanitize_text_field($_POST['nonce']), 'intersoccer_reports_rosters_nonce');
-            } elseif (isset($_POST['intersoccer_rebuild_nonce_field'])) {
-                $nonce_valid = wp_verify_nonce(sanitize_text_field($_POST['intersoccer_rebuild_nonce_field']), 'intersoccer_rebuild_nonce');
-            }
-
-            if (!$nonce_valid) {
-                ob_clean();
-                wp_send_json_error(['message' => __('Security check failed. Please refresh the page and try again.', 'intersoccer-reports-rosters')]);
-            }
-
-            if (!current_user_can('manage_options')) {
-                ob_clean();
-                wp_send_json_error(['message' => __('You do not have permission to reconcile rosters.', 'intersoccer-reports-rosters')]);
-            }
-            if (defined('WP_DEBUG') && WP_DEBUG) {
-                error_log(
-                    'InterSoccer: AJAX reconcile request received with POST keys: '
-                    . implode(',', array_keys($_POST))
-                );
-            }
-
-            try {
-                $result = intersoccer_reconcile_rosters();
-                ob_clean();
-                if ($result['status'] === 'success') {
-                    wp_send_json_success([
-                        'message' => $result['message'],
-                        'synced' => $result['synced'],
-                        'deleted' => $result['deleted']
-                    ]);
-                } else {
-                    wp_send_json_error(['message' => $result['message']]);
-                }
-            } catch (Exception $e) {
-                error_log('InterSoccer: Reconcile exception: ' . $e->getMessage());
-                ob_clean();
-                wp_send_json_error(['message' => __('Reconcile failed: ' . $e->getMessage(), 'intersoccer-reports-rosters')]);
-            }
+            intersoccer_rr_repair_block_legacy_ajax('reconcile_rosters');
+            return;
         }
     }
 }
@@ -2121,178 +2510,18 @@ function intersoccer_upgrade_database() {
 
 // AJAX handlers unchanged
 function intersoccer_upgrade_database_ajax() {
-    check_ajax_referer('intersoccer_rebuild_nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
-        wp_send_json_error(__('You do not have permission to upgrade the database.', 'intersoccer-reports-rosters'));
-    }
-    $success = intersoccer_upgrade_database();
-    $version = get_option('intersoccer_db_version', '1.0.0');
-    $engine_label = (defined('INTERSOCCER_OOP_ACTIVE') && INTERSOCCER_OOP_ACTIVE && function_exists('intersoccer_use_oop_for') && intersoccer_use_oop_for('database'))
-        ? __('OOP Migrator', 'intersoccer-reports-rosters')
-        : __('Legacy Migrator', 'intersoccer-reports-rosters');
-
-    if ($success === false) {
-        wp_send_json_error(__('Database upgrade failed. Check logs for details.', 'intersoccer-reports-rosters'));
-    }
-
-    wp_send_json_success([
-        'message' => sprintf(
-            /* translators: 1: current schema version, 2: migration engine */
-            __('Database upgrade completed. Schema version is now %1$s (Engine: %2$s).', 'intersoccer-reports-rosters'),
-            $version,
-            $engine_label
-        ),
-        'version' => $version,
-        'engine' => $engine_label,
-    ]);
+            intersoccer_rr_repair_block_legacy_ajax('upgrade_database');
+        return;
 }
 
 function intersoccer_rebuild_event_signatures_ajax() {
-    error_log('InterSoccer: AJAX rebuild event signatures handler called');
-    
-    ob_start();
-    
-    try {
-        // Check nonce - try both field names (nonce and intersoccer_rebuild_nonce_field)
-        $nonce_check = false;
-        if (isset($_POST['nonce'])) {
-            $nonce_check = check_ajax_referer('intersoccer_rebuild_nonce', 'nonce', false);
-            error_log('InterSoccer: AJAX rebuild - Checking nonce field "nonce": ' . ($nonce_check ? 'valid' : 'invalid'));
-        }
-        if (!$nonce_check && isset($_POST['intersoccer_rebuild_nonce_field'])) {
-            $nonce_check = check_ajax_referer('intersoccer_rebuild_nonce', 'intersoccer_rebuild_nonce_field', false);
-            error_log('InterSoccer: AJAX rebuild - Checking nonce field "intersoccer_rebuild_nonce_field": ' . ($nonce_check ? 'valid' : 'invalid'));
-        }
-        
-        if (!$nonce_check) {
-            error_log('InterSoccer: AJAX rebuild - Nonce check failed. POST data keys: ' . implode(', ', array_keys($_POST)));
-            ob_clean();
-            wp_send_json_error(['message' => __('Security check failed. Please refresh the page and try again.', 'intersoccer-reports-rosters')]);
-            return;
-        }
-        
-        if (!current_user_can('manage_options')) {
-            error_log('InterSoccer: AJAX rebuild - Permission check failed');
-            ob_clean();
-            wp_send_json_error(['message' => __('You do not have permission to rebuild event signatures.', 'intersoccer-reports-rosters')]);
-            return;
-        }
-        
-        error_log('InterSoccer: AJAX rebuild event signatures request received - calling rebuild function');
-
-        $result = intersoccer_rebuild_event_signatures();
-        
-        error_log('InterSoccer: AJAX rebuild - Function returned: ' . json_encode($result));
-        
-        ob_clean();
-        if ($result['status'] === 'success') {
-            wp_send_json_success(['updated' => $result['updated'], 'message' => __('Event signatures rebuilt for ' . $result['updated'] . ' records.', 'intersoccer-reports-rosters')]);
-        } else {
-            wp_send_json_error(['message' => __('Event signature rebuild failed: ' . $result['message'], 'intersoccer-reports-rosters')]);
-        }
-    } catch (Exception $e) {
-        error_log('InterSoccer: Event signature rebuild exception: ' . $e->getMessage());
-        error_log('InterSoccer: Event signature rebuild exception trace: ' . $e->getTraceAsString());
-        ob_clean();
-        wp_send_json_error(['message' => __('Event signature rebuild failed with exception: ' . $e->getMessage(), 'intersoccer-reports-rosters')]);
-    } catch (Error $e) {
-        error_log('InterSoccer: Event signature rebuild fatal error: ' . $e->getMessage());
-        error_log('InterSoccer: Event signature rebuild fatal error trace: ' . $e->getTraceAsString());
-        ob_clean();
-        wp_send_json_error(['message' => __('Event signature rebuild failed with error: ' . $e->getMessage(), 'intersoccer-reports-rosters')]);
-    }
+            intersoccer_rr_repair_block_legacy_ajax('rebuild_event_signatures');
+        return;
 }
 
 function intersoccer_repair_day_presence_ajax() {
-    // Use the same nonce used across roster details AJAX actions.
-    $nonce_ok = false;
-    if (isset($_POST['nonce'])) {
-        $nonce_ok = check_ajax_referer('intersoccer_reports_rosters_nonce', 'nonce', false);
-    }
-
-    if (!$nonce_ok) {
-        wp_send_json_error(['message' => __('Security check failed. Please refresh the page and try again.', 'intersoccer-reports-rosters')]);
-    }
-
-    if (!current_user_can('manage_options')) {
-        wp_send_json_error(['message' => __('You do not have permission to repair day presence.', 'intersoccer-reports-rosters')]);
-    }
-
-    global $wpdb;
-    $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
-
-    $event_signature = isset($_POST['event_signature']) ? sanitize_text_field($_POST['event_signature']) : '';
-    if ($event_signature === '') {
-        wp_send_json_error(['message' => __('Missing event signature.', 'intersoccer-reports-rosters')]);
-    }
-
-
-    // Pull only the columns we need; do not touch event_completed.
-    $rows = $wpdb->get_results(
-        $wpdb->prepare(
-            "SELECT id, booking_type, selected_days, day_presence FROM {$rosters_table} WHERE event_signature = %s",
-            $event_signature
-        ),
-        ARRAY_A
-    );
-
-    if (!is_array($rows) || empty($rows)) {
-        wp_send_json_success([
-            'updated' => 0,
-            'skipped' => 0,
-            'total' => 0,
-            'message' => __('No roster entries found for this event.', 'intersoccer-reports-rosters'),
-        ]);
-    }
-
-    $updated = 0;
-    $skipped = 0;
-
-    foreach ($rows as $row) {
-        $id = (int) ($row['id'] ?? 0);
-        if ($id <= 0) {
-            $skipped++;
-            continue;
-        }
-
-        $new_presence = function_exists('intersoccer_compute_day_presence')
-            ? intersoccer_compute_day_presence($row['booking_type'] ?? '', $row['selected_days'] ?? '')
-            : ['Monday' => 'No', 'Tuesday' => 'No', 'Wednesday' => 'No', 'Thursday' => 'No', 'Friday' => 'No'];
-
-        $new_json = wp_json_encode($new_presence);
-        $old_json = is_string($row['day_presence'] ?? null) ? (string) $row['day_presence'] : '';
-
-        if ($new_json === $old_json) {
-            $skipped++;
-            continue;
-        }
-
-        $result = $wpdb->update(
-            $rosters_table,
-            ['day_presence' => $new_json],
-            ['id' => $id],
-            ['%s'],
-            ['%d']
-        );
-
-        if ($result !== false) {
-            $updated++;
-        } else {
-            $skipped++;
-        }
-    }
-
-    wp_send_json_success([
-        'updated' => $updated,
-        'skipped' => $skipped,
-        'total' => count($rows),
-        'message' => sprintf(
-            /* translators: 1: updated count, 2: total count */
-            __('Repaired day presence for %1$d of %2$d roster entries.', 'intersoccer-reports-rosters'),
-            $updated,
-            count($rows)
-        ),
-    ]);
+            intersoccer_rr_repair_block_legacy_ajax('repair_day_presence');
+        return;
 }
 
 /**

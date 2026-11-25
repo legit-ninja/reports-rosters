@@ -96,12 +96,6 @@ jQuery(document).ready(function($) {
         };
     }
 
-    function collectSafeFixPayload() {
-        var payload = collectDiagnosticsPayload();
-        payload.action = 'intersoccer_fix_reports_rosters_issues_safe';
-        return payload;
-    }
-
     function renderDiagnosticsSummary(data) {
         var summary = data.summary || {};
         var reasonCounts = data.reason_counts || {};
@@ -168,7 +162,7 @@ jQuery(document).ready(function($) {
         var html = '' +
             '<table class="widefat striped intersoccer-sync-queue-table" style="margin-top:8px;">' +
             '<thead><tr>' +
-            '<th>Participant</th><th>Product</th><th>Activity</th><th>Order</th><th>Status</th><th>Date</th><th>Reasons</th><th>Actions</th>' +
+            '<th>Participant</th><th>Product</th><th>Activity</th><th>Order</th><th>Status</th><th>Date</th><th>Reasons</th>' +
             '</tr></thead><tbody>';
 
         rows.forEach(function(row) {
@@ -186,9 +180,6 @@ jQuery(document).ready(function($) {
                 '<td>' + esc(row.order_status || '—') + '</td>' +
                 '<td>' + esc(orderDate) + '</td>' +
                 '<td><code>' + esc((row.reasons || []).join(', ')) + '</code></td>' +
-                '<td>' +
-                '<button type="button" class="button button-secondary intersoccer-queue-fix-sync" data-order-item-id="' + esc(row.order_item_id) + '">Fix Sync</button>' +
-                '</td>' +
                 '</tr>';
         });
 
@@ -220,83 +211,6 @@ jQuery(document).ready(function($) {
         renderDiagnosticsPagination(response.data || {});
         if (response.data && response.data.pagination) {
             diagnosticsState.offset = response.data.pagination.offset || 0;
-        }
-    }
-
-    function renderSafeFixResults(data) {
-        function showSafeFixToast(payload) {
-            $('#intersoccer-safe-fix-toast').remove();
-            var line = 'Safe fix: ' + esc(payload.run_id || '-') +
-                ' | rosters ' + esc(payload.fixed_missing_in_rosters || 0) +
-                ', meta ' + esc(payload.fixed_missing_in_woo_meta || 0) +
-                ', quarantined ' + esc(payload.quarantined_missing_in_woo || 0);
-            $('<div/>', {
-                id: 'intersoccer-safe-fix-toast',
-                text: line,
-                css: {
-                    position: 'fixed',
-                    bottom: '24px',
-                    right: '24px',
-                    zIndex: 2147483647,
-                    maxWidth: '440px',
-                    padding: '14px 18px',
-                    background: '#1d2327',
-                    color: '#fff',
-                    border: '2px solid #72aee6',
-                    borderRadius: '4px',
-                    boxShadow: '0 4px 12px rgba(0,0,0,.35)',
-                    fontSize: '14px',
-                    lineHeight: '1.45'
-                }
-            }).appendTo('body');
-        }
-        var html = '' +
-            '<div class="notice notice-success" style="padding:10px 12px; margin:8px 0;">' +
-            '<p><strong>Run ID:</strong> ' + esc(data.run_id || '-') + '</p>' +
-            '<p><strong>Fixed missing in rosters:</strong> ' + esc(data.fixed_missing_in_rosters || 0) +
-            ' | <strong>Fixed missing Woo meta:</strong> ' + esc(data.fixed_missing_in_woo_meta || 0) +
-            ' | <strong>Quarantined missing in Woo:</strong> ' + esc(data.quarantined_missing_in_woo || 0) +
-            ' | <strong>Skipped (non-activity_type):</strong> ' + esc(data.skipped_non_activity_type || 0) + '</p>' +
-            '<p><strong>Elapsed:</strong> ' + esc(data.elapsed_ms || 0) + 'ms</p>' +
-            '<p>' + esc(data.message || 'Safe fix completed.') + '</p>' +
-            '<p><em>Please run diagnostics again to verify updated counts.</em></p>' +
-            '</div>';
-
-        if ((data.errors || []).length) {
-            html += '<div class="notice notice-warning" style="padding:10px 12px; margin:8px 0;">' +
-                '<p><strong>Warnings</strong></p><ul style="margin-left:18px;">';
-            (data.errors || []).forEach(function(item) {
-                html += '<li>' + esc(item) + '</li>';
-            });
-            html += '</ul></div>';
-        }
-        var $target = $('#intersoccer-diagnostics-fix-results');
-        if ($target.length) {
-            $target.show().css({
-                display: 'block',
-                visibility: 'visible',
-                opacity: 1
-            });
-            $target.html(html);
-            $('#intersoccer-diagnostics-summary').prepend(
-                '<div class="notice notice-success"><p><strong>Safe fix completed:</strong> ' +
-                esc(data.run_id || '-') +
-                ' | Fixed rosters: ' + esc(data.fixed_missing_in_rosters || 0) +
-                ', Fixed meta: ' + esc(data.fixed_missing_in_woo_meta || 0) +
-                ', Quarantined: ' + esc(data.quarantined_missing_in_woo || 0) +
-                '</p></div>'
-            );
-            var $button = $('#intersoccer-fix-issues-safe');
-            $button.closest('p').next('.intersoccer-safe-fix-inline-result').remove();
-            $button.closest('p').after('<div class="intersoccer-safe-fix-inline-result" style="margin-top:8px;">' + html + '</div>');
-            showSafeFixToast(data);
-            if ($target[0] && $target[0].scrollIntoView) {
-                $target[0].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-            }
-        } else {
-            $('#intersoccer-diagnostics-summary').prepend('<div class="notice notice-warning"><p>Safe fix completed, but dedicated result panel was not found. Showing output here.</p></div>');
-            $('#intersoccer-diagnostics-summary').append(html);
-            showSafeFixToast(data);
         }
     }
 
@@ -338,45 +252,6 @@ jQuery(document).ready(function($) {
         runDiagnosticsRequest().done(handleDiagnosticsResponse);
     });
 
-    $(document).on('click', '.intersoccer-queue-fix-sync', function(e) {
-        e.preventDefault();
-        var $btn = $(this);
-        var orderItemId = parseInt($btn.data('order-item-id'), 10) || 0;
-        if (orderItemId <= 0) {
-            return;
-        }
-        if (!window.confirm('Run safe sync fix for order item ' + orderItemId + '?')) {
-            return;
-        }
-
-        $btn.prop('disabled', true).text('Fixing...');
-        $.ajax({
-            url: intersoccer_ajax.ajax_url,
-            type: 'POST',
-            data: {
-                action: 'intersoccer_fix_reports_rosters_item_safe',
-                nonce: intersoccer_ajax.nonce,
-                order_item_id: orderItemId
-            },
-            success: function(response) {
-                if (!response || !response.success) {
-                    var msg = response && response.data && response.data.message ? response.data.message : 'Fix Sync failed.';
-                    alert(msg);
-                    $btn.prop('disabled', false).text('Fix Sync');
-                    return;
-                }
-                runDiagnosticsRequest().done(function(refreshResponse) {
-                    handleDiagnosticsResponse(refreshResponse);
-                    $btn.prop('disabled', false).text('Fix Sync');
-                });
-            },
-            error: function() {
-                alert('Fix Sync failed due to a network error.');
-                $btn.prop('disabled', false).text('Fix Sync');
-            }
-        });
-    });
-
     $('#intersoccer-reports-rosters-trace-form').on('submit', function(e) {
         e.preventDefault();
         var payload = {
@@ -406,32 +281,4 @@ jQuery(document).ready(function($) {
         });
     });
 
-    $('#intersoccer-fix-issues-safe').on('click', function(e) {
-        e.preventDefault();
-        var payload = collectSafeFixPayload();
-
-        $('#intersoccer-diagnostics-fix-results').html('<p>Running safe fixes...</p>');
-        $('#intersoccer-fix-issues-safe').prop('disabled', true);
-
-        $.ajax({
-            url: intersoccer_ajax.ajax_url,
-            type: 'POST',
-            data: payload,
-            success: function(response) {
-                if (!response || !response.success) {
-                    var msg = response && response.data && response.data.message ? response.data.message : 'Safe fix failed.';
-                    $('#intersoccer-diagnostics-fix-results').html('<div class="notice notice-error"><p>' + esc(msg) + '</p></div>');
-                    return;
-                }
-                renderSafeFixResults(response.data || {});
-            },
-            error: function(xhr) {
-                var text = (xhr && xhr.responseText) ? xhr.responseText : 'Network error.';
-                $('#intersoccer-diagnostics-fix-results').html('<div class="notice notice-error"><p>' + esc(text) + '</p></div>');
-            },
-            complete: function() {
-                $('#intersoccer-fix-issues-safe').prop('disabled', false);
-            }
-        });
-    });
 });
