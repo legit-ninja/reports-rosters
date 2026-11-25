@@ -1120,42 +1120,31 @@ class RosterRebuildCoverage160Test extends TestCase {
     }
 
     public function test_ajax_rebuild_payload_and_failure(): void {
+        if (!function_exists('intersoccer_rr_repair_block_legacy_ajax')) {
+            require_once dirname(__DIR__, 2) . '/includes/repair-contract.php';
+        }
         $builder = Mockery::mock(RosterBuilder::class);
-        $builder->shouldReceive('buildRosters')->once()->andReturn([
-            'orders_processed' => 2,
-            'rosters_created' => 0,
-            'errors' => [],
-            'age_mismatches' => [['order_id' => 1, 'order_item_id' => 11, 'age_group' => '3-5y', 'age_at_start' => 7]],
-            'not_checked' => ['count' => 1, 'order_item_ids' => [12]],
-        ]);
-        $handler = new RosterAjaxHandler(Mockery::mock(Logger::class)->shouldIgnoreMissing(), Mockery::mock(RosterRepository::class), $builder);
+        $builder->shouldReceive('buildRosters')->never();
+        $handler = new RosterAjaxHandler(
+            Mockery::mock(Logger::class)->shouldIgnoreMissing(),
+            Mockery::mock(RosterRepository::class),
+            $builder
+        );
 
-        ob_start();
-        $handler->handleRebuildRosters();
-        $json = json_decode((string) ob_get_clean(), true);
-
-        $this->assertTrue($json['success']);
-        $this->assertSame(11, $json['data']['age_mismatches'][0]['order_item_id']);
-        $this->assertSame(1, $json['data']['not_checked']['count']);
-        $this->assertStringContainsString('Age outside group: 1', $json['data']['message']);
-
-        $failing = Mockery::mock(RosterBuilder::class);
-        $failing->shouldReceive('buildRosters')->once()->andReturn(['rebuild_failed' => true, 'errors' => ['x']]);
-        $handler2 = new RosterAjaxHandler(Mockery::mock(Logger::class)->shouldIgnoreMissing(), Mockery::mock(RosterRepository::class), $failing);
         $GLOBALS['intersoccer_test_json_error_throws'] = true;
-        // The test wp_send_json_error echoes then throws (production exits there). The handler's own catch
-        // echoes a second error object, so read the first JSON object only.
         ob_start();
         try {
-            $handler2->handleRebuildRosters();
+            $handler->handleRebuildRosters();
         } catch (\RuntimeException $e) {
-            // expected
+            // test wp_send_json_error may throw after echoing
         }
         $out = (string) ob_get_clean();
         $cut = strpos($out, '}{"success"');
-        $first = json_decode($cut === false ? $out : substr($out, 0, $cut + 1), true);
-        $this->assertStringNotContainsString('"success":true', $out, 'no success payload after a failed rebuild');
-        $this->assertFalse($first['success']);
-        $this->assertStringContainsString('no roster rows were changed', $first['data']['message']);
+        $json = json_decode($cut === false ? $out : substr($out, 0, $cut + 1), true);
+
+        $this->assertIsArray($json);
+        $this->assertFalse($json['success']);
+        $this->assertStringContainsString('not available in admin', (string) ($json['data']['message'] ?? ''));
+        $this->assertStringNotContainsString('"success":true', $out);
     }
 }

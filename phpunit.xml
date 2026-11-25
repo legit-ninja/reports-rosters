@@ -81,6 +81,7 @@
             <file>tests/Reports/SeasonRenameSignatureReconcileTest.php</file>
             <file>tests/Reports/ReconcileOrdersCliLoadingTest.php</file>
             <file>tests/Reports/SeasonRenameReconcileAdminTest.php</file>
+            <file>tests/Reports/AdvancedToolsContractTest.php</file>
             <file>tests/Reports/CanonicalOrderMetaPreferenceTest.php</file>
             <file>tests/Reports/DistressedVariationIdsTest.php</file>
             <file>tests/Reports/PlayerCampStatusTest.php</file>
