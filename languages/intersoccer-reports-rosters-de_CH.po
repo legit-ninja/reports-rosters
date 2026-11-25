@@ -497,8 +497,9 @@ msgid "No data available for export with current filters."
 msgstr ""
 
 #: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:657
+#, fuzzy
 msgid "Order ID"
-msgstr ""
+msgstr "Bestell-ID"
 
 #: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/reports.php:660
 msgid "Total Discount (CHF)"
@@ -614,8 +615,9 @@ msgid "Perform database upgrades or maintenance tasks."
 msgstr ""
 
 #: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/advanced.php:29
+#, fuzzy
 msgid "Upgrade Database"
-msgstr ""
+msgstr "Datenbank aktualisieren"
 
 #: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/advanced.php:29
 msgid ""
@@ -647,8 +649,9 @@ msgstr ""
 #: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:944
 #: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:1747
 #: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:1911
+#, fuzzy
 msgid "Reconcile Rosters"
-msgstr ""
+msgstr "Listen synchronisieren"
 
 #: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/advanced.php:46
 msgid ""
@@ -1886,3 +1889,488 @@ msgstr "Auszufüllende Bestellpositionsdetails"
 msgid "Roster rows to set aside"
 msgstr "Zurückzustellende Listenzeilen"
 
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Runs pending schema migrations. Shop-wide. No rollback. Apply is refused when no migration step is pending."
+msgstr "Führt ausstehende Schema-Migrationen aus. Shopweit. Kein Rollback. Die Anwendung wird abgelehnt, wenn keine Migrations-Schritt ausstehend ist."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Syncs roster rows for the order IDs or product IDs you enter. A date range alone is shop-wide and requires GLOBAL. Dates filter that shop-wide run. Default does not delete roster rows. order-sync: no rollback. Use Season rename repair when the work is a renamed season."
+msgstr "Synchronisiert die Listenzeilen für die angegebenen Bestell-IDs oder Produkt-IDs. Ein einzelner Datumsbereich ist shopweit und erfordert GLOBAL. Die Datumsfilterung betrifft diesen shopweiten Vorgang. Der Standardwert löscht keine Listenzeilen. order-sync: kein Rollback. Verwenden Sie die Saisonumbenennungsreparatur, wenn der Arbeit eine umbenannte Saison ist."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Order date from"
+msgstr "Bestelldatum von"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Order date to"
+msgstr "Bestelldatum bis"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Order IDs"
+msgstr "Bestell-IDs"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Product IDs"
+msgstr "Produkt-IDs"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Normalize Roster Language (EN)"
+msgstr "Sprache der Liste normalisieren (EN)"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Rewrites event columns and linked order-line event metadata that are not already English. Player fields are not changed. Shop-wide. Apply is refused when more rows would change than the backup limit."
+msgstr "Schreibt die Ereignisspalten und die verlinkten Bestellzeilen-Ereignismetadaten neu, die nicht bereits in Englisch sind. Spielerfelder werden nicht geändert. Shopweit. Die Anwendung wird abgelehnt, wenn mehr Zeilen geändert werden als der Sicherungslimit."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Sync All Placeholders"
+msgstr "Alle Platzhalter synchronisieren"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Financial Attribution Backfill"
+msgstr "Finanzielle Zuordnung nachziehen"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Start date"
+msgstr "Startdatum"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Batch size"
+msgstr "Batchgröße"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Fix Issues (Safe)"
+msgstr "Probleme beheben (sicher)"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Preview lists the safe-fix counts from diagnostics for the year or order you enter. Leave both empty only for a shop-wide run (GLOBAL). No rollback."
+msgstr "Vorschau zeigt die Anzahl sicherer Behebungen anhand der Diagnose für das Jahr oder die Bestellung, die Sie eingeben. Lassen Sie beide Felder leer, um einen shopweiten Vorgang (GLOBAL) durchzuführen. Kein Rollback."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Year"
+msgstr "Jahr"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Rebuild selected signatures"
+msgstr "Ausgewählte Signaturen neu berechnen"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Recomputes event_signature for the roster row IDs you list. A shop-wide signature rebuild is not available."
+msgstr "Rechne die event_signature neu für die ausgewählten Listenzeilen-IDs. Eine shopweite Signaturenneuberechnung ist nicht verfügbar."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Roster row IDs"
+msgstr "Listenzeilen-IDs"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Merge signatures"
+msgstr "Signaturen zusammenführen"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Rewrites event_signature from the source value to the target value. Scoped to those two signatures. Apply is refused when the source has more rows than the backup limit."
+msgstr "Schreibt die event_signature von der Quellwerte auf den Zielwert um. Gesteuert durch diese beiden Signaturen. Die Anwendung wird abgelehnt, wenn die Quelle mehr Zeilen hat als der Sicherungslimit."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Source signature"
+msgstr "Quell-Signatur"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Target signature"
+msgstr "Ziel-Signatur"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Repair Day Presence"
+msgstr "Reparatur der Tagesanwesenheit"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Rewrites day_presence for one event signature. Opened from a roster, the signature is filled in. The write still happens on this page."
+msgstr "Überschreibt day_presence für eine einzelne Ereignissignatur. Wenn von einer Liste geöffnet wird, wird die Zeichenkette ausgefüllt. Die Schreibaktion findet auf dieser Seite statt."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Event signature"
+msgstr "Ereignissignatur"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Season rename repair is unavailable."
+msgstr "Die Reparatur des Namensänderung der Saison ist nicht verfügbar."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Unknown repair."
+msgstr "Unbekannte Reparatur."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Add event signature and placeholder columns."
+msgstr "Fügt die Ereignissignatur und Platzhalterspalten hinzu."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Add the event completed column."
+msgstr "Fügt die Spalte „Veranstaltung abgeschlossen“ hinzu."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Set roster start and end date defaults to empty."
+msgstr "Setzt die Standardwerte für die Start- und Enddatum der Liste auf leer."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Clear legacy 1970-01-01 roster dates."
+msgstr "Löscht veraltete Datumswerte der Liste vom 1. Januar 1970."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Widen event type and time columns."
+msgstr "Erweitert die Spalten für Veranstaltungsart und Zeit."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "no rollback"
+msgstr "kein Rollback"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "No database upgrades are pending. Apply was not run."
+msgstr "Es gibt keine ausstehenden Datenbankaktualisierungen. Die Anwendung wurde nicht ausgeführt."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "No pending migration steps. no rollback."
+msgstr "Es gibt keine ausstehenden Migrationsstufen. Kein Rollback."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy, php-format
+msgid "Pending migration steps: %s. no rollback. Nothing was written."
+msgstr "Ausstehende Migrationsstufen: %s. Kein Rollback. Es wurde nichts geschrieben."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Database upgrade failed."
+msgstr "Die Datenbankaktualisierung ist fehlgeschlagen."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Database upgrade finished. no rollback."
+msgstr "Die Datenbankaktualisierung ist abgeschlossen. Kein Rollback."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Database upgrade failed. no rollback."
+msgstr "Die Datenbankaktualisierung ist fehlgeschlagen. Kein Rollback."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Roster reconcile could not be loaded."
+msgstr "Der Listenabgleich konnte nicht geladen werden."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Preview could not list every row that would be deleted. Apply was not run."
+msgstr "Die Vorschau konnte nicht alle zu löschenden Zeilen auflisten. Die Anwendung wurde nicht ausgeführt."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Deletes were not fully previewed. order-sync: no rollback."
+msgstr "Die Löschungen wurden nicht vollständig vorgesehen. order-sync: Kein Rollback."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy, php-format
+msgid "Roster rows that would change: %1$d. Deletes: %2$d. order-sync: no rollback."
+msgstr "Zeilen der Liste, die geändert werden: %1$d. Löschungen: %2$d. order-sync: Kein Rollback."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Nothing was written."
+msgstr "Es wurde nichts geschrieben."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Roster reconcile failed."
+msgstr "Der Listenabgleich ist fehlgeschlagen."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy, php-format
+msgid "Updated %1$d roster rows. Deletes: %2$d. order-sync: no rollback."
+msgstr "%1$d Zeilen der Liste wurden aktualisiert. Löschungen: %2$d. order-sync: Kein Rollback."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy, php-format
+msgid "Preview: %d roster rows or order-line values would change. Nothing was written."
+msgstr "Vorschau: %d Zeilen der Liste oder Bestellzeilenwerte würden geändert werden. Es wurde nichts geschrieben."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy, php-format
+msgid "Normalized %d roster rows or order-line values."
+msgstr "%d Zeilen der Liste oder Bestellzeilenwerte wurden normalisiert."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy, php-format
+msgid "Preview: %d published variable products. Nothing was written."
+msgstr "Vorschau: %d veröffentlichte variante Produkte. Es wurde nichts geschrieben."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy, php-format
+msgid "Placeholders created: %1$d. Updated: %2$d."
+msgstr "Platzhalter erstellt: %1$d. Aktualisiert: %2$d."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Financial attribution is unavailable."
+msgstr "Die finanzielle Zuordnung ist nicht verfügbar."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy, php-format
+msgid "Dry run: %d orders would be updated. Nothing was written."
+msgstr "Testlauf: %d Bestellungen würden aktualisiert werden. Es wurde nichts geschrieben."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy, php-format
+msgid "Applied financial attribution to %d orders."
+msgstr "Die finanzielle Zuordnung wurde auf %d Bestellungen angewendet."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Safe fix is unavailable."
+msgstr "Sicherer Fix ist nicht verfügbar."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Enter at least one roster row ID. A shop-wide signature rebuild is not available."
+msgstr "Geben Sie mindestens eine ID einer Listezeile ein. Eine shopweite Signaturneuerstellung ist nicht verfügbar."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy, php-format
+msgid "Rebuilt signatures on %d rows."
+msgstr "Signatur auf %d Zeilen neu gebaut."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Source and target signatures must differ and be non-empty."
+msgstr "Quell- und Ziel-Signaturen müssen sich unterscheiden und nicht leer sein."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy, php-format
+msgid "Preview: %d rows would move to the target signature. Nothing was written."
+msgstr "Vorschau: %d Zeilen würden zur Ziel-Signatur verschoben werden. Es wurde nichts geschrieben."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy, php-format
+msgid "Updated %d roster rows."
+msgstr "%d Listezeilen wurden aktualisiert."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Enter an event signature."
+msgstr "Geben Sie eine Ereignissignatur ein."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy, php-format
+msgid "Preview: %d rows would change. Nothing was written."
+msgstr "Vorschau: %d Zeilen würden geändert werden. Es wurde nichts geschrieben."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy, php-format
+msgid "Updated day presence on %d rows."
+msgstr "Tagesanwesenheit auf %d Zeilen aktualisiert."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Security check failed."
+msgstr "Sicherheitsprüfung fehlgeschlagen."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Preview finished. Nothing was written."
+msgstr "Vorschau abgeschlossen. Es wurde nichts geschrieben."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Unknown action."
+msgstr "Unbekannte Aktion."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "The change set no longer matches the Preview. Run Preview again."
+msgstr "Der Änderungssatz stimmt nicht mehr mit der Vorschau überein. Führen Sie die Vorschau erneut aus."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Apply finished."
+msgstr "Anwenden abgeschlossen."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Type APPLY to confirm."
+msgstr "Geben Sie APPLY ein, um zu bestätigen."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Backup file was not found."
+msgstr "Sicherungsdatei wurde nicht gefunden."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy, php-format
+msgid "Rollback restored %1$d rows. Conflicts left untouched: %2$d."
+msgstr "Rollback restaurierte %1$d Zeilen. Konflikte wurden unberührt: %2$d."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Run log"
+msgstr "Laufprotokoll"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Rollback"
+msgstr "Rollback"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Confirm"
+msgstr "Bestätigen"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Type APPLY to confirm Apply. Shop-wide runs also need GLOBAL in the next field. Deletes, when a tool lists them, need DELETE."
+msgstr "Geben Sie APPLY ein, um die Anwendung zu bestätigen. Shopweite Ausführungen benötigen auch GLOBAL im nächsten Feld. Lässt sich ein Tool auf Listenzeilen löschen, benötigen diese DELETE."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Shop-wide confirm"
+msgstr "Shopweite Bestätigung"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Delete confirm"
+msgstr "Löschbestätigung"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Preview (dry run)"
+msgstr "Vorschau (Testlauf)"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Apply"
+msgstr "Anwenden"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "No repair runs yet."
+msgstr "Bislang wurden keine Reparaturausführungen durchgeführt."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "When"
+msgstr "Wann"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "User"
+msgstr "Benutzer"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Tool"
+msgstr "Werkzeug"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Mode"
+msgstr "Modus"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Scope"
+msgstr "Bereich"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Counts"
+msgstr "Zahlen"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Backup"
+msgstr "Sicherung"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Peak memory (MB)"
+msgstr "Maximaler Speicher (MB)"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "No backups yet."
+msgstr "Bislang wurden keine Sicherungen durchgeführt."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Type APPLY to roll back"
+msgstr "Geben Sie APPLY ein, um einen Rollback durchzuführen"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "You do not have permission to run repairs."
+msgstr "Sie haben keine Berechtigung, Reparaturen durchzuführen."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Run Preview before Apply."
+msgstr "Führen Sie eine Vorschau durch, bevor Sie anwenden."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "This scope is shop-wide. Type GLOBAL as well as APPLY."
+msgstr "Dieser Bereich ist shopweit. Geben Sie auch GLOBAL und APPLY ein."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Preview includes row deletes. Type DELETE to confirm those deletes."
+msgstr "Die Vorschau beinhaltet Zeilensätze, die gelöscht werden. Geben Sie DELETE ein, um diese Löschungen zu bestätigen."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Preview has no changes. Apply was not run."
+msgstr "Die Vorschau enthält keine Änderungen. Die Anwendung wurde nicht durchgeführt."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "This repair is not available in admin."
+msgstr "Diese Reparatur ist im Admin nicht verfügbar."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "This repair runs only from Advanced tools."
+msgstr "Diese Reparatur kann nur über fortgeschrittene Werkzeuge ausgeführt werden."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy, php-format
+msgid "This change set has %1$d rows, above the backup limit of %2$d. Narrow the scope and run Preview again. Apply was not run."
+msgstr "Dieses Änderungssatz hat %1$d Zeilen, die den Sicherungslimit von %2$d überschreiten. Verengen Sie den Bereich und führen Sie die Vorschau erneut durch. Die Anwendung wurde nicht durchgeführt."

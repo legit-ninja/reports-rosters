@@ -137,11 +137,16 @@ class AdvancedToolsRepairTest extends TestCase {
             require_once dirname(__DIR__, 2) . '/includes/advanced-tools-admin.php';
         }
         intersoccer_rr_repair_reset_state();
-        $this->backupDir = sys_get_temp_dir() . '/rr-repair-' . getmypid() . '-' . uniqid('', true);
+        $this->backupDir = sys_get_temp_dir() . '/rr-repair-' . getmypid() . '-' . uniqid('', true) . '/intersoccer-rr-repair-backups';
         $GLOBALS['intersoccer_rr_test_backup_dir'] = $this->backupDir;
         $GLOBALS['intersoccer_rr_test_writes'] = 0;
         $GLOBALS['intersoccer_test_roles'] = [];
-        unset($GLOBALS['intersoccer_rr_test_tool_runner'], $GLOBALS['intersoccer_rr_test_nonce_valid']);
+        unset(
+            $GLOBALS['intersoccer_rr_test_tool_runner'],
+            $GLOBALS['intersoccer_rr_test_nonce_valid'],
+            $GLOBALS['intersoccer_rr_test_pv_active'],
+            $GLOBALS['intersoccer_rr_test_backup_known_dirs']
+        );
         $this->previousWpdb = $GLOBALS['wpdb'] ?? null;
         $_POST = [];
         $_GET = [];
@@ -159,6 +164,8 @@ class AdvancedToolsRepairTest extends TestCase {
         unset(
             $GLOBALS['intersoccer_rr_test_tool_runner'],
             $GLOBALS['intersoccer_rr_test_nonce_valid'],
+            $GLOBALS['intersoccer_rr_test_pv_active'],
+            $GLOBALS['intersoccer_rr_test_backup_known_dirs'],
             $GLOBALS['intersoccer_test_current_user_caps'],
             $GLOBALS['intersoccer_test_current_user']
         );
@@ -926,11 +933,12 @@ class AdvancedToolsRepairTest extends TestCase {
         $this->assertStringContainsString('InterSoccer Advanced tools: Rosters & reports', $menu);
         $this->assertStringContainsString("'intersoccer-advanced-tools'", $menu);
 
-        $content = sys_get_temp_dir() . '/rr-wp-content-' . uniqid('', true);
-        mkdir($content);
-        $outside = intersoccer_rr_repair_backup_dir_choose($content);
-        $this->assertSame(dirname($content) . '/intersoccer-rr-repair-backups', $outside);
-        $fallback = intersoccer_rr_repair_backup_dir_choose('/proc/rr-missing-content/wp-content');
+        $root = sys_get_temp_dir() . '/rr-wp-root-' . uniqid('', true);
+        mkdir($root);
+        $outside = intersoccer_rr_repair_backup_dir_choose($root);
+        $this->assertSame(dirname($root) . '/intersoccer-rr-repair-backups', $outside);
+        rmdir($root);
+        $fallback = intersoccer_rr_repair_backup_dir_choose('/proc/rr-missing-root');
         $this->assertStringContainsString('intersoccer-rr-repair-backups', $fallback);
         $this->assertStringNotContainsString('/proc/', $fallback);
 
@@ -954,6 +962,111 @@ class AdvancedToolsRepairTest extends TestCase {
         $this->assertStringContainsString('Roster rows to insert: 2', $log);
         $this->assertStringContainsString('Order-line details to fill in: 1', $log);
         $this->assertStringContainsString('Roster rows to set aside: 1', $log);
+    }
+
+    public function test_read_backup_finds_file_after_directory_flip(): void {
+        $base = sys_get_temp_dir() . '/rr-flip-' . uniqid('', true);
+        $dir_a = $base . '/a/intersoccer-rr-repair-backups';
+        $dir_b = $base . '/b/intersoccer-rr-repair-backups';
+        $dir_c = $base . '/c/intersoccer-rr-repair-backups';
+        mkdir($dir_a, 0755, true);
+        mkdir($dir_b, 0755, true);
+        mkdir($dir_c, 0755, true);
+        $GLOBALS['intersoccer_rr_test_backup_known_dirs'] = [$dir_a, $dir_b];
+        $GLOBALS['intersoccer_rr_test_backup_dir'] = $dir_a;
+
+        $name = intersoccer_rr_repair_write_backup('normalize_language', 5, [
+            ['id' => 1, 'before' => ['city' => 'Geneve'], 'after' => ['city' => 'Geneva']],
+        ]);
+        $index = intersoccer_rr_repair_state_get('intersoccer_rr_repair_backup_index', []);
+        $this->assertSame($dir_a, $index[0]['dir']);
+        $payload = json_decode((string) file_get_contents($dir_a . '/' . $name), true);
+        $this->assertSame($dir_a, $payload['dir']);
+
+        $GLOBALS['intersoccer_rr_test_backup_dir'] = $dir_b;
+        $via_recorded = intersoccer_rr_repair_read_backup($name);
+        $this->assertNotNull($via_recorded);
+        $this->assertSame('Geneve', $via_recorded['rows'][0]['before']['city']);
+
+        $db = new AdvancedToolsRepairWpdb();
+        $row = $this->rosterRow(1, 0, 'Monday');
+        $row['city'] = 'Geneva';
+        $db->rows = [$row];
+        $GLOBALS['wpdb'] = $db;
+        $rolled = $this->postTool('rollback', 'rollback', [
+            'intersoccer_rr_repair_phrase' => 'APPLY',
+            'intersoccer_rr_repair_backup' => $name,
+        ]);
+        $this->assertStringContainsString('Conflicts left untouched: 0', $rolled['message']);
+        $this->assertSame('Geneve', $db->rows[0]['city']);
+
+        $index[0]['dir'] = '';
+        intersoccer_rr_repair_state_set('intersoccer_rr_repair_backup_index', $index);
+        $GLOBALS['intersoccer_rr_test_backup_dir'] = $dir_c;
+        $via_fallback = intersoccer_rr_repair_read_backup($name);
+        $this->assertNotNull($via_fallback);
+        $this->assertSame('Geneve', $via_fallback['rows'][0]['before']['city']);
+        $this->assertFileDoesNotExist($dir_c . '/' . $name);
+
+        foreach ([$dir_a, $dir_b, $dir_c] as $dir) {
+            foreach (glob($dir . '/*') ?: [] as $file) {
+                if (is_file($file)) {
+                    unlink($file);
+                }
+            }
+            @rmdir($dir);
+            @rmdir(dirname($dir));
+        }
+        @rmdir($base);
+    }
+
+    public function test_uninstall_deletes_backup_files_and_leaves_other_uploads(): void {
+        $base = sys_get_temp_dir() . '/rr-uninstall-' . uniqid('', true);
+        $preferred = $base . '/outside/intersoccer-rr-repair-backups';
+        $fallback = $base . '/uploads/intersoccer-rr-repair-backups';
+        mkdir($preferred, 0755, true);
+        mkdir($fallback, 0755, true);
+        $keep = $base . '/uploads/customer-export.csv';
+        file_put_contents($keep, 'keep');
+        $GLOBALS['intersoccer_rr_test_backup_known_dirs'] = [$preferred, $fallback];
+        $GLOBALS['intersoccer_rr_test_backup_dir'] = $preferred;
+        $name = intersoccer_rr_repair_write_backup('reconcile_rosters', 8, [
+            ['id' => 3, 'before' => ['season' => 'A'], 'after' => ['season' => 'B']],
+        ]);
+        file_put_contents($fallback . '/older-backup.json', '{"rows":[]}');
+        $this->assertFileExists($preferred . '/' . $name);
+        $this->assertFileExists($preferred . '/.htaccess');
+
+        intersoccer_rr_repair_uninstall();
+
+        $this->assertFileDoesNotExist($preferred . '/' . $name);
+        $this->assertFileDoesNotExist($fallback . '/older-backup.json');
+        $this->assertDirectoryDoesNotExist($preferred);
+        $this->assertDirectoryDoesNotExist($fallback);
+        $this->assertFileExists($keep);
+        @rmdir($base . '/outside');
+        @rmdir($base . '/uploads');
+        @rmdir($base);
+    }
+
+    public function test_uninstall_removes_repair_cap_only_when_product_variations_is_inactive(): void {
+        $GLOBALS['intersoccer_test_roles'] = [];
+        intersoccer_rr_repair_grant_administrator_cap();
+        $admin = get_role('administrator');
+        $shop = get_role('shop_manager');
+        $shop->add_cap('intersoccer_run_repairs');
+        $this->assertTrue($admin->has_cap('intersoccer_run_repairs'));
+        $this->assertTrue($shop->has_cap('intersoccer_run_repairs'));
+
+        $GLOBALS['intersoccer_rr_test_pv_active'] = true;
+        intersoccer_rr_repair_uninstall();
+        $this->assertTrue($admin->has_cap('intersoccer_run_repairs'));
+        $this->assertTrue($shop->has_cap('intersoccer_run_repairs'));
+
+        $GLOBALS['intersoccer_rr_test_pv_active'] = false;
+        intersoccer_rr_repair_uninstall();
+        $this->assertFalse($admin->has_cap('intersoccer_run_repairs'));
+        $this->assertFalse($shop->has_cap('intersoccer_run_repairs'));
     }
 
     private function rosterRow(int $id, int $order_item_id, string $course_day): array {

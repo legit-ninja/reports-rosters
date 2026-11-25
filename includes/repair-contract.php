@@ -300,36 +300,84 @@ if (!function_exists('intersoccer_rr_repair_backup_uploads_dir')) {
     }
 }
 
+if (!function_exists('intersoccer_rr_repair_backup_dir_is_plugin')) {
+    /**
+     * True when the path is this plugin's backup directory, not a parent uploads folder.
+     */
+    function intersoccer_rr_repair_backup_dir_is_plugin(string $dir): bool {
+        $dir = rtrim(str_replace('\\', '/', $dir), '/');
+        if ($dir === '' || $dir === '/' || $dir === '.') {
+            return false;
+        }
+        return basename($dir) === 'intersoccer-rr-repair-backups';
+    }
+}
+
 if (!function_exists('intersoccer_rr_repair_backup_dir_choose')) {
     /**
      * Prefer a directory outside the web root.
      *
      * Backups store roster fields, which can include personal data. The
-     * preferred path is a sibling of the WordPress content directory:
-     * dirname(WP_CONTENT_DIR) . '/intersoccer-rr-repair-backups'. That sits
-     * beside wp-content, outside the public tree when content lives inside
-     * the site directory. When that parent is missing or not writable, the
-     * fallback is the uploads directory from
+     * preferred path is the parent of the WordPress root:
+     * dirname(ABSPATH) . '/intersoccer-rr-repair-backups'. When that parent
+     * is missing or not writable, the fallback is the uploads directory from
      * intersoccer_rr_repair_backup_uploads_dir(). The caller still writes
      * index.php and a deny-web .htaccess, and each file name keeps its long
      * random suffix.
      *
-     * @param string|null $content_dir WordPress content directory. Null uses WP_CONTENT_DIR.
+     * @param string|null $abspath WordPress root. Null uses ABSPATH.
      */
-    function intersoccer_rr_repair_backup_dir_choose(?string $content_dir = null): string {
+    function intersoccer_rr_repair_backup_dir_choose(?string $abspath = null): string {
         $fallback = intersoccer_rr_repair_backup_uploads_dir();
-        if ($content_dir === null && defined('WP_CONTENT_DIR')) {
-            $content_dir = (string) WP_CONTENT_DIR;
+        if ($abspath === null && defined('ABSPATH')) {
+            $abspath = (string) ABSPATH;
         }
-        $content_dir = rtrim((string) $content_dir, '/');
-        if ($content_dir === '') {
+        $abspath = rtrim(str_replace('\\', '/', (string) $abspath), '/');
+        if ($abspath === '') {
             return $fallback;
         }
-        $parent = dirname($content_dir);
-        if ($parent === '' || $parent === '.' || $parent === $content_dir || !is_dir($parent) || !is_writable($parent)) {
+        $parent = dirname($abspath);
+        if ($parent === '' || $parent === '.' || $parent === '/' || $parent === $abspath || !is_dir($parent) || !is_writable($parent)) {
             return $fallback;
         }
         return $parent . '/intersoccer-rr-repair-backups';
+    }
+}
+
+if (!function_exists('intersoccer_rr_repair_backup_known_dirs')) {
+    /**
+     * Outside-root directory and the uploads fallback. Both are searched even
+     * when the current write directory is only one of them.
+     *
+     * @return string[]
+     */
+    function intersoccer_rr_repair_backup_known_dirs(): array {
+        if (isset($GLOBALS['intersoccer_rr_test_backup_known_dirs']) && is_array($GLOBALS['intersoccer_rr_test_backup_known_dirs'])) {
+            $dirs = [];
+            foreach ($GLOBALS['intersoccer_rr_test_backup_known_dirs'] as $dir) {
+                if (!is_string($dir) || !intersoccer_rr_repair_backup_dir_is_plugin($dir)) {
+                    continue;
+                }
+                $dir = rtrim(str_replace('\\', '/', $dir), '/');
+                if (!in_array($dir, $dirs, true)) {
+                    $dirs[] = $dir;
+                }
+            }
+            return $dirs;
+        }
+        $dirs = [];
+        if (defined('ABSPATH')) {
+            $root = rtrim(str_replace('\\', '/', (string) ABSPATH), '/');
+            $parent = $root === '' ? '' : dirname($root);
+            if ($parent !== '' && $parent !== '.' && $parent !== '/' && $parent !== $root) {
+                $dirs[] = $parent . '/intersoccer-rr-repair-backups';
+            }
+        }
+        $fallback = rtrim(str_replace('\\', '/', intersoccer_rr_repair_backup_uploads_dir()), '/');
+        if (!in_array($fallback, $dirs, true)) {
+            $dirs[] = $fallback;
+        }
+        return $dirs;
     }
 }
 
@@ -368,10 +416,12 @@ if (!function_exists('intersoccer_rr_repair_write_backup')) {
     function intersoccer_rr_repair_write_backup(string $tool, int $user_id, array $rows): string {
         $dir = intersoccer_rr_repair_backup_dir();
         $name = sanitize_key($tool) . '-' . gmdate('Ymd-His') . '-' . $user_id . '-' . bin2hex(random_bytes(16)) . '.json';
+        $dir = rtrim(str_replace('\\', '/', $dir), '/');
         $payload = [
             'tool' => sanitize_key($tool),
             'user_id' => $user_id,
             'created_at' => gmdate('c'),
+            'dir' => $dir,
             'rows' => $rows,
         ];
         file_put_contents($dir . '/' . $name, (string) wp_json_encode($payload));
@@ -381,6 +431,7 @@ if (!function_exists('intersoccer_rr_repair_write_backup')) {
         }
         $index[] = [
             'file' => $name,
+            'dir' => $dir,
             'tool' => sanitize_key($tool),
             'user_id' => $user_id,
             'created_at' => $payload['created_at'],
@@ -399,23 +450,82 @@ if (!function_exists('intersoccer_rr_repair_replace_backup_rows')) {
         if (!preg_match('/^[a-z0-9._-]+\.json$/', $filename)) {
             return;
         }
-        $data = intersoccer_rr_repair_read_backup($filename);
-        if ($data === null) {
+        $path = intersoccer_rr_repair_backup_locate($filename);
+        if ($path === null) {
+            return;
+        }
+        $data = json_decode((string) file_get_contents($path), true);
+        if (!is_array($data)) {
             return;
         }
         $data['rows'] = $rows;
-        file_put_contents(intersoccer_rr_repair_backup_dir() . '/' . $filename, (string) wp_json_encode($data));
+        file_put_contents($path, (string) wp_json_encode($data));
+    }
+}
+
+if (!function_exists('intersoccer_rr_repair_backup_candidate_dirs')) {
+    /**
+     * Recorded directory first, then both known locations.
+     *
+     * @return string[]
+     */
+    function intersoccer_rr_repair_backup_candidate_dirs(string $filename): array {
+        $dirs = [];
+        $add = static function (string $dir) use (&$dirs): void {
+            $dir = rtrim(str_replace('\\', '/', $dir), '/');
+            if (!intersoccer_rr_repair_backup_dir_is_plugin($dir) || in_array($dir, $dirs, true)) {
+                return;
+            }
+            $dirs[] = $dir;
+        };
+        $index = intersoccer_rr_repair_state_get('intersoccer_rr_repair_backup_index', []);
+        if (is_array($index)) {
+            foreach ($index as $entry) {
+                if (!is_array($entry) || (string) ($entry['file'] ?? '') !== $filename) {
+                    continue;
+                }
+                $add((string) ($entry['dir'] ?? ''));
+                break;
+            }
+        }
+        foreach (intersoccer_rr_repair_backup_known_dirs() as $dir) {
+            $add($dir);
+        }
+        return $dirs;
+    }
+}
+
+if (!function_exists('intersoccer_rr_repair_backup_locate')) {
+    /**
+     * Absolute path of a backup file, or null when it is not in the recorded
+     * directory, either known location, or the current backup directory.
+     */
+    function intersoccer_rr_repair_backup_locate(string $filename): ?string {
+        $filename = basename($filename);
+        if (!preg_match('/^[a-z0-9._-]+\.json$/', $filename)) {
+            return null;
+        }
+        foreach (intersoccer_rr_repair_backup_candidate_dirs($filename) as $dir) {
+            $path = $dir . '/' . $filename;
+            if (is_file($path) && is_readable($path)) {
+                return $path;
+            }
+        }
+        $current = rtrim(str_replace('\\', '/', intersoccer_rr_repair_backup_dir()), '/');
+        if (intersoccer_rr_repair_backup_dir_is_plugin($current)) {
+            $path = $current . '/' . $filename;
+            if (is_file($path) && is_readable($path)) {
+                return $path;
+            }
+        }
+        return null;
     }
 }
 
 if (!function_exists('intersoccer_rr_repair_read_backup')) {
     function intersoccer_rr_repair_read_backup(string $filename): ?array {
-        $filename = basename($filename);
-        if (!preg_match('/^[a-z0-9._-]+\.json$/', $filename)) {
-            return null;
-        }
-        $path = intersoccer_rr_repair_backup_dir() . '/' . $filename;
-        if (!is_readable($path)) {
+        $path = intersoccer_rr_repair_backup_locate($filename);
+        if ($path === null) {
             return null;
         }
         $data = json_decode((string) file_get_contents($path), true);
@@ -593,25 +703,121 @@ if (!function_exists('intersoccer_rr_repair_tool_supports_rollback')) {
     }
 }
 
-if (!function_exists('intersoccer_rr_repair_uninstall')) {
+if (!function_exists('intersoccer_rr_repair_product_variations_active')) {
     /**
-     * Remove the repair capability and repair options. Roster tables stay.
+     * Product Variations shares intersoccer_run_repairs. Leave the cap in place
+     * while that plugin is active.
      */
-    function intersoccer_rr_repair_uninstall(): void {
-        $names = ['administrator', 'shop_manager', 'coach'];
-        if (isset($GLOBALS['intersoccer_test_roles']) && is_array($GLOBALS['intersoccer_test_roles'])) {
-            $names = array_values(array_unique(array_merge($names, array_keys($GLOBALS['intersoccer_test_roles']))));
+    function intersoccer_rr_repair_product_variations_active(): bool {
+        if (array_key_exists('intersoccer_rr_test_pv_active', $GLOBALS)) {
+            return (bool) $GLOBALS['intersoccer_rr_test_pv_active'];
         }
-        if (function_exists('wp_roles')) {
-            $wp_roles = wp_roles();
-            if (is_object($wp_roles) && isset($wp_roles->role_names) && is_array($wp_roles->role_names)) {
-                $names = array_values(array_unique(array_merge($names, array_keys($wp_roles->role_names))));
+        if (function_exists('intersoccer_pv_user_can_run_repairs') || function_exists('intersoccer_pv_repair_uninstall')) {
+            return true;
+        }
+        if (defined('INTERSOCCER_PV_ADVANCED_TOOLS_PAGE') || defined('INTERSOCCER_PV_REPAIR_CAP')) {
+            return true;
+        }
+        if (!function_exists('is_plugin_active') && defined('ABSPATH')) {
+            $plugin_php = rtrim((string) ABSPATH, '/\\') . '/wp-admin/includes/plugin.php';
+            if (is_readable($plugin_php)) {
+                require_once $plugin_php;
             }
         }
-        foreach ($names as $name) {
-            $role = get_role($name);
-            if ($role && method_exists($role, 'remove_cap')) {
-                $role->remove_cap(INTERSOCCER_RR_REPAIR_CAP);
+        if (function_exists('is_plugin_active')) {
+            return is_plugin_active('intersoccer-product-variations/intersoccer-product-variations.php');
+        }
+        return false;
+    }
+}
+
+if (!function_exists('intersoccer_rr_repair_backup_dirs_to_remove')) {
+    /**
+     * This plugin's backup directories only. Never a parent uploads folder.
+     *
+     * @return string[]
+     */
+    function intersoccer_rr_repair_backup_dirs_to_remove(): array {
+        $dirs = intersoccer_rr_repair_backup_known_dirs();
+        if (!empty($GLOBALS['intersoccer_rr_test_backup_dir']) && is_string($GLOBALS['intersoccer_rr_test_backup_dir'])) {
+            $dirs[] = $GLOBALS['intersoccer_rr_test_backup_dir'];
+        }
+        $index = intersoccer_rr_repair_state_get('intersoccer_rr_repair_backup_index', []);
+        if (is_array($index)) {
+            foreach ($index as $entry) {
+                if (is_array($entry)) {
+                    $dirs[] = (string) ($entry['dir'] ?? '');
+                }
+            }
+        }
+        $unique = [];
+        foreach ($dirs as $dir) {
+            if (!is_string($dir)) {
+                continue;
+            }
+            $dir = rtrim(str_replace('\\', '/', $dir), '/');
+            if (!intersoccer_rr_repair_backup_dir_is_plugin($dir) || in_array($dir, $unique, true)) {
+                continue;
+            }
+            $unique[] = $dir;
+        }
+        return $unique;
+    }
+}
+
+if (!function_exists('intersoccer_rr_repair_delete_backup_dir')) {
+    /**
+     * Delete backup files in one plugin backup directory, then the directory.
+     * Nested directories and other uploads files are left in place.
+     */
+    function intersoccer_rr_repair_delete_backup_dir(string $dir): void {
+        $dir = rtrim(str_replace('\\', '/', $dir), '/');
+        if (!intersoccer_rr_repair_backup_dir_is_plugin($dir) || is_link($dir) || !is_dir($dir)) {
+            return;
+        }
+        $items = scandir($dir);
+        if (!is_array($items)) {
+            return;
+        }
+        foreach ($items as $item) {
+            if ($item === '.' || $item === '..') {
+                continue;
+            }
+            $path = $dir . '/' . $item;
+            if (is_link($path) || is_dir($path)) {
+                continue;
+            }
+            if ($item === 'index.php' || $item === '.htaccess' || preg_match('/^[a-z0-9._-]+\.json$/', $item)) {
+                unlink($path);
+            }
+        }
+        @rmdir($dir);
+    }
+}
+
+if (!function_exists('intersoccer_rr_repair_uninstall')) {
+    /**
+     * Remove repair options and this plugin's backup files. Roster tables stay.
+     * The shared repair capability is removed only when Product Variations is inactive.
+     */
+    function intersoccer_rr_repair_uninstall(): void {
+        $backup_dirs = intersoccer_rr_repair_backup_dirs_to_remove();
+        if (!intersoccer_rr_repair_product_variations_active()) {
+            $names = ['administrator', 'shop_manager', 'coach'];
+            if (isset($GLOBALS['intersoccer_test_roles']) && is_array($GLOBALS['intersoccer_test_roles'])) {
+                $names = array_values(array_unique(array_merge($names, array_keys($GLOBALS['intersoccer_test_roles']))));
+            }
+            if (function_exists('wp_roles')) {
+                $wp_roles = wp_roles();
+                if (is_object($wp_roles) && isset($wp_roles->role_names) && is_array($wp_roles->role_names)) {
+                    $names = array_values(array_unique(array_merge($names, array_keys($wp_roles->role_names))));
+                }
+            }
+            foreach ($names as $name) {
+                $role = get_role($name);
+                if ($role && method_exists($role, 'remove_cap')) {
+                    $role->remove_cap(INTERSOCCER_RR_REPAIR_CAP);
+                }
             }
         }
         if (isset($GLOBALS['intersoccer_test_option_store']) && is_array($GLOBALS['intersoccer_test_option_store'])) {
@@ -632,6 +838,9 @@ if (!function_exists('intersoccer_rr_repair_uninstall')) {
         if (isset($wpdb) && isset($wpdb->options) && method_exists($wpdb, 'query') && method_exists($wpdb, 'prepare')) {
             $like = method_exists($wpdb, 'esc_like') ? $wpdb->esc_like('intersoccer_rr_repair_') . '%' : 'intersoccer_rr_repair_%';
             $wpdb->query($wpdb->prepare("DELETE FROM {$wpdb->options} WHERE option_name LIKE %s", $like));
+        }
+        foreach ($backup_dirs as $backup_dir) {
+            intersoccer_rr_repair_delete_backup_dir($backup_dir);
         }
     }
 }
