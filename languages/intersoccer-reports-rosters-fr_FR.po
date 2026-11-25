@@ -6308,8 +6308,8 @@ msgid ""
 "Renamed-seasons mode, with no single season selected, is shop-wide. Type "
 "GLOBAL as well as APPLY."
 msgstr ""
-"Mode des saisons renommées, avec aucune saison sélectionnée, est global. "
-"Tapez aussi GLOBAL et APPLY."
+"Sans saison sélectionnée, le mode Saisons renommées s'applique à tout le "
+"site. Tapez aussi GLOBAL et APPLY."
 
 #: includes/season-rename-reconcile-admin.php:412
 #, fuzzy
