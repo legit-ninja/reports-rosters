@@ -181,53 +181,11 @@ function intersoccer_rosters_reconcile_page_slugs(): array {
 }
 
 /**
- * Run full roster reconciliation from listing-page "Reconcile Rosters" links.
+ * Listing-page GET ?action=reconcile used to write rosters.
+ * It is now a no-op. Repairs run from Advanced tools via POST.
  */
 function intersoccer_rosters_maybe_run_page_reconcile_action(): void {
-    if (!is_admin() || !current_user_can('manage_options')) {
-        return;
-    }
-
-    $action = isset($_GET['action']) ? sanitize_key(wp_unslash((string) $_GET['action'])) : '';
-    if ($action !== 'reconcile') {
-        return;
-    }
-
-    $page = isset($_GET['page']) ? sanitize_key(wp_unslash((string) $_GET['page'])) : '';
-    if ($page === '' || !in_array($page, intersoccer_rosters_reconcile_page_slugs(), true)) {
-        return;
-    }
-
-    if (!isset($_GET['_wpnonce']) || !wp_verify_nonce(sanitize_text_field(wp_unslash((string) $_GET['_wpnonce'])), 'intersoccer_reconcile')) {
-        wp_die(esc_html__('Security check failed.', 'intersoccer-reports-rosters'));
-    }
-
-    $db_file = dirname(__FILE__) . '/db.php';
-    if (is_readable($db_file)) {
-        require_once $db_file;
-    }
-
-    if (!function_exists('intersoccer_reconcile_rosters')) {
-        wp_die(esc_html__('Reconcile is unavailable.', 'intersoccer-reports-rosters'));
-    }
-
-    if (function_exists('wp_raise_memory_limit')) {
-        wp_raise_memory_limit('admin');
-    }
-    if (function_exists('set_time_limit')) {
-        @set_time_limit(0);
-    }
-
-    $result = intersoccer_reconcile_rosters(['delete_obsolete' => true]);
-    $message = isset($result['message']) ? (string) $result['message'] : __('Rosters reconciled.', 'intersoccer-reports-rosters');
-    if (function_exists('intersoccer_rosters_flash_admin_notice')) {
-        intersoccer_rosters_flash_admin_notice($message);
-    }
-
-    if (!headers_sent()) {
-        wp_safe_redirect(admin_url('admin.php?page=' . rawurlencode($page)));
-        exit;
-    }
+    return;
 }
 
 add_action('admin_init', 'intersoccer_rosters_maybe_run_page_reconcile_action', 5);

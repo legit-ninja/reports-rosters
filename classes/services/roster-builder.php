@@ -690,8 +690,9 @@ class RosterBuilder {
             'skip_order_sync' => false,
         ];
         $options = array_merge($defaults, $options);
-        // When a date range or scoped id list is set, do not delete obsolete
-        if (!empty($options['date_from']) || !empty($options['date_to'])
+        // Preview never deletes. A date range or scoped id list never deletes.
+        if (!empty($options['dry_run'])
+            || !empty($options['date_from']) || !empty($options['date_to'])
             || !empty($options['order_ids']) || !empty($options['product_ids'])
         ) {
             $options['delete_obsolete'] = false;

@@ -1645,13 +1645,13 @@ function intersoccer_render_roster_details_page() {
         $repair_event_signature = $event_signature;
     }
 
-    if (current_user_can('manage_options') && !empty($repair_event_signature)) {
-        echo '<div style="margin-top: 10px;">';
-        echo '<button type="button" class="button button-secondary" id="repair-day-presence-btn" data-event-signature="' . esc_attr($repair_event_signature) . '">';
-        echo esc_html__('Repair Day Presence', 'intersoccer-reports-rosters');
-        echo '</button>';
-        echo '<span id="repair-day-presence-result" style="margin-left: 10px;"></span>';
-        echo '</div>';
+    if (current_user_can('intersoccer_run_repairs') && !empty($repair_event_signature)) {
+        $repair_url = admin_url('admin.php?page=intersoccer-advanced-tools&event_signature=' . rawurlencode((string) $repair_event_signature));
+        echo '<p style="margin-top: 10px;">';
+        echo esc_html__('Day presence repairs run from Advanced tools.', 'intersoccer-reports-rosters');
+        echo ' <a class="button button-secondary" href="' . esc_url($repair_url) . '">';
+        echo esc_html__('Open Advanced tools', 'intersoccer-reports-rosters');
+        echo '</a></p>';
     }
     
     // Add CSS for icon buttons
@@ -1794,47 +1794,6 @@ function intersoccer_render_roster_details_page() {
             if (e.key === 'Enter') {
                 e.preventDefault();
             }
-        });
-
-        // Repair day presence handler
-        $(document).on('click', '#repair-day-presence-btn', function(e) {
-            e.preventDefault();
-            var $btn = $(this);
-            var eventSignature = $btn.data('event-signature');
-            var $result = $('#repair-day-presence-result');
-
-            if (!eventSignature) {
-                $result.text('Missing event signature.');
-                return;
-            }
-
-            $btn.prop('disabled', true);
-            $result.text('Repairing...');
-
-            $.ajax({
-                url: typeof ajaxurl !== 'undefined' ? ajaxurl : '<?php echo esc_js(admin_url('admin-ajax.php')); ?>',
-                type: 'POST',
-                dataType: 'json',
-                data: {
-                    action: 'intersoccer_repair_day_presence',
-                    event_signature: eventSignature,
-                    nonce: '<?php echo wp_create_nonce('intersoccer_reports_rosters_nonce'); ?>'
-                },
-                success: function(resp) {
-                    if (resp && resp.success) {
-                        $result.text(resp.data && resp.data.message ? resp.data.message : 'Repair completed.');
-                    } else {
-                        var msg = (resp && resp.data && resp.data.message) ? resp.data.message : 'Repair failed.';
-                        $result.text(msg);
-                    }
-                },
-                error: function() {
-                    $result.text('Repair failed (network/server error).');
-                },
-                complete: function() {
-                    $btn.prop('disabled', false);
-                }
-            });
         });
 
         // Close roster handler (for roster details page)

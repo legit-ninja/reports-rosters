@@ -403,6 +403,15 @@ class MenuManager {
 
         add_submenu_page(
             'intersoccer-reports-rosters',
+            __('Advanced tools', 'intersoccer-reports-rosters'),
+            __('Advanced tools', 'intersoccer-reports-rosters'),
+            'intersoccer_run_repairs',
+            'intersoccer-advanced-tools',
+            [$this, 'render_advanced_tools']
+        );
+
+        add_submenu_page(
+            'intersoccer-reports-rosters',
             __('InterSoccer Settings', 'intersoccer-reports-rosters'),
             __('Settings', 'intersoccer-reports-rosters'),
             'manage_options',
@@ -684,6 +693,15 @@ class MenuManager {
             return;
         }
         wp_die(__('Birthdays page is not available.', 'intersoccer-reports-rosters'));
+    }
+
+    public function render_advanced_tools(): void {
+        $this->require_include('advanced-tools-admin.php');
+        if (function_exists('intersoccer_rr_render_advanced_tools_page')) {
+            intersoccer_rr_render_advanced_tools_page();
+            return;
+        }
+        wp_die(__('Advanced tools are not available.', 'intersoccer-reports-rosters'));
     }
 
     public function render_advanced(): void {

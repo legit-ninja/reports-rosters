@@ -71,11 +71,14 @@ class SeasonRenameReconcileAdminTest extends TestCase {
 
     public function test_page_has_nonce_capability_and_confirm_and_no_global_rebuild(): void {
         $src = $this->src();
-        $this->assertStringContainsString("'manage_woocommerce'", $src);
-        $this->assertStringContainsString("current_user_can('manage_woocommerce')", $src);
-        $this->assertStringContainsString('check_admin_referer(INTERSOCCER_RR_SEASON_RENAME_NONCE)', $src);
-        $this->assertStringContainsString('wp_nonce_field(INTERSOCCER_RR_SEASON_RENAME_NONCE)', $src);
-        $this->assertStringContainsString('intersoccer_rr_season_rename_confirm', $src);
+        $this->assertStringContainsString('INTERSOCCER_RR_REPAIR_CAP', $src);
+        $this->assertStringContainsString('current_user_can(INTERSOCCER_RR_REPAIR_CAP)', $src);
+        $this->assertStringContainsString('intersoccer_rr_repair_verify_nonce(INTERSOCCER_RR_SEASON_RENAME_NONCE)', $src);
+        $this->assertStringContainsString('wp_create_nonce(INTERSOCCER_RR_SEASON_RENAME_NONCE)', $src);
+        $this->assertStringContainsString('intersoccer_rr_repair_phrase', $src);
+        $this->assertStringContainsString('Type APPLY to confirm Apply', $src);
+        $this->assertStringNotContainsString('manage_woocommerce', $src);
+        $this->assertStringNotContainsString('add_submenu_page', $src);
         $this->assertStringNotContainsString('rebuild_event_signatures', $src);
         $this->assertStringNotContainsString('TRUNCATE', $src);
         $this->assertStringNotContainsString('->delete(', $src);

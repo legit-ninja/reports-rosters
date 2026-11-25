@@ -164,6 +164,11 @@ if (is_admin() && file_exists($intersoccer_season_rename_admin)) {
     require_once $intersoccer_season_rename_admin;
 }
 
+$intersoccer_advanced_tools = plugin_dir_path(__FILE__) . 'includes/advanced-tools-admin.php';
+if (is_admin() && file_exists($intersoccer_advanced_tools)) {
+    require_once $intersoccer_advanced_tools;
+}
+
 // PCS / win-back cache warm-up: hook registration on every request; heavy report files load in cron/event callbacks only.
 $intersoccer_pcs_cache_gate = plugin_dir_path(__FILE__) . 'includes/player-course-status-cache-gate.php';
 if (file_exists($intersoccer_pcs_cache_gate)) {

@@ -133,6 +133,11 @@ class RosterAjaxHandler {
      * @return void
      */
     public function handleRebuildRosters() {
+        if (function_exists('intersoccer_rr_repair_block_legacy_ajax')) {
+            intersoccer_rr_repair_block_legacy_ajax('rebuild_rosters');
+            return;
+        }
+
         try {
             // Verify nonce
             check_ajax_referer('intersoccer_rebuild_nonce', 'nonce');
@@ -218,6 +223,11 @@ class RosterAjaxHandler {
      * @return void
      */
     public function handleReconcileRosters() {
+        if (function_exists('intersoccer_rr_repair_block_legacy_ajax')) {
+            intersoccer_rr_repair_block_legacy_ajax('reconcile_rosters');
+            return;
+        }
+
         try {
             // Verify nonce
             check_ajax_referer('intersoccer_reports_rosters_nonce', 'nonce');
@@ -327,6 +337,11 @@ class RosterAjaxHandler {
      * @return void
      */
     public function handleReconcileAlignmentBatch() {
+        if (function_exists('intersoccer_rr_repair_block_legacy_ajax')) {
+            intersoccer_rr_repair_block_legacy_ajax('reconcile_rosters');
+            return;
+        }
+
         try {
             check_ajax_referer('intersoccer_reports_rosters_nonce', 'nonce');
 
@@ -459,6 +474,11 @@ class RosterAjaxHandler {
      * @return void
      */
     public function handleRenormalizeRosterLanguage() {
+        if (function_exists('intersoccer_rr_repair_block_legacy_ajax')) {
+            intersoccer_rr_repair_block_legacy_ajax('normalize_language');
+            return;
+        }
+
         try {
             check_ajax_referer('intersoccer_rebuild_nonce', 'nonce');
 
@@ -525,6 +545,11 @@ class RosterAjaxHandler {
     }
 
     public function handleRebuildEventSignatures() {
+        if (function_exists('intersoccer_rr_repair_block_legacy_ajax')) {
+            intersoccer_rr_repair_block_legacy_ajax('rebuild_event_signatures');
+            return;
+        }
+
         try {
             // Verify nonce
             check_ajax_referer('intersoccer_rebuild_nonce', 'nonce');
@@ -637,6 +662,11 @@ class RosterAjaxHandler {
      * @return void
      */
     public function handleUpgradeDatabase() {
+        if (function_exists('intersoccer_rr_repair_block_legacy_ajax')) {
+            intersoccer_rr_repair_block_legacy_ajax('upgrade_database');
+            return;
+        }
+
         try {
             // Verify nonce
             check_ajax_referer('intersoccer_rebuild_nonce', 'nonce');
@@ -672,6 +702,11 @@ class RosterAjaxHandler {
      * @return void
      */
     public function handleSyncPlaceholders() {
+        if (function_exists('intersoccer_rr_repair_block_legacy_ajax')) {
+            intersoccer_rr_repair_block_legacy_ajax('sync_placeholders');
+            return;
+        }
+
         try {
             // Verify nonce
             check_ajax_referer('intersoccer_reports_rosters_nonce', 'nonce');
@@ -713,6 +748,11 @@ class RosterAjaxHandler {
      * @return void
      */
     public function handleCleanupPlaceholders() {
+        if (function_exists('intersoccer_rr_repair_block_legacy_ajax')) {
+            intersoccer_rr_repair_block_legacy_ajax('sync_placeholders');
+            return;
+        }
+
         try {
             // Verify nonce
             check_ajax_referer('intersoccer_reports_rosters_nonce', 'nonce');

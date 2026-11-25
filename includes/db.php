@@ -1400,7 +1400,9 @@ function intersoccer_reconcile_rosters($options = []) {
 
     $scoped_order_ids = intersoccer_reconcile_normalize_id_list($options['order_ids'] ?? []);
     $scoped_product_ids = intersoccer_reconcile_normalize_id_list($options['product_ids'] ?? []);
-    $delete_obsolete = empty($options['date_from']) && empty($options['date_to'])
+    $delete_requested = !array_key_exists('delete_obsolete', $options) || !empty($options['delete_obsolete']);
+    $delete_obsolete = $delete_requested
+        && empty($options['date_from']) && empty($options['date_to'])
         && $scoped_order_ids === [] && $scoped_product_ids === []
         && empty($options['dry_run']);
     $dry_run = !empty($options['dry_run']);
@@ -1527,6 +1529,11 @@ if (defined('INTERSOCCER_OOP_ACTIVE') && INTERSOCCER_OOP_ACTIVE && function_exis
 } else {
     if (!function_exists('intersoccer_rebuild_rosters_and_reports_ajax')) {
         function intersoccer_rebuild_rosters_and_reports_ajax() {
+    if (function_exists('intersoccer_rr_repair_block_legacy_ajax')) {
+        intersoccer_rr_repair_block_legacy_ajax('rebuild_rosters');
+        return;
+    }
+
             ob_start();
 
             $nonce_valid = false;
@@ -2600,6 +2607,11 @@ function intersoccer_upgrade_database() {
 
 // AJAX handlers unchanged
 function intersoccer_upgrade_database_ajax() {
+    if (function_exists('intersoccer_rr_repair_block_legacy_ajax')) {
+        intersoccer_rr_repair_block_legacy_ajax('upgrade_database');
+        return;
+    }
+
     check_ajax_referer('intersoccer_rebuild_nonce', 'nonce');
     if (!current_user_can('manage_options')) {
         wp_send_json_error(__('You do not have permission to upgrade the database.', 'intersoccer-reports-rosters'));
@@ -2627,6 +2639,11 @@ function intersoccer_upgrade_database_ajax() {
 }
 
 function intersoccer_rebuild_event_signatures_ajax() {
+    if (function_exists('intersoccer_rr_repair_block_legacy_ajax')) {
+        intersoccer_rr_repair_block_legacy_ajax('rebuild_event_signatures');
+        return;
+    }
+
     error_log('InterSoccer: AJAX rebuild event signatures handler called');
     
     ob_start();
@@ -2683,6 +2700,11 @@ function intersoccer_rebuild_event_signatures_ajax() {
 }
 
 function intersoccer_repair_day_presence_ajax() {
+    if (function_exists('intersoccer_rr_repair_block_legacy_ajax')) {
+        intersoccer_rr_repair_block_legacy_ajax('repair_day_presence');
+        return;
+    }
+
     // Use the same nonce used across roster details AJAX actions.
     $nonce_ok = false;
     if (isset($_POST['nonce'])) {

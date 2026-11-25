@@ -99,6 +99,11 @@ class AdminToolsAjaxHandler {
     }
 
     public function processExistingOrders(): void {
+        if (function_exists('intersoccer_rr_repair_block_legacy_ajax')) {
+            intersoccer_rr_repair_block_legacy_ajax('process_orders');
+            return;
+        }
+
         // Accept both nonce field names used by legacy UI and woo-op.js
         $nonce_valid = false;
         if (isset($_POST['intersoccer_rebuild_nonce_field'])) {
@@ -385,6 +390,11 @@ class AdminToolsAjaxHandler {
     }
 
     public function repairDayPresence(): void {
+        if (function_exists('intersoccer_rr_repair_block_legacy_ajax')) {
+            intersoccer_rr_repair_block_legacy_ajax('repair_day_presence');
+            return;
+        }
+
         // Same nonce used across roster details actions
         $nonce_ok = false;
         if (isset($_POST['nonce'])) {
@@ -497,6 +507,11 @@ class AdminToolsAjaxHandler {
     }
 
     public function fixReportsRostersIssuesSafe(): void {
+        if (function_exists('intersoccer_rr_repair_block_legacy_ajax')) {
+            intersoccer_rr_repair_block_legacy_ajax('fix_issues');
+            return;
+        }
+
         if (!current_user_can('manage_options')) {
             wp_send_json_error(['message' => __('Permission denied.', 'intersoccer-reports-rosters')]);
         }
@@ -542,6 +557,11 @@ class AdminToolsAjaxHandler {
     }
 
     public function fixReportsRostersItemSafe(): void {
+        if (function_exists('intersoccer_rr_repair_block_legacy_ajax')) {
+            intersoccer_rr_repair_block_legacy_ajax('fix_issues');
+            return;
+        }
+
         if (!current_user_can('manage_options')) {
             wp_send_json_error(['message' => __('Permission denied.', 'intersoccer-reports-rosters')]);
         }
@@ -718,6 +738,11 @@ class AdminToolsAjaxHandler {
     }
 
     public function mergeRosterSignaturesApply(): void {
+        if (function_exists('intersoccer_rr_repair_block_legacy_ajax')) {
+            intersoccer_rr_repair_block_legacy_ajax('merge_signatures');
+            return;
+        }
+
         check_ajax_referer('intersoccer_reports_rosters_nonce', 'nonce');
         if (!current_user_can('manage_options')) {
             wp_send_json_error(['message' => __('Permission denied.', 'intersoccer-reports-rosters')]);

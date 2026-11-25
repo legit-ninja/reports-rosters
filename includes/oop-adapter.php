@@ -717,6 +717,11 @@ function intersoccer_oop_attribute_order_refund($order_id, $refund_id) {
  */
 if (!function_exists('intersoccer_oop_backfill_financial_attribution_ajax')) {
 function intersoccer_oop_backfill_financial_attribution_ajax() {
+    if (function_exists('intersoccer_rr_repair_block_legacy_ajax')) {
+        intersoccer_rr_repair_block_legacy_ajax('financial_backfill');
+        return;
+    }
+
     check_ajax_referer('intersoccer_rebuild_nonce', 'nonce');
 
     if (!current_user_can('manage_options')) {

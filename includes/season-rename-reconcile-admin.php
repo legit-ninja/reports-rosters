@@ -2,7 +2,7 @@
 /**
  * Admin: scoped roster reconcile after program-season term renames.
  *
- * Reports and Rosters → Season rename repair. Same scope as the WP-CLI
+ * Advanced tools → Season rename repair. Same scope as the WP-CLI
  * `reconcile-orders --products=<ids>` run, with the product list chosen
  * automatically: every roster product whose current program-season term has
  * no year in its name ("Winter Courses", "Spring/Summer Courses").
@@ -24,25 +24,15 @@
 defined('ABSPATH') or die('Restricted access');
 
 if (!defined('INTERSOCCER_RR_SEASON_RENAME_PAGE')) {
-    define('INTERSOCCER_RR_SEASON_RENAME_PAGE', 'intersoccer-season-rename-repair');
+    define('INTERSOCCER_RR_SEASON_RENAME_PAGE', 'intersoccer-advanced-tools');
 }
 if (!defined('INTERSOCCER_RR_SEASON_RENAME_NONCE')) {
     define('INTERSOCCER_RR_SEASON_RENAME_NONCE', 'intersoccer_rr_season_rename_reconcile');
 }
 
-add_action('admin_menu', 'intersoccer_rr_register_season_rename_page', 30);
-
-if (!function_exists('intersoccer_rr_register_season_rename_page')) {
-    function intersoccer_rr_register_season_rename_page() {
-        add_submenu_page(
-            'intersoccer-reports-rosters',
-            __('Season rename repair', 'intersoccer-reports-rosters'),
-            __('Season rename repair', 'intersoccer-reports-rosters'),
-            'manage_woocommerce',
-            INTERSOCCER_RR_SEASON_RENAME_PAGE,
-            'intersoccer_rr_render_season_rename_page'
-        );
-    }
+$intersoccer_rr_repair_contract = __DIR__ . '/repair-contract.php';
+if (is_readable($intersoccer_rr_repair_contract)) {
+    require_once $intersoccer_rr_repair_contract;
 }
 
 if (!function_exists('intersoccer_rr_season_rename_product_ids')) {
@@ -222,9 +212,79 @@ if (!function_exists('intersoccer_rr_season_weekday_reconcile')) {
     }
 }
 
+if (!function_exists('intersoccer_rr_season_rename_rows_from_run')) {
+    /**
+     * @param array<string,mixed> $run
+     * @return array<int,array<string,mixed>>
+     */
+    function intersoccer_rr_season_rename_rows_from_run(array $run): array {
+        $result = is_array($run['result'] ?? null) ? $run['result'] : [];
+        $season = is_array($result['season_signature'] ?? null) ? $result['season_signature'] : [];
+        $changes = is_array($season['changes'] ?? null) ? $season['changes'] : [];
+        $rows = [];
+        foreach ($changes as $change) {
+            if (!is_array($change)) {
+                continue;
+            }
+            $rows[] = [
+                'id' => (int) ($change['id'] ?? 0),
+                'before' => [
+                    'season' => (string) ($change['old_season'] ?? ''),
+                    'event_signature' => (string) ($change['old_signature'] ?? ''),
+                    'course_day' => (string) ($change['old_course_day'] ?? ''),
+                ],
+                'after' => [
+                    'season' => (string) ($change['new_season'] ?? ''),
+                    'event_signature' => (string) ($change['new_signature'] ?? ''),
+                    'course_day' => (string) ($change['new_course_day'] ?? ''),
+                ],
+            ];
+        }
+        return $rows;
+    }
+}
+
+if (!function_exists('intersoccer_rr_season_rename_tool_run')) {
+    /**
+     * @param array<string,mixed> $scope
+     * @return array<string,mixed>
+     */
+    function intersoccer_rr_season_rename_tool_run($dry_run, array $scope): array {
+        $season = trim((string) ($scope['season'] ?? ''));
+        if ($season !== '') {
+            $run = intersoccer_rr_season_weekday_reconcile((bool) $dry_run, $season);
+        } else {
+            $run = intersoccer_rr_season_rename_reconcile((bool) $dry_run);
+        }
+        $result = is_array($run['result'] ?? null) ? $run['result'] : [];
+        $season_block = is_array($result['season_signature'] ?? null) ? $result['season_signature'] : [];
+        $changed = (int) ($season_block['needing_rename_merge'] ?? 0);
+        $rows = intersoccer_rr_season_rename_rows_from_run($run);
+        return [
+            'error' => (string) ($run['error'] ?? ''),
+            'summary' => sprintf(
+                /* translators: 1: rows needing repair, 2: peak memory MB */
+                __('Rows needing repair: %1$d. Peak memory: %2$s MB', 'intersoccer-reports-rosters'),
+                $changed,
+                (string) ($run['peak_memory_mb'] ?? '')
+            ),
+            'counts' => [
+                'changed' => $changed,
+                'added' => 0,
+                'updated' => (int) ($season_block['updated'] ?? 0),
+                'deleted' => 0,
+            ],
+            'rows' => $rows,
+            'shop_wide' => false,
+            'wrote' => !$dry_run && ($run['error'] ?? '') === '',
+            'raw' => $run,
+        ];
+    }
+}
+
 if (!function_exists('intersoccer_rr_render_season_rename_page')) {
     function intersoccer_rr_render_season_rename_page() {
-        if (!current_user_can('manage_woocommerce')) {
+        if (!current_user_can(INTERSOCCER_RR_REPAIR_CAP)) {
             wp_die(esc_html__('You do not have permission to access this page.', 'intersoccer-reports-rosters'));
         }
 
@@ -232,11 +292,15 @@ if (!function_exists('intersoccer_rr_render_season_rename_page')) {
         $run = null;
         $labels = intersoccer_rr_season_repair_labels();
         $selected_season = '';
+        $user_id = (int) get_current_user_id();
+        $tool = 'season_rename';
 
         if (isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'POST'
             && isset($_POST['intersoccer_rr_season_rename_action'])
-            && check_admin_referer(INTERSOCCER_RR_SEASON_RENAME_NONCE)
         ) {
+            if (!intersoccer_rr_repair_verify_nonce(INTERSOCCER_RR_SEASON_RENAME_NONCE)) {
+                wp_die(esc_html__('Security check failed.', 'intersoccer-reports-rosters'));
+            }
             $action = sanitize_key(wp_unslash((string) $_POST['intersoccer_rr_season_rename_action']));
             $selected_season = isset($_POST['intersoccer_rr_repair_season'])
                 ? sanitize_text_field(wp_unslash((string) $_POST['intersoccer_rr_repair_season']))
@@ -244,22 +308,58 @@ if (!function_exists('intersoccer_rr_render_season_rename_page')) {
             if ($selected_season !== '' && !in_array($selected_season, $labels, true)) {
                 $notice = __('That season is not in the roster table. Choose a season from the list.', 'intersoccer-reports-rosters');
                 $selected_season = '';
-            } elseif ($action === 'preview') {
-                if ($selected_season !== '') {
-                    $run = intersoccer_rr_season_weekday_reconcile(true, $selected_season);
-                } else {
-                    $run = intersoccer_rr_season_rename_reconcile(true);
-                }
-                $notice = __('Preview (dry run) finished. Nothing was written.', 'intersoccer-reports-rosters');
-            } elseif ($action === 'apply') {
-                if (empty($_POST['intersoccer_rr_season_rename_confirm'])) {
-                    $notice = __('Tick the confirmation box before Apply.', 'intersoccer-reports-rosters');
-                } elseif ($selected_season !== '') {
-                    $run = intersoccer_rr_season_weekday_reconcile(false, $selected_season);
-                    $notice = __('Apply finished.', 'intersoccer-reports-rosters');
-                } else {
-                    $run = intersoccer_rr_season_rename_reconcile(false);
-                    $notice = __('Apply finished.', 'intersoccer-reports-rosters');
+            } else {
+                $scope = ['tool' => $tool, 'season' => $selected_season];
+                if ($action === 'preview') {
+                    $mapped = intersoccer_rr_season_rename_tool_run(true, $scope);
+                    $run = is_array($mapped['raw'] ?? null) ? $mapped['raw'] : null;
+                    if (($mapped['error'] ?? '') !== '') {
+                        $notice = (string) $mapped['error'];
+                    } else {
+                        intersoccer_rr_repair_store_preview($user_id, $tool, $scope, $mapped);
+                        intersoccer_rr_repair_log([
+                            'user_id' => $user_id,
+                            'tool' => $tool,
+                            'mode' => 'preview',
+                            'scope' => $selected_season !== '' ? $selected_season : 'renamed-seasons',
+                            'counts' => $mapped['counts'],
+                            'backup' => '',
+                        ]);
+                        $notice = __('Preview (dry run) finished. Nothing was written.', 'intersoccer-reports-rosters');
+                    }
+                } elseif ($action === 'apply') {
+                    $typed = isset($_POST['intersoccer_rr_repair_phrase'])
+                        ? sanitize_text_field(wp_unslash((string) $_POST['intersoccer_rr_repair_phrase']))
+                        : '';
+                    $gate = intersoccer_rr_repair_gate_apply($user_id, $tool, $scope, $typed, '', '');
+                    if (!$gate['ok']) {
+                        $notice = (string) $gate['error'];
+                    } else {
+                        $again = intersoccer_rr_season_rename_tool_run(true, $scope);
+                        $stored = intersoccer_rr_repair_get_preview($user_id, $tool);
+                        if ($stored === null || (string) ($stored['rows_fingerprint'] ?? '') !== intersoccer_rr_repair_rows_fingerprint($again['rows'])) {
+                            $notice = __('The change set no longer matches the Preview. Run Preview again.', 'intersoccer-reports-rosters');
+                        } else {
+                            $backup = intersoccer_rr_repair_write_backup($tool, $user_id, $again['rows']);
+                            $mapped = intersoccer_rr_season_rename_tool_run(false, $scope);
+                            $run = is_array($mapped['raw'] ?? null) ? $mapped['raw'] : null;
+                            if (($mapped['rows'] ?? []) !== []) {
+                                intersoccer_rr_repair_replace_backup_rows($backup, $mapped['rows']);
+                            }
+                            intersoccer_rr_repair_clear_preview($user_id, $tool);
+                            intersoccer_rr_repair_log([
+                                'user_id' => $user_id,
+                                'tool' => $tool,
+                                'mode' => 'apply',
+                                'scope' => $selected_season !== '' ? $selected_season : 'renamed-seasons',
+                                'counts' => $mapped['counts'],
+                                'backup' => $backup,
+                            ]);
+                            $notice = ($mapped['error'] ?? '') !== ''
+                                ? (string) $mapped['error']
+                                : __('Apply finished.', 'intersoccer-reports-rosters');
+                        }
+                    }
                 }
             }
         }
@@ -269,6 +369,7 @@ if (!function_exists('intersoccer_rr_render_season_rename_page')) {
         $changes = is_array($season['changes'] ?? null) ? $season['changes'] : [];
         $remaining = is_array($season['remaining_splits'] ?? null) ? $season['remaining_splits'] : [];
         $weekday_mode = $selected_season !== '';
+        $preview = intersoccer_rr_repair_get_preview($user_id, $tool);
         ?>
         <div class="wrap">
             <h1><?php esc_html_e('Season rename repair', 'intersoccer-reports-rosters'); ?></h1>
@@ -281,25 +382,23 @@ if (!function_exists('intersoccer_rr_render_season_rename_page')) {
                 <div class="notice notice-error"><p><?php echo esc_html((string) $run['error']); ?></p></div>
             <?php endif; ?>
             <form method="post">
-                <?php wp_nonce_field(INTERSOCCER_RR_SEASON_RENAME_NONCE); ?>
+                <input type="hidden" name="_wpnonce" value="<?php echo esc_attr(wp_create_nonce(INTERSOCCER_RR_SEASON_RENAME_NONCE)); ?>" />
                 <p>
                     <label for="intersoccer_rr_repair_season"><?php esc_html_e('Season', 'intersoccer-reports-rosters'); ?></label>
                     <select name="intersoccer_rr_repair_season" id="intersoccer_rr_repair_season">
                         <option value=""><?php esc_html_e('Renamed seasons only (no year in the term)', 'intersoccer-reports-rosters'); ?></option>
                         <?php foreach ($labels as $label) : ?>
-                            <option value="<?php echo esc_attr($label); ?>" <?php selected($selected_season, $label); ?>><?php echo esc_html($label); ?></option>
+                            <option value="<?php echo esc_attr($label); ?>"<?php echo (string) $selected_season === (string) $label ? ' selected="selected"' : ''; ?>><?php echo esc_html($label); ?></option>
                         <?php endforeach; ?>
                     </select>
                 </p>
                 <p>
+                    <label for="intersoccer_rr_repair_phrase"><?php esc_html_e('Type APPLY to confirm Apply', 'intersoccer-reports-rosters'); ?></label>
+                    <input type="text" name="intersoccer_rr_repair_phrase" id="intersoccer_rr_repair_phrase" value="" autocomplete="off" />
+                </p>
+                <p>
                     <button type="submit" class="button" name="intersoccer_rr_season_rename_action" value="preview"><?php esc_html_e('Preview (dry run)', 'intersoccer-reports-rosters'); ?></button>
-                </p>
-                <p>
-                    <label><input type="checkbox" name="intersoccer_rr_season_rename_confirm" value="1" />
-                        <?php esc_html_e('I ran Preview and want to apply these changes.', 'intersoccer-reports-rosters'); ?></label>
-                </p>
-                <p>
-                    <button type="submit" class="button button-primary" name="intersoccer_rr_season_rename_action" value="apply"><?php esc_html_e('Apply', 'intersoccer-reports-rosters'); ?></button>
+                    <button type="submit" class="button button-primary" name="intersoccer_rr_season_rename_action" value="apply"<?php echo $preview === null ? ' disabled="disabled"' : ''; ?>><?php esc_html_e('Apply', 'intersoccer-reports-rosters'); ?></button>
                 </p>
             </form>
             <?php if ($run && empty($run['error'])) : ?>

@@ -446,6 +446,11 @@ function intersoccer_cleanup_placeholders_on_product_delete($post_id) {
 add_action('wp_ajax_intersoccer_sync_placeholders', 'intersoccer_sync_placeholders_ajax');
 
 function intersoccer_sync_placeholders_ajax() {
+    if (function_exists('intersoccer_rr_repair_block_legacy_ajax')) {
+        intersoccer_rr_repair_block_legacy_ajax('sync_placeholders');
+        return;
+    }
+
     check_ajax_referer('intersoccer_rebuild_nonce', 'nonce');
     
     if (!current_user_can('manage_options')) {
