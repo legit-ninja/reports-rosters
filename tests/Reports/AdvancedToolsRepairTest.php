@@ -758,17 +758,20 @@ class AdvancedToolsRepairTest extends TestCase {
         $preview = $this->postTool('normalize_language', 'preview');
         $this->assertSame('info', $preview['type'], $preview['message']);
         $planned = $preview['result']['rows'][0] ?? [];
-        $this->assertSame($original_city, $planned['before']['city'] ?? null);
-        $this->assertNotSame($original_city, $planned['after']['city'] ?? null);
+        $this->assertArrayNotHasKey('city', $planned['before'] ?? [], 'Slug-only city rewrites such as "Zurich City" must not be planned');
         $this->assertSame($original_canton, $planned['before']['canton_region'] ?? null);
         $this->assertSame($original_activity, $planned['before']['activity_type'] ?? null);
+        $this->assertArrayNotHasKey('season', $planned['before'] ?? []);
+        $this->assertArrayNotHasKey('event_signature', $planned['before'] ?? []);
 
         $applied = $this->postTool('normalize_language', 'apply', [
             'intersoccer_rr_repair_phrase' => 'APPLY',
             'intersoccer_rr_repair_global' => 'GLOBAL',
         ]);
         $this->assertSame('success', $applied['type'], $applied['message']);
-        $this->assertNotSame($original_city, $db->rows[0]['city']);
+        $this->assertSame($original_city, $db->rows[0]['city']);
+        $this->assertSame('2026', $db->rows[0]['season']);
+        $this->assertSame('old-sig', $db->rows[0]['event_signature']);
 
         $index = intersoccer_rr_repair_state_get('intersoccer_rr_repair_backup_index', []);
         $this->assertNotEmpty($index);
@@ -1193,6 +1196,63 @@ class AdvancedToolsRepairTest extends TestCase {
     }
 
 
+
+    public function test_normalize_leaves_season_with_a_space_and_event_signature_untouched(): void {
+        unset($GLOBALS['intersoccer_rr_test_tool_runner']);
+        $db = new AdvancedToolsRepairWpdb();
+        $signature = 'winter-2027-sig-keep';
+        $row = $this->rosterRow(11, 0, 'Monday');
+        $row['venue'] = 'zurich';
+        $row['times'] = '1000';
+        $row['city'] = 'Zurich';
+        $row['canton_region'] = 'ZH';
+        $row['activity_type'] = 'Camp';
+        $row['season'] = 'Winter 2027';
+        $row['event_signature'] = $signature;
+        $row['camp_terms'] = 'N/A';
+        $row['booking_type'] = 'N/A';
+        $space_city = $this->rosterRow(12, 0, 'lundi');
+        $space_city['venue'] = 'zurich';
+        $space_city['times'] = '1000';
+        $space_city['city'] = 'Zurich City';
+        $space_city['canton_region'] = 'ZH';
+        $space_city['activity_type'] = 'Camp';
+        $space_city['season'] = 'Winter 2027';
+        $space_city['event_signature'] = $signature;
+        $space_city['camp_terms'] = 'N/A';
+        $db->rows = [$row, $space_city];
+        $GLOBALS['wpdb'] = $db;
+
+        $preview = $this->postTool('normalize_language', 'preview');
+        $this->assertSame('info', $preview['type'], $preview['message']);
+        $by_id = [];
+        foreach ($preview['result']['rows'] ?? [] as $planned) {
+            $by_id[(string) ($planned['id'] ?? '')] = $planned;
+        }
+        $this->assertArrayNotHasKey('11', $by_id, 'A season-only / slug-only row must not be planned');
+        $this->assertArrayHasKey('12', $by_id);
+        $this->assertArrayNotHasKey('season', $by_id['12']['before'] ?? []);
+        $this->assertArrayNotHasKey('season', $by_id['12']['after'] ?? []);
+        $this->assertArrayNotHasKey('event_signature', $by_id['12']['before'] ?? []);
+        $this->assertArrayNotHasKey('event_signature', $by_id['12']['after'] ?? []);
+        $this->assertArrayNotHasKey('camp_terms', $by_id['12']['before'] ?? []);
+        $this->assertArrayHasKey('course_day', $by_id['12']['before'] ?? []);
+
+        $applied = $this->postTool('normalize_language', 'apply', [
+            'intersoccer_rr_repair_phrase' => 'APPLY',
+            'intersoccer_rr_repair_global' => 'GLOBAL',
+        ]);
+        $this->assertSame('success', $applied['type'], $applied['message']);
+        $this->assertSame('Winter 2027', $db->rows[0]['season']);
+        $this->assertSame($signature, $db->rows[0]['event_signature']);
+        $this->assertSame('N/A', $db->rows[0]['camp_terms']);
+        $this->assertSame('Winter 2027', $db->rows[1]['season']);
+        $this->assertSame($signature, $db->rows[1]['event_signature']);
+        $this->assertSame('N/A', $db->rows[1]['camp_terms']);
+        $this->assertSame('Monday', $db->rows[1]['course_day']);
+        $this->assertNotSame('lundi', $db->rows[1]['course_day']);
+    }
+
     public function test_normalize_order_range_stays_under_the_cap_and_rollback_restores_city(): void {
         unset($GLOBALS['intersoccer_rr_test_tool_runner']);
         $db = new AdvancedToolsRepairWpdb();
@@ -1235,7 +1295,7 @@ class AdvancedToolsRepairTest extends TestCase {
         ]);
         $this->assertSame('success', $applied['type'], $applied['message']);
         $this->assertNotSame('lundi', $db->rows[0]['course_day']);
-        $this->assertNotSame('Zurich City', $db->rows[0]['city']);
+        $this->assertSame('Zurich City', $db->rows[0]['city']);
         $this->assertSame('lundi', $db->rows[10]['course_day']);
         $this->assertSame('Zurich City', $db->rows[10]['city']);
 

@@ -41,7 +41,7 @@ if (!function_exists('intersoccer_rr_advanced_tools_definitions')) {
             ],
             'normalize_language' => [
                 'label' => __('Normalize Roster Language (EN)', 'intersoccer-reports-rosters'),
-                'description' => __('Rewrites event columns and linked order-line event metadata that are not already English. Player fields are not changed. Narrow the run by season or order ID range so a batch stays at or under the backup limit. Leave those fields empty only for a shop-wide run (GLOBAL). Rollback restores city, canton, and activity type along with the other event columns.', 'intersoccer-reports-rosters'),
+                'description' => __('Rewrites city, canton, activity type, and course day when those values are not already English. Season and event signature are never changed. Player fields are not changed. Narrow the run by season or order ID range so a batch stays at or under the backup limit. Leave those fields empty only for a shop-wide run (GLOBAL). Rollback restores the same city, canton, activity type, and course day values.', 'intersoccer-reports-rosters'),
                 'fields' => [
                     ['name' => 'season', 'label' => __('Season', 'intersoccer-reports-rosters'), 'type' => 'text'],
                     ['name' => 'order_id_from', 'label' => __('Order ID from', 'intersoccer-reports-rosters'), 'type' => 'number'],
@@ -599,14 +599,18 @@ if (!function_exists('intersoccer_rr_tool_normalize_row_diff')) {
         } elseif ($new_day !== $course_day) {
             $update = ['course_day' => $new_day];
         }
-        $columns = ['venue', 'season', 'booking_type', 'selected_days', 'course_day', 'camp_terms', 'times', 'activity_type', 'city', 'canton_region'];
+        // Only language-facing columns the tool advertises. Never rewrite
+        // season or event_signature (a hyphenated season would split the
+        // shop-wide signature). Skip slug-only sanitizer rewrites such as
+        // "N/A" → "na" or "Winter 2027" → "Winter-2027".
+        $columns = ['city', 'canton_region', 'activity_type', 'course_day'];
         foreach ($columns as $column) {
             if (!array_key_exists($column, $update)) {
                 continue;
             }
             $old = (string) ($record[$column] ?? '');
             $new = (string) $update[$column];
-            if ($new === $old) {
+            if ($new === $old || intersoccer_rr_normalize_is_slug_only_rewrite($old, $new)) {
                 continue;
             }
             $before[$column] = $old;
@@ -615,15 +619,36 @@ if (!function_exists('intersoccer_rr_tool_normalize_row_diff')) {
         if ($before === []) {
             return null;
         }
-        if (isset($update['event_signature'])) {
-            $old_sig = (string) ($record['event_signature'] ?? '');
-            $new_sig = (string) $update['event_signature'];
-            if ($new_sig !== '' && $new_sig !== $old_sig) {
-                $before['event_signature'] = $old_sig;
-                $after['event_signature'] = $new_sig;
+        return ['id' => $id, 'before' => $before, 'after' => $after];
+    }
+}
+
+if (!function_exists('intersoccer_rr_normalize_is_slug_only_rewrite')) {
+    /**
+     * True when $new is only a sanitized/hyphenated form of $old, not a language mapping.
+     */
+    function intersoccer_rr_normalize_is_slug_only_rewrite($old, $new) {
+        $old = (string) $old;
+        $new = (string) $new;
+        if ($old === '' || $new === '' || $old === $new) {
+            return $old === $new;
+        }
+        $candidates = [
+            str_replace(' ', '-', $old),
+            strtolower(str_replace([' ', '_'], '-', $old)),
+        ];
+        if (function_exists('sanitize_title')) {
+            $candidates[] = (string) sanitize_title($old);
+        }
+        if (function_exists('intersoccer_normalize_term_fallback')) {
+            $candidates[] = (string) intersoccer_normalize_term_fallback($old);
+        }
+        foreach ($candidates as $candidate) {
+            if ($candidate !== '' && strcasecmp($candidate, $new) === 0) {
+                return true;
             }
         }
-        return ['id' => $id, 'before' => $before, 'after' => $after];
+        return false;
     }
 }
 
