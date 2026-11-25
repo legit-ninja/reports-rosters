@@ -7,6 +7,12 @@
 # (wording is not approved yet). msgfmt skips fuzzy entries unless you
 # pass --use-fuzzy. Until those drafts are approved, compile with:
 #   ./scripts/compile-translations.sh --use-fuzzy
+#
+# --use-fuzzy applies only to the French and German catalogs (fr_FR,
+# fr_CH, de_DE, de_CH). en_CH is always compiled without --use-fuzzy so
+# stale fuzzy English drafts cannot appear in the .mo for Swiss English
+# admins; they see the source msgid instead. en_CH is kept because the
+# locale is in use; dropping it would fall back less predictably.
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -40,9 +46,10 @@ for arg in "$@"; do
             ;;
         -h|--help)
             echo "Usage: $0 [--use-fuzzy]"
-            echo "  --use-fuzzy  Include fuzzy draft translations in the .mo files."
-            echo "               Needed for now while the FR/DE Advanced tools"
-            echo "               drafts remain fuzzy and unapproved."
+            echo "  --use-fuzzy  Include fuzzy draft translations in the French and"
+            echo "               German .mo files. Needed for now while the FR/DE"
+            echo "               Advanced tools drafts remain fuzzy and unapproved."
+            echo "               en_CH is always compiled without --use-fuzzy."
             exit 0
             ;;
         *)
@@ -82,8 +89,16 @@ for po_file in *.po; do
     
     echo -n "Compiling $po_file → $mo_file ... "
     
+    # Never compile English catalogs with --use-fuzzy, even when the
+    # flag is passed for the FR/DE drafts.
+    use_fuzzy_this=0
+    case "$po_file" in
+        *fr_FR.po|*fr_CH.po|*de_DE.po|*de_CH.po)
+            use_fuzzy_this=$USE_FUZZY
+            ;;
+    esac
     MSGFMT_OPTS=(-o "$mo_file" "$po_file")
-    if [ "$USE_FUZZY" -eq 1 ]; then
+    if [ "$use_fuzzy_this" -eq 1 ]; then
         MSGFMT_OPTS=(--use-fuzzy -o "$mo_file" "$po_file")
     fi
 

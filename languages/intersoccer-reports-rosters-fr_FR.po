@@ -2642,13 +2642,14 @@ msgid ""
 "a shop-wide run (GLOBAL). Rollback restores the same city, canton, activity "
 "type, and course day values."
 msgstr ""
-"Réécrit les colonnes d'événement et les métadonnées liées des lignes "
-"decommande d'événement qui ne sont pas déjà en anglais. Les champs des "
-"joueursne sont pas modifiés. Limitez l'exécution par saison ou plage d'ID "
-"decommande pour que l'ensemble reste à ou sous la limite de "
-"sauvegarde.Laissez ces champs vides uniquement pour une exécution globale "
-"(GLOBAL). Lerollback restaure la ville, le canton et le type d'activité "
-"ainsi que lesautres colonnes d'événement."
+"Réécrit la ville, le canton, le type d'activité et le jour du cours lorsque "
+"ces valeurs ne sont pas déjà en anglais. La saison et la signature "
+"d'événement ne sont jamais modifiées. Les champs joueur ne sont pas modifiés. "
+"Restreignez l'exécution par saison ou plage d'IDs de commande pour qu'un lot "
+"reste au niveau ou sous la limite de sauvegarde. Laissez ces champs vides "
+"uniquement pour une exécution à l'échelle de la boutique (GLOBAL). Le "
+"rollback restaure les mêmes valeurs de ville, de canton, de type d'activité "
+"et de jour du cours."
 
 #: includes/advanced-tools-admin.php:47
 #, fuzzy
@@ -6234,8 +6235,8 @@ msgstr ""
 msgid ""
 "No roster products have a program-season term without a year. Nothing to do."
 msgstr ""
-"Aucun produit d'effectifs n'a un terme de saison de programme sans "
-"année.Rien à faire."
+"Aucun produit d'effectifs n'a un terme de saison de programme sans année. "
+"Rien à faire."
 
 #: includes/season-rename-reconcile-admin.php:181
 #, fuzzy
@@ -6275,11 +6276,11 @@ msgid ""
 "season term has no year are touched. Rows are never deleted. Run the Product "
 "Variations \"Season labels\" repair first."
 msgstr ""
-"Fusionne les effectifs en double causés par des saisons de "
-"programmerenommées (par exemple « Winter 2027 » renommée en « Winter "
-"Courses »).Seuls les produits dont le terme de saison actuel n'a pas d'année "
-"sontconcernés. Les lignes ne sont jamais supprimées. Exécutez d'abord "
-"laréparation « Season labels » de Product Variations."
+"Fusionne les effectifs en double causés par des saisons de programmerenommées "
+"(par exemple « Winter 2027 » renommée en « Winter Courses »). Seuls les "
+"produits dont le terme de saison actuel n'a pas d'année sontconcernés. Les "
+"lignes ne sont jamais supprimées. Exécutez d'abord laréparation « Season "
+"labels » de Product Variations."
 
 #: includes/season-rename-reconcile-admin.php:379
 #, fuzzy
@@ -6291,11 +6292,11 @@ msgid ""
 "or Rebuild Event Signatures."
 msgstr ""
 "Pour réparer les jours de la semaine en français ou en allemand dans "
-"unesaison nommée (par exemple Autumn 2026), choisissez cette saison ci-"
-"dessous.Ce mode réécrit uniquement ces jours de la semaine en anglais et re-"
-"signeces lignes. Il ne resynchronise pas les commandes, ne change pas les "
+"unesaison nommée (par exemple Autumn 2026), choisissez cette saison "
+"ci-dessous. Ce mode réécrit uniquement ces jours de la semaine en anglais et "
+"re-signeces lignes. Il ne resynchronise pas les commandes, ne change pas les "
 "heuresde session et ne touche pas les autres saisons. N'utilisez jamais "
-"ReconcileRosters ni Rebuild Event Signatures."
+"Reconcile Rosters ni Rebuild Event Signatures."
 
 #: includes/season-rename-reconcile-admin.php:391
 #, fuzzy
@@ -6313,8 +6314,8 @@ msgid ""
 "Renamed-seasons mode, with no single season selected, is shop-wide. Type "
 "GLOBAL as well as APPLY."
 msgstr ""
-"Mode des saisons renommées, avec aucune saison sélectionnée, est "
-"global.Tapez aussi GLOBAL et APPLY."
+"Mode des saisons renommées, avec aucune saison sélectionnée, est global. "
+"Tapez aussi GLOBAL et APPLY."
 
 #: includes/season-rename-reconcile-admin.php:412
 #, fuzzy
@@ -6353,8 +6354,8 @@ msgid ""
 "rename merge: %4$d | Rows changed: %5$d | Rows unchanged: %6$d | Peak "
 "memory: %7$s MB"
 msgstr ""
-"Mode: %1$s | Produits: %2$d | Lignes de commande ré-synchronisées: %3$d |"
-"Lignes nécessitant une fusion de renommage: %4$d | Lignes modifiées: %5$d |"
+"Mode: %1$s | Produits: %2$d | Lignes de commande ré-synchronisées: %3$d | "
+"Lignes nécessitant une fusion de renommage: %4$d | Lignes modifiées: %5$d | "
 "Lignes inchangées: %6$d | Mémoire maximale: %7$s MB"
 
 #: includes/season-rename-reconcile-admin.php:442

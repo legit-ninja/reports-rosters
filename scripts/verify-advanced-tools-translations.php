@@ -128,6 +128,145 @@ function intersoccer_rr_po_unquote($line) {
     return stripcslashes($line);
 }
 
+
+/**
+ * Brand or product tokens that legitimately join a lower-case letter to an
+ * upper-case letter. Hyphenated wraps such as "order-sync" are allowed
+ * separately in the wrap check.
+ */
+function intersoccer_rr_camel_allowlist() {
+    return [
+        'InterSoccer' => true,
+        'WooCommerce' => true,
+        'WordPress' => true,
+        'PHPUnit' => true,
+        'JavaScript' => true,
+        'MySQL' => true,
+        'GitHub' => true,
+    ];
+}
+
+/**
+ * Mask allowlisted camelCase tokens so the join detector can scan the rest.
+ */
+function intersoccer_rr_mask_camel_allowlist($text) {
+    foreach (array_keys(intersoccer_rr_camel_allowlist()) as $token) {
+        $text = str_replace($token, str_repeat('X', strlen($token)), $text);
+    }
+    return $text;
+}
+
+/**
+ * Scan one catalog for jammed msgstr joins and wrap lines that dropped a space.
+ *
+ * @return array<int,string>
+ */
+function intersoccer_rr_msgstr_spacing_issues($path) {
+    $lines = file($path, FILE_IGNORE_NEW_LINES);
+    if ($lines === false) {
+        fwrite(STDERR, "Cannot read $path\n");
+        exit(1);
+    }
+    $issues = [];
+    $msgid = null;
+    $msgstr = null;
+    $msgstr_lines = [];
+    $mode = null;
+    $obsolete = false;
+    $flush = static function () use (&$issues, &$msgid, &$msgstr, &$msgstr_lines, &$mode, &$obsolete, $path) {
+        if ($msgid === null || $obsolete || $msgid === '') {
+            $msgid = null;
+            $msgstr = null;
+            $msgstr_lines = [];
+            $mode = null;
+            $obsolete = false;
+            return;
+        }
+        $label = strlen($msgid) > 60 ? substr($msgid, 0, 57) . '...' : $msgid;
+        $prev = null;
+        foreach ($msgstr_lines as $inner) {
+            if ($prev !== null && $prev !== '' && $inner !== '') {
+                $prev_last = substr($prev, -1);
+                $next_first = $inner[0];
+                if (!ctype_space($prev_last) && !ctype_space($next_first) && $prev_last !== '-') {
+                    $issues[] = sprintf(
+                        '%s wrap-join in msgstr for "%s": %s + %s',
+                        basename($path),
+                        $label,
+                        var_export(substr($prev, -24), true),
+                        var_export(substr($inner, 0, 24), true)
+                    );
+                }
+            }
+            $prev = $inner;
+        }
+        $masked = intersoccer_rr_mask_camel_allowlist((string) $msgstr);
+        if (preg_match_all('/[a-zàâäéèêëïîôùûüçœ][A-ZÀÂÄÉÈÊËÏÎÔÙÛÜÇŒ]/u', $masked, $matches, PREG_OFFSET_CAPTURE)) {
+            foreach ($matches[0] as $match) {
+                $at = $match[1];
+                $issues[] = sprintf(
+                    '%s lowercase+uppercase join in msgstr for "%s": %s',
+                    basename($path),
+                    $label,
+                    var_export(substr((string) $msgstr, max(0, $at - 20), 40), true)
+                );
+            }
+        }
+        if (preg_match_all('/[A-Za-zÀ-ÿ]\\.[A-ZÀ-Ÿ]/u', $masked, $matches, PREG_OFFSET_CAPTURE)) {
+            foreach ($matches[0] as $match) {
+                $at = $match[1];
+                $issues[] = sprintf(
+                    '%s word.Word join in msgstr for "%s": %s',
+                    basename($path),
+                    $label,
+                    var_export(substr((string) $msgstr, max(0, $at - 20), 40), true)
+                );
+            }
+        }
+        $msgid = null;
+        $msgstr = null;
+        $msgstr_lines = [];
+        $mode = null;
+        $obsolete = false;
+    };
+    foreach ($lines as $line) {
+        if (strpos($line, '#~') === 0) {
+            $obsolete = true;
+            continue;
+        }
+        if ($line === '' || $line === "\r") {
+            $flush();
+            continue;
+        }
+        if (strpos($line, 'msgid ') === 0) {
+            if ($msgid !== null && $mode === 'msgstr') {
+                $flush();
+            }
+            $msgid = intersoccer_rr_po_unquote(substr($line, 6));
+            $mode = 'msgid';
+            $msgstr = null;
+            $msgstr_lines = [];
+            continue;
+        }
+        if (strpos($line, 'msgstr ') === 0) {
+            $inner = intersoccer_rr_po_unquote(substr($line, 7));
+            $msgstr = $inner;
+            $msgstr_lines = [$inner];
+            $mode = 'msgstr';
+            continue;
+        }
+        if (isset($line[0]) && $line[0] === '"' && $mode === 'msgid') {
+            $msgid .= intersoccer_rr_po_unquote($line);
+        } elseif (isset($line[0]) && $line[0] === '"' && $mode === 'msgstr') {
+            $inner = intersoccer_rr_po_unquote($line);
+            $msgstr .= $inner;
+            $msgstr_lines[] = $inner;
+        }
+    }
+    $flush();
+    return $issues;
+}
+
 $strings = intersoccer_rr_extract_page_strings($files);
 sort($strings);
 $failures = 0;
@@ -161,9 +300,26 @@ foreach ($catalogs as $locale => $path) {
         $failures++;
     }
 }
+$spacing_catalogs = [
+    $root . '/languages/intersoccer-reports-rosters-fr_FR.po',
+    $root . '/languages/intersoccer-reports-rosters-fr_CH.po',
+    $root . '/languages/intersoccer-reports-rosters-de_DE.po',
+    $root . '/languages/intersoccer-reports-rosters-de_CH.po',
+];
+$spacing_issues = [];
+foreach ($spacing_catalogs as $path) {
+    $spacing_issues = array_merge($spacing_issues, intersoccer_rr_msgstr_spacing_issues($path));
+}
+echo "msgstr spacing issues: " . count($spacing_issues) . "\n";
+foreach ($spacing_issues as $issue) {
+    echo "  SPACING: {$issue}\n";
+    $failures++;
+}
+
 if ($failures > 0) {
-    fwrite(STDERR, "Failed: {$failures} page string(s) do not resolve.\n");
+    fwrite(STDERR, "Failed: {$failures} translation check(s) did not pass.\n");
     exit(1);
 }
 echo "All Advanced tools and Season rename page strings resolve in fr_FR and de_DE.\n";
+echo "All FR/DE msgstr spacing checks passed.\n";
 exit(0);
