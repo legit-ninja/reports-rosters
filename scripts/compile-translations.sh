@@ -97,9 +97,9 @@ for po_file in *.po; do
             use_fuzzy_this=$USE_FUZZY
             ;;
     esac
-    MSGFMT_OPTS=(-o "$mo_file" "$po_file")
+    MSGFMT_OPTS=(-c -o "$mo_file" "$po_file")
     if [ "$use_fuzzy_this" -eq 1 ]; then
-        MSGFMT_OPTS=(--use-fuzzy -o "$mo_file" "$po_file")
+        MSGFMT_OPTS=(--use-fuzzy -c -o "$mo_file" "$po_file")
     fi
 
     if msgfmt "${MSGFMT_OPTS[@]}" 2>/dev/null; then

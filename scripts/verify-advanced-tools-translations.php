@@ -378,6 +378,32 @@ function intersoccer_rr_msgstr_word_join_issues($path) {
     return $issues;
 }
 
+
+/**
+ * @return string Absolute msgfmt path, or empty if not found.
+ */
+function intersoccer_rr_find_msgfmt() {
+    $env = getenv('MSGFMT');
+    if (is_string($env) && $env !== '' && is_executable($env)) {
+        return $env;
+    }
+    $paths = [];
+    $which = trim((string) shell_exec('command -v msgfmt 2>/dev/null'));
+    if ($which !== '') {
+        $paths[] = $which;
+    }
+    $prefix = getenv('GETTEXT_PREFIX');
+    if (is_string($prefix) && $prefix !== '') {
+        $paths[] = rtrim($prefix, '/') . '/bin/msgfmt';
+    }
+    foreach ($paths as $path) {
+        if (is_executable($path)) {
+            return $path;
+        }
+    }
+    return '';
+}
+
 $strings = intersoccer_rr_extract_page_strings($files);
 sort($strings);
 $failures = 0;
@@ -436,10 +462,58 @@ foreach ($join_issues as $issue) {
     $failures++;
 }
 
+$page_set = array_fill_keys($strings, true);
+$fuzzy_catalogs = $spacing_catalogs;
+$outside_fuzzy = [];
+foreach ($fuzzy_catalogs as $path) {
+    $parsed = intersoccer_rr_parse_po($path);
+    foreach ($parsed['entries'] as $msgid => $entry) {
+        if (empty($entry['fuzzy'])) {
+            continue;
+        }
+        if (!isset($page_set[$msgid])) {
+            $outside_fuzzy[] = sprintf('%s fuzzy msgid outside Advanced tools / Season rename: %s', basename($path), $msgid);
+        }
+    }
+}
+echo "fuzzy entries outside Advanced tools / Season rename pages: " . count($outside_fuzzy) . "\n";
+foreach ($outside_fuzzy as $issue) {
+    echo "  FUZZY: {$issue}\n";
+    $failures++;
+}
+
+$msgfmt = intersoccer_rr_find_msgfmt();
+if ($msgfmt === '') {
+    fwrite(STDERR, "msgfmt not found; cannot run msgfmt -c on catalogs.\n");
+    $failures++;
+} else {
+    $po_files = glob($root . '/languages/*.po');
+    sort($po_files);
+    echo "msgfmt -c catalogs: " . count($po_files) . " (using {$msgfmt})\n";
+    foreach ($po_files as $po) {
+        $output = [];
+        $code = 0;
+        exec(
+            escapeshellarg($msgfmt) . ' -c -o /dev/null ' . escapeshellarg($po) . ' 2>&1',
+            $output,
+            $code
+        );
+        if ($code !== 0) {
+            $failures++;
+            echo "  MSGFMT: " . basename($po) . " failed (exit {$code})\n";
+            foreach ($output as $line) {
+                echo "    {$line}\n";
+            }
+        }
+    }
+}
+
 if ($failures > 0) {
     fwrite(STDERR, "Failed: {$failures} translation check(s) did not pass.\n");
     exit(1);
 }
 echo "All Advanced tools and Season rename page strings resolve in fr_FR and de_DE.\n";
 echo "All FR/DE msgstr spacing and glued-word checks passed.\n";
+echo "No fuzzy entries exist outside Advanced tools / Season rename pages.\n";
+echo "msgfmt -c passed on every catalog.\n";
 exit(0);

@@ -19,9 +19,9 @@ msgstr ""
 
 #: classes/Admin/asset-manager.php:115 includes/rosters.php:712
 #: includes/rosters.php:777 includes/rosters.php:844 includes/rosters.php:880
-#, fuzzy
+#
 msgid "Error: Missing event signature"
-msgstr "Geben Sie eine Ereignissignatur ein."
+msgstr ""
 
 #: classes/Admin/asset-manager.php:116
 msgid "Are you sure you want to mark \""
@@ -81,14 +81,14 @@ msgid "of"
 msgstr ""
 
 #: classes/Admin/asset-manager.php:216
-#, fuzzy
+#
 msgid "Upgrading database..."
-msgstr "Datenbank aktualisieren"
+msgstr ""
 
 #: classes/Admin/asset-manager.php:217
-#, fuzzy
+#
 msgid "Database upgrade completed successfully."
-msgstr "Die Datenbankaktualisierung ist fehlgeschlagen."
+msgstr ""
 
 #: classes/Admin/asset-manager.php:218 includes/advanced-tools-admin.php:352
 #, fuzzy
@@ -96,9 +96,9 @@ msgid "Database upgrade failed."
 msgstr "Die Datenbankaktualisierung ist fehlgeschlagen."
 
 #: classes/Admin/asset-manager.php:219
-#, fuzzy
+#
 msgid "Database upgrade failed due to a network error."
-msgstr "Die Datenbankaktualisierung ist fehlgeschlagen. Kein Rollback."
+msgstr ""
 
 #: classes/Admin/asset-manager.php:220 classes/Ajax/roster-ajax-handler.php:257
 msgid "Migration already running. Please wait and refresh."
@@ -139,9 +139,9 @@ msgid "Fixing sync..."
 msgstr ""
 
 #: classes/Admin/asset-manager.php:289
-#, fuzzy
+#
 msgid "Sync check failed."
-msgstr "Sicherheitsprüfung fehlgeschlagen."
+msgstr ""
 
 #: classes/Admin/asset-manager.php:290
 msgid "Sync fix failed."
@@ -242,9 +242,9 @@ msgid "Player course status"
 msgstr ""
 
 #: classes/Admin/menu-manager.php:336
-#, fuzzy
+#
 msgid "InterSoccer Booking Reports"
-msgstr "InterSoccer Erweiterte Werkzeuge: Listen und Berichte"
+msgstr ""
 
 #: classes/Admin/menu-manager.php:337
 msgid "Booking Reports"
@@ -257,9 +257,9 @@ msgstr ""
 #: classes/Admin/menu-manager.php:358 classes/Admin/menu-manager.php:359
 #: includes/rosters.php:1560 includes/rosters.php:2009
 #: includes/rosters.php:2466 includes/rosters.php:2962
-#, fuzzy
+#
 msgid "Rosters"
-msgstr "Listenzeilen-IDs"
+msgstr ""
 
 #: classes/Admin/menu-manager.php:375 classes/Admin/menu-manager.php:376
 #: classes/ui/pages/reports-page.php:473 includes/rosters.php:3387
@@ -289,14 +289,14 @@ msgid "Settings"
 msgstr ""
 
 #: classes/Admin/menu-manager.php:530
-#, fuzzy
+#
 msgid "Overview page is not available."
-msgstr "Diese Reparatur ist im Admin nicht verfügbar."
+msgstr ""
 
 #: classes/Admin/menu-manager.php:539
-#, fuzzy
+#
 msgid "Live Snapshot page is not available."
-msgstr "Diese Reparatur ist im Admin nicht verfügbar."
+msgstr ""
 
 #: classes/Admin/menu-manager.php:549
 msgid "Player camp status page is not available."
@@ -307,34 +307,34 @@ msgid "Player course status page is not available."
 msgstr ""
 
 #: classes/Admin/menu-manager.php:572
-#, fuzzy
+#
 msgid "Win-back report page is not available."
-msgstr "Diese Reparatur ist im Admin nicht verfügbar."
+msgstr ""
 
 #: classes/Admin/menu-manager.php:581
-#, fuzzy
+#
 msgid "Reports page is not available."
-msgstr "Diese Reparatur ist im Admin nicht verfügbar."
+msgstr ""
 
 #: classes/Admin/menu-manager.php:590
-#, fuzzy
+#
 msgid "Final reports page is not available."
-msgstr "Diese Reparatur ist im Admin nicht verfügbar."
+msgstr ""
 
 #: classes/Admin/menu-manager.php:654
-#, fuzzy
+#
 msgid "Rosters page is not available."
-msgstr "Diese Reparatur ist im Admin nicht verfügbar."
+msgstr ""
 
 #: classes/Admin/menu-manager.php:700
-#, fuzzy
+#
 msgid "Other Events page is not available."
-msgstr "Diese Reparatur ist im Admin nicht verfügbar."
+msgstr ""
 
 #: classes/Admin/menu-manager.php:709
-#, fuzzy
+#
 msgid "Birthdays page is not available."
-msgstr "Diese Reparatur ist im Admin nicht verfügbar."
+msgstr ""
 
 #: classes/Admin/menu-manager.php:718
 msgid "Advanced tools are not available."
@@ -366,28 +366,28 @@ msgid "Permission denied."
 msgstr ""
 
 #: classes/Admin/menu-manager.php:731
-#, fuzzy
+#
 msgid "Advanced page is not available."
-msgstr "Sicherer Fix ist nicht verfügbar."
+msgstr ""
 
 #: classes/Admin/menu-manager.php:745
-#, fuzzy
+#
 msgid "Signature drift report is not available."
-msgstr "Die Reparatur des Namensänderung der Saison ist nicht verfügbar."
+msgstr ""
 
 #: classes/Admin/menu-manager.php:757
 msgid "Campaign Analytics page is not available."
 msgstr ""
 
 #: classes/Admin/menu-manager.php:766
-#, fuzzy
+#
 msgid "Roster details page is not available."
-msgstr "Diese Reparatur ist im Admin nicht verfügbar."
+msgstr ""
 
 #: classes/Admin/menu-manager.php:775
-#, fuzzy
+#
 msgid "Roster edit page is not available."
-msgstr "Diese Reparatur ist im Admin nicht verfügbar."
+msgstr ""
 
 #: classes/Ajax/admin-tools-ajax-handler.php:97
 msgid "Rebuild data cleared successfully"
@@ -395,9 +395,9 @@ msgstr ""
 
 #: classes/Ajax/admin-tools-ajax-handler.php:123 includes/advanced.php:2942
 #: includes/advanced.php:2983
-#, fuzzy
+#
 msgid "Event signature is required."
-msgstr "Ereignissignatur"
+msgstr ""
 
 #: classes/Ajax/admin-tools-ajax-handler.php:138
 #: classes/Ajax/admin-tools-ajax-handler.php:196
@@ -410,9 +410,9 @@ msgid "Roster closed successfully. %d entries updated."
 msgstr ""
 
 #: classes/Ajax/admin-tools-ajax-handler.php:145 includes/advanced.php:3002
-#, fuzzy, php-format
+#, php-format
 msgid "Roster reopened successfully. %d entries updated."
-msgstr "Der Listenabgleich konnte nicht geladen werden."
+msgstr ""
 
 #: classes/Ajax/admin-tools-ajax-handler.php:183 includes/advanced.php:3026
 #: includes/advanced.php:3075
@@ -430,9 +430,9 @@ msgid "%d roster(s) reopened successfully. %d entries updated."
 msgstr ""
 
 #: classes/Ajax/admin-tools-ajax-handler.php:225 includes/advanced.php:3122
-#, fuzzy
+#
 msgid "Season is required."
-msgstr "Saison davor"
+msgstr ""
 
 #: classes/Ajax/admin-tools-ajax-handler.php:237 includes/advanced.php:3134
 msgid ""
@@ -475,9 +475,9 @@ msgid "Legacy move-players handler not found."
 msgstr ""
 
 #: classes/Ajax/admin-tools-ajax-handler.php:436
-#, fuzzy
+#
 msgid "Legacy move-players handler is unavailable."
-msgstr "Die Reparatur des Namensänderung der Saison ist nicht verfügbar."
+msgstr ""
 
 #: classes/Ajax/admin-tools-ajax-handler.php:450
 #: includes/advanced-tools-admin.php:1183
@@ -487,18 +487,18 @@ msgstr ""
 "Quell- und Ziel-Signaturen müssen sich unterscheiden und nicht leer sein."
 
 #: classes/Ajax/admin-tools-ajax-handler.php:459
-#, fuzzy, php-format
+#, php-format
 msgid "Rows with source signature: %d"
-msgstr "Quell-Signatur"
+msgstr ""
 
 #: classes/Ajax/roster-ajax-handler.php:172
 msgid "Unauthorized"
 msgstr ""
 
 #: classes/Ajax/roster-ajax-handler.php:178
-#, fuzzy
+#
 msgid "Invalid event signature"
-msgstr "Geben Sie eine Ereignissignatur ein."
+msgstr ""
 
 #: classes/Ajax/roster-ajax-handler.php:211
 #, php-format
@@ -506,9 +506,9 @@ msgid "%d roster entries marked as completed"
 msgstr ""
 
 #: classes/Ajax/roster-ajax-handler.php:223
-#, fuzzy
+#
 msgid "Failed to mark event as completed: "
-msgstr "Fügt die Spalte „Veranstaltung abgeschlossen“ hinzu."
+msgstr ""
 
 #: classes/Ajax/roster-ajax-handler.php:268
 msgid ""
@@ -529,18 +529,18 @@ msgid "Database upgrade completed. Schema version is now %s."
 msgstr ""
 
 #: classes/Ajax/roster-ajax-handler.php:308
-#, fuzzy
+#
 msgid "Database upgrade failed. Check logs for details."
-msgstr "Die Datenbankaktualisierung ist fehlgeschlagen. Kein Rollback."
+msgstr ""
 
 #: classes/Ajax/roster-editor-ajax-handler.php:40
 msgid "Roster editor handler not found."
 msgstr ""
 
 #: classes/Ajax/roster-editor-ajax-handler.php:46
-#, fuzzy
+#
 msgid "Roster editor handler is unavailable."
-msgstr "Sicherer Fix ist nicht verfügbar."
+msgstr ""
 
 #: classes/Ajax/rosters-tabs-ajax-handler.php:42
 msgid "Invalid variation ID."
@@ -556,9 +556,9 @@ msgid "Total entries: %d"
 msgstr ""
 
 #: classes/Ajax/rosters-tabs-ajax-handler.php:130
-#, fuzzy, php-format
+#, php-format
 msgid "Event signature: %s"
-msgstr "Ereignissignatur"
+msgstr ""
 
 #: classes/Ajax/rosters-tabs-ajax-handler.php:133
 msgid "Status: Completed"
@@ -833,9 +833,9 @@ msgid "Event signatures rebuilt. Updated: %d, Errors: %d"
 msgstr ""
 
 #: classes/services/roster-builder.php:4453
-#, fuzzy
+#
 msgid "Event signature rebuild failed: "
-msgstr "Ereignissignatur"
+msgstr ""
 
 #: classes/services/roster-details-service.php:180
 #: includes/roster-details.php:1019
@@ -1590,18 +1590,18 @@ msgid "Miscellaneous"
 msgstr ""
 
 #: classes/ui/pages/other-events-page.php:256
-#, fuzzy
+#
 msgid "Filter Events"
-msgstr "Gemischte Veranstaltungen"
+msgstr ""
 
 #: classes/ui/pages/other-events-page.php:272
 msgid "Event Statistics"
 msgstr ""
 
 #: classes/ui/pages/other-events-page.php:282
-#, fuzzy
+#
 msgid "Unique Events"
-msgstr "Gemischte Veranstaltungen"
+msgstr ""
 
 #: classes/ui/pages/other-events-page.php:302
 msgid "Most Popular Type"
@@ -1811,9 +1811,9 @@ msgid "Revenue Report"
 msgstr ""
 
 #: classes/ui/pages/reports-page.php:275
-#, fuzzy
+#
 msgid "Events Report"
-msgstr "Veranstaltungstyp"
+msgstr ""
 
 #: classes/ui/pages/reports-page.php:276
 msgid "Attendance Report"
@@ -1915,9 +1915,9 @@ msgid "From"
 msgstr ""
 
 #: classes/ui/pages/reports-page.php:462
-#, fuzzy
+#
 msgid "To"
-msgstr "Werkzeug"
+msgstr ""
 
 #: classes/ui/pages/reports-page.php:468
 msgid "Categories"
@@ -1944,9 +1944,9 @@ msgid "View Roster"
 msgstr ""
 
 #: classes/woocommerce/hooks-manager.php:264
-#, fuzzy
+#
 msgid "No roster yet"
-msgstr "Bislang wurden keine Reparaturausführungen durchgeführt."
+msgstr ""
 
 #: classes/woocommerce/hooks-manager.php:399
 msgid "Min Total"
@@ -1985,14 +1985,14 @@ msgid "Roster Sync Queue"
 msgstr ""
 
 #: includes/advanced.php:65
-#, fuzzy
+#
 msgid "Tools"
-msgstr "Werkzeug"
+msgstr ""
 
 #: includes/advanced.php:68 includes/roster-editor.php:602
-#, fuzzy
+#
 msgid "Edit Rosters"
-msgstr "Listen synchronisieren"
+msgstr ""
 
 #: includes/advanced.php:71 includes/advanced.php:195
 #: includes/office365-settings.php:274
@@ -2180,14 +2180,14 @@ msgid "Camp"
 msgstr ""
 
 #: includes/advanced.php:2303
-#, fuzzy
+#
 msgid "Order Statuses"
-msgstr "Bestelldatum bis"
+msgstr ""
 
 #: includes/advanced.php:2307
-#, fuzzy
+#
 msgid "Completed"
-msgstr "Gelöscht"
+msgstr ""
 
 #: includes/advanced.php:2308
 msgid "Processing"
@@ -2205,14 +2205,14 @@ msgid ""
 msgstr ""
 
 #: includes/advanced.php:2323
-#, fuzzy
+#
 msgid "Sync Reason"
-msgstr "Saison"
+msgstr ""
 
 #: includes/advanced.php:2326
-#, fuzzy
+#
 msgid "All reasons"
-msgstr "Alle Veranstaltungen"
+msgstr ""
 
 #: includes/advanced.php:2327
 msgid "missing_in_rosters"
@@ -2267,9 +2267,9 @@ msgid "Page Size"
 msgstr ""
 
 #: includes/advanced.php:2355
-#, fuzzy
+#
 msgid "Season Type"
-msgstr "Saison"
+msgstr ""
 
 #: includes/advanced.php:2356
 msgid "Optional (e.g. Summer)"
@@ -2301,9 +2301,9 @@ msgid "Optional if order item ID set"
 msgstr ""
 
 #: includes/advanced.php:2386 includes/roster-editor.php:1108
-#, fuzzy
+#
 msgid "Order Item ID"
-msgstr "Bestell-ID"
+msgstr ""
 
 #: includes/advanced.php:2387
 msgid "Optional if order ID set"
@@ -2314,14 +2314,14 @@ msgid "Trace Item"
 msgstr ""
 
 #: includes/advanced.php:2412
-#, fuzzy
+#
 msgid "Event Signature Verifier"
-msgstr "Ereignissignatur"
+msgstr ""
 
 #: includes/advanced.php:2417
-#, fuzzy
+#
 msgid "About Event Signatures:"
-msgstr "Ereignissignatur"
+msgstr ""
 
 #: includes/advanced.php:2418
 msgid ""
@@ -2440,9 +2440,9 @@ msgid "Select from existing seasons"
 msgstr ""
 
 #: includes/advanced.php:2677 includes/signature-drift-report.php:218
-#, fuzzy
+#
 msgid "Product ID"
-msgstr "Produkt-IDs"
+msgstr ""
 
 #: includes/advanced.php:2681
 msgid "e.g., 12345"
@@ -2457,9 +2457,9 @@ msgid "Test Signature Generation"
 msgstr ""
 
 #: includes/advanced.php:2709
-#, fuzzy
+#
 msgid "Test Results"
-msgstr "Ergebnis"
+msgstr ""
 
 #: includes/advanced.php:2713
 msgid "1. Original Input Data"
@@ -2470,18 +2470,18 @@ msgid "2. Normalized Data (English)"
 msgstr ""
 
 #: includes/advanced.php:2723
-#, fuzzy
+#
 msgid "Changed Fields:"
-msgstr "Geändert"
+msgstr ""
 
 #: includes/advanced.php:2737
 msgid "No changes needed - data was already in English!"
 msgstr ""
 
 #: includes/advanced.php:2744
-#, fuzzy
+#
 msgid "3. Generated Event Signature"
-msgstr "Geben Sie eine Ereignissignatur ein."
+msgstr ""
 
 #: includes/advanced.php:2749
 msgid "Important:"
@@ -3249,9 +3249,9 @@ msgid "Type APPLY to roll back"
 msgstr "Geben Sie APPLY ein, um einen Rollback durchzuführen"
 
 #: includes/birthdays.php:51
-#, fuzzy
+#
 msgid "Unknown player"
-msgstr "Unbekannte Reparatur."
+msgstr ""
 
 #: includes/birthdays.php:158
 msgid "Mon"
@@ -3310,9 +3310,9 @@ msgid "Month View"
 msgstr ""
 
 #: includes/birthdays.php:367
-#, fuzzy
+#
 msgid "Year View"
-msgstr "Jahr"
+msgstr ""
 
 #: includes/birthdays.php:383 includes/birthdays.php:393
 msgid "No birthdays found"
@@ -3472,17 +3472,17 @@ msgid "Baseline"
 msgstr ""
 
 #: includes/campaign-analytics-admin.php:237
-#, fuzzy
+#
 msgid "Change"
-msgstr "Geändert"
+msgstr ""
 
 #: includes/campaign-analytics-admin.php:239
 #: includes/campaign-analytics-admin.php:371
 #: includes/campaign-analytics-admin.php:388
 #: includes/campaign-analytics-admin.php:408
-#, fuzzy
+#
 msgid "Orders"
-msgstr "Bestellung"
+msgstr ""
 
 #: includes/campaign-analytics-admin.php:240
 msgid "Line-item bookings"
@@ -3637,9 +3637,9 @@ msgid "Day"
 msgstr ""
 
 #: includes/campaign-analytics-admin.php:431
-#, fuzzy
+#
 msgid "Attribution"
-msgstr "Variation"
+msgstr ""
 
 #: includes/campaign-analytics-admin.php:445
 msgid "Referral hosts"
@@ -3703,9 +3703,9 @@ msgstr ""
 
 #. translators: %s mean age
 #: includes/campaign-analytics-admin.php:556
-#, fuzzy, php-format
+#, php-format
 msgid "Mean age: %s"
-msgstr "Veranstaltungstyp: %s"
+msgstr ""
 
 #. translators: %d count
 #: includes/campaign-analytics-admin.php:557
@@ -3766,9 +3766,9 @@ msgid ""
 msgstr ""
 
 #: includes/db.php:856
-#, fuzzy
+#
 msgid "OOP roster rebuild failed: "
-msgstr "Der Listenabgleich ist fehlgeschlagen."
+msgstr ""
 
 #: includes/db.php:902
 msgid "Rebuild completed. Inserted "
@@ -3799,9 +3799,9 @@ msgid "Some items reported errors. Check the logs for details."
 msgstr ""
 
 #: includes/db.php:1391
-#, fuzzy
+#
 msgid "OOP roster reconciliation failed: "
-msgstr "Der Listenabgleich ist fehlgeschlagen."
+msgstr ""
 
 #: includes/db.php:1491
 msgid "Reconciled rosters: Synced "
@@ -4011,9 +4011,9 @@ msgid ""
 msgstr ""
 
 #: includes/office365-settings.php:87
-#, fuzzy
+#
 msgid "Destination"
-msgstr "Variation"
+msgstr ""
 
 #: includes/office365-settings.php:89
 msgid "OneDrive"
@@ -4160,9 +4160,9 @@ msgid ""
 msgstr ""
 
 #: includes/office365-settings.php:204
-#, fuzzy
+#
 msgid "Note the IDs"
-msgstr "Listenzeilen-IDs"
+msgstr ""
 
 #: includes/office365-settings.php:205
 msgid ""
@@ -4253,9 +4253,9 @@ msgstr ""
 
 #: includes/player-camp-status.php:883
 #: includes/player-course-status-admin.php:586
-#, fuzzy
+#
 msgid "All seasons"
-msgstr "Alle Veranstaltungen"
+msgstr ""
 
 #: includes/player-camp-status.php:884
 msgid "Summer"
@@ -4285,9 +4285,9 @@ msgstr ""
 
 #: includes/player-camp-status.php:893
 #: includes/player-course-status-admin.php:596
-#, fuzzy
+#
 msgid "Mixed only"
-msgstr "Gemischte Veranstaltungen"
+msgstr ""
 
 #: includes/player-camp-status.php:894
 #: includes/player-course-status-admin.php:597
@@ -4411,15 +4411,15 @@ msgid "Customer"
 msgstr ""
 
 #: includes/player-course-status-admin.php:289
-#, fuzzy
+#
 msgid "Order status"
-msgstr "Bestell-IDs"
+msgstr ""
 
 #: includes/player-course-status-admin.php:579 includes/roster-editor.php:263
 #: includes/roster-editor.php:637
-#, fuzzy
+#
 msgid "Season:"
-msgstr "Saison"
+msgstr ""
 
 #: includes/player-course-status-admin.php:601
 #: includes/winback-report-admin.php:940
@@ -4428,9 +4428,9 @@ msgstr ""
 
 #: includes/player-course-status-admin.php:608
 #: includes/winback-report-admin.php:942
-#, fuzzy
+#
 msgid "All venues"
-msgstr "Alle Veranstaltungen"
+msgstr ""
 
 #: includes/player-course-status-admin.php:612
 msgid "Course day:"
@@ -4474,9 +4474,9 @@ msgid "Course bookings"
 msgstr ""
 
 #: includes/player-course-status-admin.php:818
-#, fuzzy
+#
 msgid "Match tier"
-msgstr "Batchgröße"
+msgstr ""
 
 #: includes/player-course-status.php:945
 msgid ""
@@ -4489,55 +4489,47 @@ msgid "Export blocked"
 msgstr ""
 
 #: includes/repair-contract.php:66 includes/repair-contract.php:680
-#, fuzzy
+#
 msgid "You do not have permission to run repairs."
-msgstr "Sie haben keine Berechtigung, Reparaturen durchzuführen."
+msgstr ""
 
 #: includes/repair-contract.php:239
-#, fuzzy
+#
 msgid "Run Preview before Apply."
-msgstr "Führen Sie eine Vorschau durch, bevor Sie anwenden."
+msgstr ""
 
 #: includes/repair-contract.php:260
-#, fuzzy
+#
 msgid "This scope is shop-wide. Type GLOBAL as well as APPLY."
-msgstr "Dieser Bereich ist shopweit. Geben Sie auch GLOBAL und APPLY ein."
+msgstr ""
 
 #: includes/repair-contract.php:267
-#, fuzzy
+#
 msgid "Preview includes row deletes. Type DELETE to confirm those deletes."
 msgstr ""
-"Die Vorschau beinhaltet Zeilensätze, die gelöscht werden. Geben Sie DELETE "
-"ein, um diese Löschungen zu bestätigen."
 
 #: includes/repair-contract.php:274
-#, fuzzy
+#
 msgid "Preview has no changes. Apply was not run."
 msgstr ""
-"Die Vorschau enthält keine Änderungen. Die Anwendung wurde nicht "
-"durchgeführt."
 
 #: includes/repair-contract.php:679
-#, fuzzy
+#
 msgid "This repair is not available in admin."
-msgstr "Diese Reparatur ist im Admin nicht verfügbar."
+msgstr ""
 
 #: includes/repair-contract.php:685
-#, fuzzy
+#
 msgid "This repair runs only from Advanced tools."
 msgstr ""
-"Diese Reparatur kann nur über fortgeschrittene Werkzeuge ausgeführt werden."
 
 #. translators: 1: row count, 2: backup row cap
 #: includes/repair-contract.php:766
-#, fuzzy, php-format
+#, php-format
 msgid ""
 "This change set has %1$d rows, above the backup limit of %2$d. Narrow the "
 "scope and run Preview again. Apply was not run."
 msgstr ""
-"Dieses Änderungssatz hat %1$d Zeilen, die das Sicherungslimit von %2$d "
-"überschreiten. Verengen Sie den Bereich und führen Sie die Vorschau erneut "
-"durch. Die Anwendung wurde nicht durchgeführt."
 
 #: includes/reporting-discounts.php:642
 #, php-format
@@ -4551,9 +4543,9 @@ msgid "%1$s (%2$s places)"
 msgstr ""
 
 #: includes/reports-ajax.php:73
-#, fuzzy
+#
 msgid "You do not have sufficient permissions to access this report."
-msgstr "Sie haben keine Berechtigung, diese Seite zu sehen."
+msgstr ""
 
 #: includes/reports-ajax.php:119 includes/reports-ajax.php:347
 msgid "No data available for the selected filters."
@@ -4609,9 +4601,9 @@ msgstr ""
 #: includes/reports-ajax.php:314 includes/reports-ajax.php:427
 #: includes/roster-editor-ajax.php:21 includes/roster-editor-ajax.php:255
 #: includes/roster-editor-ajax.php:389
-#, fuzzy
+#
 msgid "You do not have sufficient permissions."
-msgstr "Sie haben keine Berechtigung, Reparaturen durchzuführen."
+msgstr ""
 
 #: includes/reports-ajax.php:356
 msgid "Revenue Breakdown"
@@ -4624,9 +4616,9 @@ msgid ""
 msgstr ""
 
 #: includes/reports-ajax.php:363
-#, fuzzy
+#
 msgid "Product Type"
-msgstr "Produkt"
+msgstr ""
 
 #: includes/reports-ajax.php:364
 msgid "Gross (CHF)"
@@ -4662,9 +4654,9 @@ msgid "Failed to generate Excel file."
 msgstr ""
 
 #: includes/reports-ajax.php:459
-#, fuzzy
+#
 msgid "Unknown sync error"
-msgstr "Unbekannte Reparatur."
+msgstr ""
 
 #: includes/reports-data.php:85
 msgid "No bookings found for the selected criteria."
@@ -4688,9 +4680,9 @@ msgid "Price"
 msgstr ""
 
 #: includes/reports-data.php:104
-#, fuzzy
+#
 msgid "Discounts"
-msgstr "Zahlen"
+msgstr ""
 
 #: includes/reports-data.php:158
 #, php-format
@@ -4703,9 +4695,9 @@ msgid "%1$s CAMPS NUMBERS %2$s"
 msgstr ""
 
 #: includes/reports-export.php:304
-#, fuzzy
+#
 msgid "You do not have sufficient permissions to export reports."
-msgstr "Sie haben keine Berechtigung, Reparaturen durchzuführen."
+msgstr ""
 
 #: includes/reports-export.php:317
 msgid "Failed to generate report."
@@ -4851,9 +4843,9 @@ msgid "Discount Details"
 msgstr ""
 
 #: includes/reports.php:1062
-#, fuzzy
+#
 msgid "You do not have sufficient permissions to export this report."
-msgstr "Sie haben keine Berechtigung, diese Seite zu sehen."
+msgstr ""
 
 #: includes/reports.php:1087
 msgid "No data available for export with current filters."
@@ -5015,9 +5007,9 @@ msgid "BuyClub"
 msgstr ""
 
 #: includes/reports-ui.php:447 includes/reports-ui.php:542
-#, fuzzy
+#
 msgid "Unknown type"
-msgstr "Unbekannte Reparatur."
+msgstr ""
 
 #: includes/reports-ui.php:448 includes/reports-ui.php:543
 #: includes/utils.php:9573
@@ -5095,9 +5087,9 @@ msgstr ""
 #: includes/reports-ui.php:1324 includes/reports-ui.php:1329
 #: includes/roster-editor.php:523 includes/roster-editor.php:897
 #: includes/roster-editor.php:1191
-#, fuzzy
+#
 msgid "Unknown error"
-msgstr "Unbekannte Reparatur."
+msgstr ""
 
 #: includes/reports-ui.php:853 includes/reports-ui.php:1325
 #: includes/reports-ui.php:1330
@@ -5192,9 +5184,9 @@ msgid "Invalid parameters provided."
 msgstr ""
 
 #: includes/roster-details.php:1130
-#, fuzzy
+#
 msgid "Unknown Event"
-msgstr "Unbekannte Reparatur."
+msgstr ""
 
 #: includes/roster-details.php:1149
 msgid "Roster Details for "
@@ -5261,9 +5253,9 @@ msgid "Select season..."
 msgstr ""
 
 #: includes/roster-details.php:1346
-#, fuzzy
+#
 msgid "Day / Term"
-msgstr "Tag danach"
+msgstr ""
 
 #: includes/roster-details.php:1348 includes/roster-details.php:1900
 msgid "Select season first..."
@@ -5279,9 +5271,9 @@ msgstr ""
 
 #: includes/roster-details.php:1364 includes/rosters.php:3027
 #: includes/rosters.php:3124
-#, fuzzy
+#
 msgid "Time"
-msgstr "Zeiten"
+msgstr ""
 
 #: includes/roster-details.php:1366 includes/roster-details.php:1903
 msgid "Select age group first..."
@@ -5306,9 +5298,9 @@ msgstr ""
 #: includes/roster-details.php:1425
 #: includes/roster-move-reason-messages.php:436
 #: includes/roster-move-reason-messages.php:501
-#, fuzzy
+#
 msgid "Untitled roster"
-msgstr "Listen synchronisieren"
+msgstr ""
 
 #: includes/roster-details.php:1441
 #, php-format
@@ -5423,9 +5415,9 @@ msgstr ""
 
 #: includes/roster-details.php:1609 includes/rosters.php:721
 #: includes/rosters.php:1841 includes/rosters.php:2324
-#, fuzzy
+#
 msgid "Reopen Roster"
-msgstr "Listen synchronisieren"
+msgstr ""
 
 #: includes/roster-details.php:1610 includes/rosters.php:804
 #: includes/rosters.php:809 includes/rosters.php:826 includes/rosters.php:831
@@ -5446,10 +5438,9 @@ msgid "Close Out"
 msgstr ""
 
 #: includes/roster-details.php:1638
-#, fuzzy
+#
 msgid "Day presence repairs run from Advanced tools."
 msgstr ""
-"Diese Reparatur kann nur über fortgeschrittene Werkzeuge ausgeführt werden."
 
 #: includes/roster-details.php:1640
 msgid "Open Advanced tools"
@@ -5490,9 +5481,9 @@ msgid "Reopening..."
 msgstr ""
 
 #: includes/roster-details.php:1846
-#, fuzzy
+#
 msgid "Roster reopened successfully."
-msgstr "Der Listenabgleich ist fehlgeschlagen."
+msgstr ""
 
 #: includes/roster-details.php:1905
 msgid "No destination rosters match current filters"
@@ -5597,9 +5588,9 @@ msgid "Invalid field or value."
 msgstr ""
 
 #: includes/roster-editor-ajax.php:324 includes/roster-editor-ajax.php:372
-#, fuzzy
+#
 msgid "Update failed."
-msgstr "Aktualisiert"
+msgstr ""
 
 #: includes/roster-editor-ajax.php:327
 msgid "Field updated successfully."
@@ -5632,9 +5623,9 @@ msgid "Canton/Region:"
 msgstr ""
 
 #: includes/roster-editor.php:280 includes/roster-editor.php:654
-#, fuzzy
+#
 msgid "All Regions"
-msgstr "Alle Veranstaltungen"
+msgstr ""
 
 #: includes/roster-editor.php:328 includes/roster-editor.php:702
 msgid "Edit Field"
@@ -5665,9 +5656,9 @@ msgstr ""
 
 #: includes/roster-editor.php:523 includes/roster-editor.php:897
 #: includes/roster-editor.php:1191
-#, fuzzy
+#
 msgid "Update failed:"
-msgstr "Aktualisiert"
+msgstr ""
 
 #: includes/roster-editor.php:528 includes/roster-editor.php:902
 msgid "Connection error"
@@ -5732,14 +5723,14 @@ msgid "Created At"
 msgstr ""
 
 #: includes/roster-editor.php:1116
-#, fuzzy
+#
 msgid "Updated At"
-msgstr "Aktualisiert"
+msgstr ""
 
 #: includes/roster-editor.php:1123
-#, fuzzy
+#
 msgid "Save Changes"
-msgstr "Geändert"
+msgstr ""
 
 #: includes/roster-editor.php:1188
 msgid "Roster entry updated successfully!"
@@ -5759,9 +5750,9 @@ msgid "Export services are not available."
 msgstr ""
 
 #: includes/roster-export-all-handler.php:130
-#, fuzzy
+#
 msgid "No roster rows found for export."
-msgstr "Einzufügende Listenzeilen"
+msgstr ""
 
 #: includes/roster-export-all-handler.php:318
 msgid "Unsupported export type."
@@ -5777,9 +5768,9 @@ msgstr ""
 
 #: includes/roster-export.php:286 includes/roster-export.php:297
 #: includes/roster-export.php:319
-#, fuzzy
+#
 msgid "You do not have permission to export rosters for this venue."
-msgstr "Sie haben keine Berechtigung, diese Seite zu sehen."
+msgstr ""
 
 #: includes/roster-export.php:343
 msgid ""
@@ -5817,9 +5808,9 @@ msgid "This roster's variation is private or disabled."
 msgstr ""
 
 #: includes/roster-move-reason-messages.php:37
-#, fuzzy
+#
 msgid "This roster has no price set."
-msgstr "Diese Reparatur kann nicht rückgängig gemacht werden."
+msgstr ""
 
 #: includes/roster-move-reason-messages.php:38
 msgid "This course has ended."
@@ -5961,9 +5952,9 @@ msgstr ""
 
 #: includes/rosters.php:1013 includes/rosters.php:1018
 #: includes/rosters.php:2159 includes/rosters.php:2604
-#, fuzzy
+#
 msgid "Reopen Selected Rosters"
-msgstr "Listen synchronisieren"
+msgstr ""
 
 #: includes/rosters.php:1035
 msgid ""
@@ -6012,14 +6003,14 @@ msgstr ""
 
 #. translators: %s: season slug
 #: includes/rosters.php:1512 includes/rosters.php:1963
-#, fuzzy, php-format
+#, php-format
 msgid "Season: %s"
-msgstr "Saison"
+msgstr ""
 
 #: includes/rosters.php:1518 includes/rosters.php:1969
-#, fuzzy, php-format
+#, php-format
 msgid "Venue: %s"
-msgstr "Veranstaltungstyp: %s"
+msgstr ""
 
 #: includes/rosters.php:1522
 #, php-format
@@ -6043,9 +6034,9 @@ msgstr ""
 
 #. translators: %s: activity type label
 #: includes/rosters.php:1540 includes/rosters.php:1989
-#, fuzzy, php-format
+#, php-format
 msgid "Activity Type: %s"
-msgstr "Veranstaltungstyp: %s"
+msgstr ""
 
 #. translators: %s: All, Yes, or No
 #: includes/rosters.php:1547 includes/rosters.php:1996
@@ -6156,18 +6147,18 @@ msgid "↓ Export Tournaments (CSV)"
 msgstr ""
 
 #: includes/rosters.php:3029
-#, fuzzy
+#
 msgid "All Times"
-msgstr "Zeiten"
+msgstr ""
 
 #: includes/rosters.php:3038 includes/rosters.php:3147
 msgid "City"
 msgstr ""
 
 #: includes/rosters.php:3040
-#, fuzzy
+#
 msgid "All Cities"
-msgstr "Alle Veranstaltungen"
+msgstr ""
 
 #: includes/rosters.php:3064
 msgid "No tournaments match these filters"
@@ -6461,14 +6452,14 @@ msgid "Any"
 msgstr ""
 
 #: includes/signature-drift-report.php:141
-#, fuzzy
+#
 msgid "Activity type"
-msgstr "Veranstaltungstyp"
+msgstr ""
 
 #: includes/signature-drift-report.php:156
-#, fuzzy
+#
 msgid "Apply filters"
-msgstr "Anwenden abgeschlossen."
+msgstr ""
 
 #. translators: 1: number of rows scanned in this batch
 #: includes/signature-drift-report.php:163
@@ -6487,9 +6478,9 @@ msgid "Scan next chunk"
 msgstr ""
 
 #: includes/signature-drift-report.php:181
-#, fuzzy
+#
 msgid "Rebuild selected and merge signatures are on Advanced tools."
-msgstr "Ausgewählte Signaturen neu berechnen"
+msgstr ""
 
 #: includes/signature-drift-report.php:189
 msgid "Item"
@@ -6508,19 +6499,19 @@ msgid "No drift rows in this chunk (or end of table)."
 msgstr ""
 
 #: includes/signature-drift-report.php:219
-#, fuzzy
+#
 msgid "Variation ID"
-msgstr "Variation"
+msgstr ""
 
 #: includes/signature-drift-report.php:223
-#, fuzzy
+#
 msgid "# Signatures"
-msgstr "Signaturen zusammenführen"
+msgstr ""
 
 #: includes/signature-drift-report.php:224
-#, fuzzy
+#
 msgid "Signatures"
-msgstr "Signaturen zusammenführen"
+msgstr ""
 
 #: includes/signature-drift-report.php:229
 msgid ""
@@ -6529,10 +6520,9 @@ msgid ""
 msgstr ""
 
 #: includes/signature-drift-report.php:248
-#, fuzzy
+#
 msgid "Merge signatures runs from Advanced tools."
 msgstr ""
-"Diese Reparatur kann nur über fortgeschrittene Werkzeuge ausgeführt werden."
 
 #: includes/utils.php:3123
 msgid "deleted product"
@@ -6551,9 +6541,9 @@ msgid "Date unknown"
 msgstr ""
 
 #: includes/winback-report-admin.php:505
-#, fuzzy
+#
 msgid "More dates"
-msgstr "Bestelldatum bis"
+msgstr ""
 
 #: includes/winback-report-admin.php:521
 msgid "Age group"
@@ -6584,9 +6574,9 @@ msgid "Kind"
 msgstr ""
 
 #: includes/winback-report-admin.php:688
-#, fuzzy
+#
 msgid "Reason"
-msgstr "Saison"
+msgstr ""
 
 #: includes/winback-report-admin.php:689
 msgid "EN parent status"
@@ -6655,18 +6645,18 @@ msgid "Account email"
 msgstr ""
 
 #: includes/winback-report-admin.php:1050
-#, fuzzy
+#
 msgid "Last event"
-msgstr "Alle Veranstaltungen"
+msgstr ""
 
 #: includes/winback-report-admin.php:1052
 msgid "Events in lookback"
 msgstr ""
 
 #: includes/winback-report-admin.php:1054
-#, fuzzy
+#
 msgid "Target event"
-msgstr "Ziel-Signatur"
+msgstr ""
 
 #: includes/winback-report-admin.php:1055
 msgid "Aged up"
