@@ -836,6 +836,23 @@ class AdvancedToolsRepairTest extends TestCase {
         $this->assertSame('edited-after-apply', $db->rows[0]['event_signature']);
     }
 
+    public function test_rebuild_selected_without_row_ids_shows_the_scope_message(): void {
+        $preview = $this->postTool('rebuild_selected', 'preview', ['roster_ids' => '']);
+        $this->assertSame('error', $preview['type'], $preview['message']);
+        $this->assertSame(
+            'Enter at least one roster row ID. A shop-wide signature rebuild is not available.',
+            $preview['message']
+        );
+        $this->assertNotSame('scope', $preview['message']);
+    }
+
+    public function test_repair_day_presence_without_signature_shows_the_scope_message(): void {
+        $preview = $this->postTool('repair_day_presence', 'preview', ['event_signature' => '']);
+        $this->assertSame('error', $preview['type'], $preview['message']);
+        $this->assertSame('Enter an event signature.', $preview['message']);
+        $this->assertNotSame('scope', $preview['message']);
+    }
+
     public function test_financial_backfill_and_placeholders_have_no_rollback_backup(): void {
         $this->assertSame(100, intersoccer_rr_tool_financial_batch_size(''));
         $this->assertSame(100, intersoccer_rr_tool_financial_batch_size('0'));

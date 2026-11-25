@@ -128,6 +128,10 @@ if (!function_exists('intersoccer_rr_advanced_tools_scope_from_post')) {
 
 if (!function_exists('intersoccer_rr_advanced_tools_empty_result')) {
     function intersoccer_rr_advanced_tools_empty_result(string $summary, bool $shop_wide, string $error = ''): array {
+        // Machine codes such as "scope" must not be shown to the operator.
+        if ($error !== '' && $summary !== '') {
+            $error = $summary;
+        }
         return [
             'error' => $error,
             'summary' => $summary,
