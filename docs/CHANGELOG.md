@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.11.25 — 2026-11-25
+
+### Added
+- Capability-gated Advanced tools admin page for roster repairs, with Preview then typed APPLY / GLOBAL / DELETE, JSON backups, and conflict-aware rollback (#240). This includes the season-rename reconcile work from #237.
+
+### Fixed
+- Rebuild selected signatures and Repair Day Presence now show their English validation messages when required scope is missing (#240).
+
 ## 2.11.2 — 2026-11-01
 
 ### Fixed
