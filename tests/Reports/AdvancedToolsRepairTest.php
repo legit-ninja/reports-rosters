@@ -146,7 +146,8 @@ class AdvancedToolsRepairTest extends TestCase {
             $GLOBALS['intersoccer_rr_test_nonce_valid'],
             $GLOBALS['intersoccer_rr_test_pv_active'],
             $GLOBALS['intersoccer_rr_test_backup_known_dirs'],
-            $GLOBALS['intersoccer_rr_test_open_basedir']
+            $GLOBALS['intersoccer_rr_test_open_basedir'],
+            $GLOBALS['intersoccer_rr_test_active_plugins']
         );
         $this->previousWpdb = $GLOBALS['wpdb'] ?? null;
         $_POST = [];
@@ -168,6 +169,7 @@ class AdvancedToolsRepairTest extends TestCase {
             $GLOBALS['intersoccer_rr_test_pv_active'],
             $GLOBALS['intersoccer_rr_test_backup_known_dirs'],
             $GLOBALS['intersoccer_rr_test_open_basedir'],
+            $GLOBALS['intersoccer_rr_test_active_plugins'],
             $GLOBALS['intersoccer_test_current_user_caps'],
             $GLOBALS['intersoccer_test_current_user']
         );
@@ -1100,6 +1102,130 @@ class AdvancedToolsRepairTest extends TestCase {
         }
     }
 
+
+    public function test_fix_issues_blank_or_zero_order_id_is_shop_wide_and_requires_global(): void {
+        $this->assertTrue(intersoccer_rr_scope_is_shop_wide('fix_issues', [
+            'year' => '',
+            'order_id' => '',
+        ]));
+        $this->assertTrue(intersoccer_rr_scope_is_shop_wide('fix_issues', [
+            'year' => '',
+            'order_id' => '0',
+        ]));
+        $this->assertTrue(intersoccer_rr_scope_is_shop_wide('fix_issues', [
+            'year' => '0',
+            'order_id' => 0,
+        ]));
+        $this->assertFalse(intersoccer_rr_scope_is_shop_wide('fix_issues', [
+            'year' => '',
+            'order_id' => '55',
+        ]));
+
+        $_POST = [
+            'year' => '',
+            'order_id' => '',
+        ];
+        $scope = intersoccer_rr_advanced_tools_scope_from_post('fix_issues');
+        $this->assertSame('', $scope['order_id']);
+        $this->assertTrue(intersoccer_rr_scope_is_shop_wide('fix_issues', $scope));
+
+        $_POST = [
+            'year' => '',
+            'order_id' => '0',
+        ];
+        $scope = intersoccer_rr_advanced_tools_scope_from_post('fix_issues');
+        $this->assertSame('', $scope['order_id']);
+        $this->assertTrue(intersoccer_rr_scope_is_shop_wide('fix_issues', $scope));
+
+        unset($GLOBALS['intersoccer_rr_test_tool_runner']);
+        add_filter('intersoccer_rr_diagnostics_service', 'intersoccer_rr_test_diagnostics_service_filter');
+        $preview = $this->postTool('fix_issues', 'preview', [
+            'year' => '',
+            'order_id' => '0',
+        ]);
+        $this->assertNotSame('error', $preview['type'], $preview['message']);
+        $this->assertTrue((bool) ($preview['result']['shop_wide'] ?? false));
+
+        $refused = $this->postTool('fix_issues', 'apply', [
+            'year' => '',
+            'order_id' => '0',
+            'intersoccer_rr_repair_phrase' => 'APPLY',
+        ]);
+        $this->assertStringContainsString('GLOBAL', $refused['message']);
+        $this->assertSame(0, (int) ($GLOBALS['intersoccer_rr_test_writes'] ?? 0));
+    }
+
+    public function test_normalize_order_range_stays_under_the_cap_and_rollback_restores_city(): void {
+        unset($GLOBALS['intersoccer_rr_test_tool_runner']);
+        $db = new AdvancedToolsRepairWpdb();
+        for ($i = 1; $i <= 201; $i++) {
+            $row = $this->rosterRow($i, $i + 100, 'lundi');
+            $row['order_id'] = $i;
+            $row['city'] = 'Zurich City';
+            $row['canton_region'] = 'ZH';
+            $row['activity_type'] = 'Cours';
+            $row['venue'] = 'zurich';
+            $row['times'] = '1000';
+            $row['season'] = $i <= 10 ? 'Autumn 2026' : 'Winter 2026';
+            $db->rows[] = $row;
+        }
+        $GLOBALS['wpdb'] = $db;
+
+        $over = $this->postTool('normalize_language', 'preview');
+        $this->assertSame('error', $over['type']);
+        $this->assertStringContainsString('200', $over['message']);
+
+        intersoccer_rr_repair_reset_state();
+        $preview = $this->postTool('normalize_language', 'preview', [
+            'season' => 'Autumn 2026',
+            'order_id_from' => '1',
+            'order_id_to' => '10',
+        ]);
+        $this->assertSame('info', $preview['type'], $preview['message']);
+        $this->assertFalse((bool) ($preview['result']['shop_wide'] ?? true));
+        $this->assertGreaterThan(0, (int) ($preview['result']['counts']['changed'] ?? 0));
+        $this->assertLessThanOrEqual(200, (int) ($preview['result']['counts']['changed'] ?? 0));
+        $this->assertSame(0, $db->writes);
+        $planned = $preview['result']['rows'][0] ?? [];
+        $this->assertTrue(isset($planned['before']['city']) || isset($planned['before']['course_day']) || isset($planned['before']['activity_type']));
+
+        $applied = $this->postTool('normalize_language', 'apply', [
+            'season' => 'Autumn 2026',
+            'order_id_from' => '1',
+            'order_id_to' => '10',
+            'intersoccer_rr_repair_phrase' => 'APPLY',
+        ]);
+        $this->assertSame('success', $applied['type'], $applied['message']);
+        $this->assertNotSame('lundi', $db->rows[0]['course_day']);
+        $this->assertNotSame('Zurich City', $db->rows[0]['city']);
+        $this->assertSame('lundi', $db->rows[10]['course_day']);
+        $this->assertSame('Zurich City', $db->rows[10]['city']);
+
+        $index = intersoccer_rr_repair_state_get('intersoccer_rr_repair_backup_index', []);
+        $this->assertNotEmpty($index);
+        $rolled = $this->postTool('rollback', 'rollback', [
+            'intersoccer_rr_repair_phrase' => 'APPLY',
+            'intersoccer_rr_repair_backup' => (string) $index[0]['file'],
+        ]);
+        $this->assertStringContainsString('Conflicts left untouched: 0', $rolled['message']);
+        $this->assertSame('lundi', $db->rows[0]['course_day']);
+        $this->assertSame('Zurich City', $db->rows[0]['city']);
+        $this->assertSame('Cours', $db->rows[0]['activity_type']);
+        $this->assertSame('lundi', $db->rows[10]['course_day']);
+    }
+
+    public function test_uninstall_detects_product_variations_by_main_file_not_folder(): void {
+        unset($GLOBALS['intersoccer_rr_test_pv_active']);
+        $GLOBALS['intersoccer_rr_test_active_plugins'] = [
+            'product-variations-custom/intersoccer-product-variations.php',
+        ];
+        $this->assertTrue(intersoccer_rr_repair_product_variations_active());
+        $GLOBALS['intersoccer_rr_test_active_plugins'] = [
+            'other-plugin/other-plugin.php',
+        ];
+        $this->assertFalse(intersoccer_rr_repair_product_variations_active());
+    }
+
     public function test_uninstall_removes_repair_cap_only_when_product_variations_is_inactive(): void {
         $GLOBALS['intersoccer_test_roles'] = [];
         intersoccer_rr_repair_grant_administrator_cap();
@@ -1123,6 +1249,7 @@ class AdvancedToolsRepairTest extends TestCase {
     private function rosterRow(int $id, int $order_item_id, string $course_day): array {
         return [
             'id' => $id,
+            'order_id' => 0,
             'order_item_id' => $order_item_id,
             'product_id' => 10,
             'variation_id' => 11,

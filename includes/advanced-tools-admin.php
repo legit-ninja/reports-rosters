@@ -41,8 +41,12 @@ if (!function_exists('intersoccer_rr_advanced_tools_definitions')) {
             ],
             'normalize_language' => [
                 'label' => __('Normalize Roster Language (EN)', 'intersoccer-reports-rosters'),
-                'description' => __('Rewrites event columns and linked order-line event metadata that are not already English. Player fields are not changed. Shop-wide. Apply is refused when more rows would change than the backup limit.', 'intersoccer-reports-rosters'),
-                'fields' => [],
+                'description' => __('Rewrites event columns and linked order-line event metadata that are not already English. Player fields are not changed. Narrow the run by season or order ID range so a batch stays at or under the backup limit. Leave those fields empty only for a shop-wide run (GLOBAL). Rollback restores city, canton, and activity type along with the other event columns.', 'intersoccer-reports-rosters'),
+                'fields' => [
+                    ['name' => 'season', 'label' => __('Season', 'intersoccer-reports-rosters'), 'type' => 'text'],
+                    ['name' => 'order_id_from', 'label' => __('Order ID from', 'intersoccer-reports-rosters'), 'type' => 'number'],
+                    ['name' => 'order_id_to', 'label' => __('Order ID to', 'intersoccer-reports-rosters'), 'type' => 'number'],
+                ],
             ],
             'sync_placeholders' => [
                 'label' => __('Sync All Placeholders', 'intersoccer-reports-rosters'),
@@ -106,7 +110,14 @@ if (!function_exists('intersoccer_rr_advanced_tools_scope_from_post')) {
             if (($field['type'] ?? '') === 'date') {
                 $scope[$name] = preg_match('/^\d{4}-\d{2}-\d{2}$/', $raw) ? $raw : '';
             } elseif (($field['type'] ?? '') === 'number') {
-                $scope[$name] = (string) max(0, (int) $raw);
+                $raw = trim($raw);
+                if ($name === 'batch_size') {
+                    $scope[$name] = $raw === '' ? '' : (string) max(0, (int) $raw);
+                } elseif ($raw === '' || (int) $raw <= 0) {
+                    $scope[$name] = '';
+                } else {
+                    $scope[$name] = (string) (int) $raw;
+                }
             } else {
                 $scope[$name] = sanitize_text_field($raw);
             }
@@ -183,7 +194,7 @@ if (!function_exists('intersoccer_rr_advanced_tools_execute')) {
                 $result = intersoccer_rr_tool_reconcile($dry_run, $scope);
                 break;
             case 'normalize_language':
-                $result = intersoccer_rr_tool_normalize($dry_run);
+                $result = intersoccer_rr_tool_normalize($dry_run, $scope);
                 break;
             case 'sync_placeholders':
                 $result = intersoccer_rr_tool_placeholders($dry_run);
@@ -490,13 +501,16 @@ if (!function_exists('intersoccer_rr_tool_normalize_plan')) {
      *
      * @return array<int,array<string,mixed>>
      */
-    function intersoccer_rr_tool_normalize_plan(): array {
+    function intersoccer_rr_tool_normalize_plan(array $scope = []): array {
         global $wpdb;
         if (!isset($wpdb) || !method_exists($wpdb, 'get_results') || !method_exists($wpdb, 'prepare')) {
             return [];
         }
         $table = $wpdb->prefix . 'intersoccer_rosters';
-        $columns = 'id, order_item_id, product_id, product_name, activity_type, venue, age_group, camp_terms, course_day, times, season, girls_only, city, canton_region, start_date, booking_type, selected_days, event_signature';
+        $columns = 'id, order_id, order_item_id, product_id, product_name, activity_type, venue, age_group, camp_terms, course_day, times, season, girls_only, city, canton_region, start_date, booking_type, selected_days, event_signature';
+        $season = trim((string) ($scope['season'] ?? ''));
+        $order_from = (int) ($scope['order_id_from'] ?? 0);
+        $order_to = (int) ($scope['order_id_to'] ?? 0);
         $changes = [];
         $cursor = 0;
         $page_size = 200;
@@ -517,6 +531,16 @@ if (!function_exists('intersoccer_rr_tool_normalize_plan')) {
                 $id = (int) ($record['id'] ?? 0);
                 if ($id > $last_id) {
                     $last_id = $id;
+                }
+                if ($season !== '' && strcasecmp(trim((string) ($record['season'] ?? '')), $season) !== 0) {
+                    continue;
+                }
+                $order_id = (int) ($record['order_id'] ?? 0);
+                if ($order_from > 0 && $order_id < $order_from) {
+                    continue;
+                }
+                if ($order_to > 0 && ($order_id <= 0 || $order_id > $order_to)) {
+                    continue;
                 }
                 $row = intersoccer_rr_tool_normalize_row_diff($record);
                 if ($row !== null) {
@@ -682,8 +706,8 @@ if (!function_exists('intersoccer_rr_tool_normalize_apply_plan')) {
 }
 
 if (!function_exists('intersoccer_rr_tool_normalize')) {
-    function intersoccer_rr_tool_normalize(bool $dry_run): array {
-        $rows = intersoccer_rr_tool_normalize_plan();
+    function intersoccer_rr_tool_normalize(bool $dry_run, array $scope = []): array {
+        $rows = intersoccer_rr_tool_normalize_plan($scope);
         $count = count($rows);
         if ($count > (int) INTERSOCCER_RR_REPAIR_BACKUP_ROW_CAP) {
             return [
@@ -845,9 +869,14 @@ if (!function_exists('intersoccer_rr_tool_fix_issues_filters')) {
      * @return array<string,mixed>
      */
     function intersoccer_rr_tool_fix_issues_filters(array $scope): array {
+        $order_id = (int) ($scope['order_id'] ?? 0);
+        $year = trim((string) ($scope['year'] ?? ''));
+        if ($year === '0') {
+            $year = '';
+        }
         return [
-            'year' => (string) ($scope['year'] ?? ''),
-            'order_id' => (int) ($scope['order_id'] ?? 0),
+            'year' => $year,
+            'order_id' => $order_id > 0 ? $order_id : 0,
             'activity_type' => 'All',
             'limit' => (int) INTERSOCCER_RR_REPAIR_BACKUP_ROW_CAP,
             'offset' => 0,

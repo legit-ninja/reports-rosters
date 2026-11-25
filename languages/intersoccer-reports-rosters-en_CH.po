@@ -2414,3 +2414,159 @@ msgstr "This repair runs only from Advanced tools."
 #, fuzzy, php-format
 msgid "This change set has %1$d rows, above the backup limit of %2$d. Narrow the scope and run Preview again. Apply was not run."
 msgstr "This change set has %1$d rows, above the backup limit of %2$d. Narrow the scope and run Preview again. Apply was not run."
+
+msgid "Choose a season before running the weekday repair."
+msgstr "Choose a season before running the weekday repair."
+
+msgid "Day after"
+msgstr "Day after"
+
+msgid "Day before"
+msgstr "Day before"
+
+msgid "Group counts by product"
+msgstr "Group counts by product"
+
+msgid "Groups"
+msgstr "Groups"
+
+msgid "Groups after"
+msgstr "Groups after"
+
+msgid "Groups before"
+msgstr "Groups before"
+
+msgid ""
+"Merges duplicate rosters caused by renamed program seasons (for example"
+"\"Winter 2027\" renamed to \"Winter Courses\"). Only products whose current"
+"season term has no year are touched. Rows are never deleted. Run the Product"
+"Variations \"Season labels\" repair first."
+msgstr ""
+"Merges duplicate rosters caused by renamed program seasons (for example"
+"\"Winter 2027\" renamed to \"Winter Courses\"). Only products whose current"
+"season term has no year are touched. Rows are never deleted. Run the Product"
+"Variations \"Season labels\" repair first."
+
+msgid ""
+"Mode: %1$s | Products: %2$d | Order lines re-synced: %3$d | Rows needing"
+"rename merge: %4$d | Rows changed: %5$d | Rows unchanged: %6$d | Peak"
+"memory: %7$s MB"
+msgstr ""
+"Mode: %1$s | Products: %2$d | Order lines re-synced: %3$d | Rows needing"
+"rename merge: %4$d | Rows changed: %5$d | Rows unchanged: %6$d | Peak"
+"memory: %7$s MB"
+
+msgid ""
+"Mode: %1$s | Season: %2$s | Rows examined: %3$d | Rows needing weekday"
+"repair: %4$d | Rows changed: %5$d | Rows unchanged: %6$d | Peak memory: %7$s"
+"MB"
+msgstr ""
+"Mode: %1$s | Season: %2$s | Rows examined: %3$d | Rows needing weekday"
+"repair: %4$d | Rows changed: %5$d | Rows unchanged: %6$d | Peak memory: %7$s"
+"MB"
+
+msgid "No roster products have a program-season term without a year. Nothing to do."
+msgstr "No roster products have a program-season term without a year. Nothing to do."
+
+msgid "Order"
+msgstr "Order"
+
+msgid "Order ID from"
+msgstr "Order ID from"
+
+msgid "Order ID to"
+msgstr "Order ID to"
+
+msgid "Preview (dry run) finished. Nothing was written."
+msgstr "Preview (dry run) finished. Nothing was written."
+
+msgid "Product"
+msgstr "Product"
+
+msgid "Renamed seasons only (no year in the term)"
+msgstr "Renamed seasons only (no year in the term)"
+
+msgid ""
+"Renamed-seasons mode, with no single season selected, is shop-wide. Type"
+"GLOBAL as well as APPLY."
+msgstr ""
+"Renamed-seasons mode, with no single season selected, is shop-wide. Type"
+"GLOBAL as well as APPLY."
+
+msgid "Result"
+msgstr "Result"
+
+msgid ""
+"Rewrites event columns and linked order-line event metadata that are not"
+"already English. Player fields are not changed. Narrow the run by season or"
+"order ID range so a batch stays at or under the backup limit. Leave those"
+"fields empty only for a shop-wide run (GLOBAL). Rollback restores city,"
+"canton, and activity type along with the other event columns."
+msgstr ""
+"Rewrites event columns and linked order-line event metadata that are not"
+"already English. Player fields are not changed. Narrow the run by season or"
+"order ID range so a batch stays at or under the backup limit. Leave those"
+"fields empty only for a shop-wide run (GLOBAL). Rollback restores city,"
+"canton, and activity type along with the other event columns."
+
+msgid "Row"
+msgstr "Row"
+
+msgid "Row changes (%d, first 200 shown)"
+msgstr "Row changes (%d, first 200 shown)"
+
+msgid "Rows"
+msgstr "Rows"
+
+msgid "Rows needing repair: %1$d. Peak memory: %2$s MB"
+msgstr "Rows needing repair: %1$d. Peak memory: %2$s MB"
+
+msgid "Season after"
+msgstr "Season after"
+
+msgid "Season before"
+msgstr "Season before"
+
+msgid "Season rename repair"
+msgstr "Season rename repair"
+
+msgid "That season is not in the roster table. Choose a season from the list."
+msgstr "That season is not in the roster table. Choose a season from the list."
+
+msgid "Times"
+msgstr "Times"
+
+msgid ""
+"To repair French or German weekdays in one named season (for example Autumn"
+"2026), choose that season below. That mode only rewrites those weekdays to"
+"English and re-signs those rows. It does not re-sync orders, does not change"
+"session times, and does not touch other seasons. Never use Reconcile Rosters"
+"or Rebuild Event Signatures."
+msgstr ""
+"To repair French or German weekdays in one named season (for example Autumn"
+"2026), choose that season below. That mode only rewrites those weekdays to"
+"English and re-signs those rows. It does not re-sync orders, does not change"
+"session times, and does not touch other seasons. Never use Reconcile Rosters"
+"or Rebuild Event Signatures."
+
+msgid "Type APPLY to confirm Apply"
+msgstr "Type APPLY to confirm Apply"
+
+msgid "Variation"
+msgstr "Variation"
+
+msgid ""
+"Variations that stay split after this pass (session times or other fields,"
+"not weekdays)"
+msgstr ""
+"Variations that stay split after this pass (session times or other fields,"
+"not weekdays)"
+
+msgid "You do not have permission to access this page."
+msgstr "You do not have permission to access this page."
+
+msgid "apply"
+msgstr "apply"
+
+msgid "preview"
+msgstr "preview"

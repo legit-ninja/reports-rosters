@@ -687,6 +687,51 @@ if (!function_exists('intersoccer_rr_repair_block_legacy_ajax')) {
     }
 }
 
+
+if (!function_exists('intersoccer_rr_repair_scope_value_is_blank')) {
+    /**
+     * True when a scope field is empty or a number field that became 0.
+     * HTML number inputs submit a blank as 0 after integer casting.
+     *
+     * @param mixed $value Raw or stored scope value.
+     */
+    function intersoccer_rr_repair_scope_value_is_blank($value): bool {
+        $value = trim((string) $value);
+        return $value === '' || $value === '0';
+    }
+}
+
+if (!function_exists('intersoccer_rr_repair_active_plugin_has_basename')) {
+    /**
+     * True when an active plugin main file matches $basename, regardless of folder.
+     *
+     * @param string $basename Main PHP file, e.g. intersoccer-product-variations.php.
+     */
+    function intersoccer_rr_repair_active_plugin_has_basename(string $basename): bool {
+        $basename = basename($basename);
+        if ($basename === '') {
+            return false;
+        }
+        $plugins = [];
+        if (isset($GLOBALS['intersoccer_rr_test_active_plugins']) && is_array($GLOBALS['intersoccer_rr_test_active_plugins'])) {
+            $plugins = $GLOBALS['intersoccer_rr_test_active_plugins'];
+        } else {
+            if (function_exists('get_option')) {
+                $plugins = (array) get_option('active_plugins', []);
+            }
+            if (function_exists('is_multisite') && is_multisite() && function_exists('get_site_option')) {
+                $plugins = array_merge($plugins, array_keys((array) get_site_option('active_sitewide_plugins', [])));
+            }
+        }
+        foreach ($plugins as $plugin) {
+            if (basename((string) $plugin) === $basename) {
+                return true;
+            }
+        }
+        return false;
+    }
+}
+
 if (!function_exists('intersoccer_rr_scope_is_shop_wide')) {
     function intersoccer_rr_scope_is_shop_wide(string $tool, array $scope): bool {
         $blank = static function ($value): bool {
@@ -699,9 +744,13 @@ if (!function_exists('intersoccer_rr_scope_is_shop_wide')) {
             case 'financial_backfill':
                 return $blank($scope['start_date'] ?? '');
             case 'fix_issues':
-                return $blank($scope['order_id'] ?? '') && $blank($scope['year'] ?? '');
-            case 'upgrade_database':
+                return intersoccer_rr_repair_scope_value_is_blank($scope['order_id'] ?? '')
+                    && intersoccer_rr_repair_scope_value_is_blank($scope['year'] ?? '');
             case 'normalize_language':
+                return intersoccer_rr_repair_scope_value_is_blank($scope['season'] ?? '')
+                    && intersoccer_rr_repair_scope_value_is_blank($scope['order_id_from'] ?? '')
+                    && intersoccer_rr_repair_scope_value_is_blank($scope['order_id_to'] ?? '');
+            case 'upgrade_database':
             case 'sync_placeholders':
                 return true;
             default:
@@ -764,6 +813,9 @@ if (!function_exists('intersoccer_rr_repair_product_variations_active')) {
         if (array_key_exists('intersoccer_rr_test_pv_active', $GLOBALS)) {
             return (bool) $GLOBALS['intersoccer_rr_test_pv_active'];
         }
+        if (array_key_exists('intersoccer_rr_test_active_plugins', $GLOBALS)) {
+            return intersoccer_rr_repair_active_plugin_has_basename('intersoccer-product-variations.php');
+        }
         if (function_exists('intersoccer_pv_user_can_run_repairs') || function_exists('intersoccer_pv_repair_uninstall')) {
             return true;
         }
@@ -776,10 +828,7 @@ if (!function_exists('intersoccer_rr_repair_product_variations_active')) {
                 require_once $plugin_php;
             }
         }
-        if (function_exists('is_plugin_active')) {
-            return is_plugin_active('intersoccer-product-variations/intersoccer-product-variations.php');
-        }
-        return false;
+        return intersoccer_rr_repair_active_plugin_has_basename('intersoccer-product-variations.php');
     }
 }
 

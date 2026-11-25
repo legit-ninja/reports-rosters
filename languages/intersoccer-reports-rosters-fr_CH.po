@@ -870,8 +870,9 @@ msgstr ""
 
 #: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:1766
 #: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/camp-pages.php:571
+#, fuzzy
 msgid "Season"
-msgstr ""
+msgstr "Saison"
 
 #: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/includes/rosters.php:1768
 #: /home/jeremy-lee/projects/underdog/intersoccer/intersoccer-reports-rosters/classes/ui/pages/camp-pages.php:573
@@ -2374,3 +2375,203 @@ msgstr "Cette réparation ne s'exécute que via les outils avancés."
 #, fuzzy, php-format
 msgid "This change set has %1$d rows, above the backup limit of %2$d. Narrow the scope and run Preview again. Apply was not run."
 msgstr "Ce jeu de modifications comporte %1$d lignes, au-dessus du seuil de sauvegarde de %2$d. Limitez la portée et exécutez l'aperçu à nouveau. Appliquer n'a pas été exécuté."
+
+#, fuzzy
+msgid "Choose a season before running the weekday repair."
+msgstr "Choisissez une saison avant de lancer la réparation des jours de la semaine."
+
+#, fuzzy
+msgid "Day after"
+msgstr "Jour suivant"
+
+#, fuzzy
+msgid "Day before"
+msgstr "Jour précédent"
+
+#, fuzzy
+msgid "Group counts by product"
+msgstr "Compte les groupes par produit"
+
+#, fuzzy
+msgid "Groups"
+msgstr "Groupes"
+
+#, fuzzy
+msgid "Groups after"
+msgstr "Groupes après"
+
+#, fuzzy
+msgid "Groups before"
+msgstr "Groupes avant"
+
+#, fuzzy
+msgid ""
+"Merges duplicate rosters caused by renamed program seasons (for example"
+"\"Winter 2027\" renamed to \"Winter Courses\"). Only products whose current"
+"season term has no year are touched. Rows are never deleted. Run the Product"
+"Variations \"Season labels\" repair first."
+msgstr ""
+"Fusionne les effectifs en double causés par des saisons de programme"
+"renommées (par exemple « Winter 2027 » renommée en « Winter Courses »)."
+"Seuls les produits dont le terme de saison actuel n'a pas d'année sont"
+"concernés. Les lignes ne sont jamais supprimées. Exécutez d'abord la"
+"réparation « Season labels » de Product Variations."
+
+#, fuzzy
+msgid ""
+"Mode: %1$s | Products: %2$d | Order lines re-synced: %3$d | Rows needing"
+"rename merge: %4$d | Rows changed: %5$d | Rows unchanged: %6$d | Peak"
+"memory: %7$s MB"
+msgstr ""
+"Mode: %1$s | Produits: %2$d | Lignes de commande ré-synchronisées: %3$d |"
+"Lignes nécessitant une fusion de renommage: %4$d | Lignes modifiées: %5$d |"
+"Lignes inchangées: %6$d | Mémoire maximale: %7$s MB"
+
+#, fuzzy
+msgid ""
+"Mode: %1$s | Season: %2$s | Rows examined: %3$d | Rows needing weekday"
+"repair: %4$d | Rows changed: %5$d | Rows unchanged: %6$d | Peak memory: %7$s"
+"MB"
+msgstr ""
+"Mode: %1$s | Saison: %2$s | Lignes examinées: %3$d | Lignes nécessitant une"
+"réparation des jours de la semaine: %4$d | Lignes modifiées: %5$d | Lignes"
+"inchangées: %6$d | Mémoire maximale: %7$s MB"
+
+#, fuzzy
+msgid "No roster products have a program-season term without a year. Nothing to do."
+msgstr ""
+"Aucun produit d'effectifs n'a un terme de saison de programme sans année."
+"Rien à faire."
+
+#, fuzzy
+msgid "Order"
+msgstr "Commande"
+
+#, fuzzy
+msgid "Order ID from"
+msgstr "ID de commande à partir de"
+
+#, fuzzy
+msgid "Order ID to"
+msgstr "ID de commande jusqu'à"
+
+#, fuzzy
+msgid "Preview (dry run) finished. Nothing was written."
+msgstr "Prévisualisation (exécution en mode essai) terminée. Rien n'a été écrit."
+
+#, fuzzy
+msgid "Product"
+msgstr "Produit"
+
+#, fuzzy
+msgid "Renamed seasons only (no year in the term)"
+msgstr "Saisons renommées uniquement (pas d'année dans la période)"
+
+#, fuzzy
+msgid ""
+"Renamed-seasons mode, with no single season selected, is shop-wide. Type"
+"GLOBAL as well as APPLY."
+msgstr ""
+"Mode des saisons renommées, avec aucune saison sélectionnée, est global."
+"Tapez aussi GLOBAL et APPLY."
+
+#, fuzzy
+msgid "Result"
+msgstr "Résultat"
+
+#, fuzzy
+msgid ""
+"Rewrites event columns and linked order-line event metadata that are not"
+"already English. Player fields are not changed. Narrow the run by season or"
+"order ID range so a batch stays at or under the backup limit. Leave those"
+"fields empty only for a shop-wide run (GLOBAL). Rollback restores city,"
+"canton, and activity type along with the other event columns."
+msgstr ""
+"Réécrit les colonnes d'événement et les métadonnées liées des lignes de"
+"commande d'événement qui ne sont pas déjà en anglais. Les champs des joueurs"
+"ne sont pas modifiés. Limitez l'exécution par saison ou plage d'ID de"
+"commande pour que l'ensemble reste à ou sous la limite de sauvegarde."
+"Laissez ces champs vides uniquement pour une exécution globale (GLOBAL). Le"
+"rollback restaure la ville, le canton et le type d'activité ainsi que les"
+"autres colonnes d'événement."
+
+#, fuzzy
+msgid "Row"
+msgstr "Ligne"
+
+#, fuzzy
+msgid "Row changes (%d, first 200 shown)"
+msgstr "Changements de ligne (%d, les 200 premiers affichés)"
+
+#, fuzzy
+msgid "Rows"
+msgstr "Lignes"
+
+#, fuzzy
+msgid "Rows needing repair: %1$d. Peak memory: %2$s MB"
+msgstr "Lignes nécessitant une réparation: %1$d. Mémoire maximale: %2$s MB"
+
+#, fuzzy
+msgid "Season after"
+msgstr "Saison suivante"
+
+#, fuzzy
+msgid "Season before"
+msgstr "Saison précédente"
+
+#, fuzzy
+msgid "Season rename repair"
+msgstr "Réparation du renommage de saison"
+
+#, fuzzy
+msgid "That season is not in the roster table. Choose a season from the list."
+msgstr ""
+"Cette saison n'est pas dans la table des effectifs. Choisissez une saison"
+"dans la liste."
+
+#, fuzzy
+msgid "Times"
+msgstr "Heures"
+
+#, fuzzy
+msgid ""
+"To repair French or German weekdays in one named season (for example Autumn"
+"2026), choose that season below. That mode only rewrites those weekdays to"
+"English and re-signs those rows. It does not re-sync orders, does not change"
+"session times, and does not touch other seasons. Never use Reconcile Rosters"
+"or Rebuild Event Signatures."
+msgstr ""
+"Pour réparer les jours de la semaine en français ou en allemand dans une"
+"saison nommée (par exemple Autumn 2026), choisissez cette saison ci-dessous."
+"Ce mode réécrit uniquement ces jours de la semaine en anglais et re-signe"
+"ces lignes. Il ne resynchronise pas les commandes, ne change pas les heures"
+"de session et ne touche pas les autres saisons. N'utilisez jamais Reconcile"
+"Rosters ni Rebuild Event Signatures."
+
+#, fuzzy
+msgid "Type APPLY to confirm Apply"
+msgstr "Tapez APPLY pour confirmer l'application"
+
+#, fuzzy
+msgid "Variation"
+msgstr "Variation"
+
+#, fuzzy
+msgid ""
+"Variations that stay split after this pass (session times or other fields,"
+"not weekdays)"
+msgstr ""
+"Variations qui restent divisées après cette passe (heures de session ou"
+"d'autres champs, pas les jours de la semaine)"
+
+#, fuzzy
+msgid "You do not have permission to access this page."
+msgstr "Vous n'avez pas la permission d'accéder à cette page."
+
+#, fuzzy
+msgid "apply"
+msgstr "appliquer"
+
+#, fuzzy
+msgid "preview"
+msgstr "aperçu"

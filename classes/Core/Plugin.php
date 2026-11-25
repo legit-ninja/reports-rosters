@@ -465,10 +465,19 @@ final class Plugin {
      * @return void
      */
     private function load_textdomain() {
-        $locale = determine_locale();
-        $mo_file = $this->plugin_path . 'languages/' . self::TEXT_DOMAIN . '-' . $locale . '.mo';
-        
-        load_textdomain(self::TEXT_DOMAIN, $mo_file);
+        $locale = function_exists('determine_locale') ? determine_locale() : get_locale();
+        $dir = $this->plugin_path . 'languages/';
+        $mo_file = $dir . self::TEXT_DOMAIN . '-' . $locale . '.mo';
+        if (!is_readable($mo_file)) {
+            if (preg_match('/^fr(_|$)/i', (string) $locale)) {
+                $mo_file = $dir . self::TEXT_DOMAIN . '-fr_CH.mo';
+            } elseif (preg_match('/^de(_|$)/i', (string) $locale)) {
+                $mo_file = $dir . self::TEXT_DOMAIN . '-de_CH.mo';
+            }
+        }
+        if (is_readable($mo_file)) {
+            load_textdomain(self::TEXT_DOMAIN, $mo_file);
+        }
         load_plugin_textdomain(self::TEXT_DOMAIN, false, dirname(plugin_basename($this->plugin_file)) . '/languages');
     }
     
