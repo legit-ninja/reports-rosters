@@ -1,7 +1,9 @@
 #!/usr/bin/env php
 <?php
 /**
- * Verify Advanced tools and Season rename page strings resolve in fr_FR and de_DE.
+ * Verify Advanced tools and Season rename admin strings stay untranslated
+ * in the French and German catalogs. InterSoccer wp-admin is English.
+ * Customer-facing translations are left alone.
  *
  * Usage: php scripts/verify-advanced-tools-translations.php
  */
@@ -13,7 +15,9 @@ $files = [
 ];
 $catalogs = [
     'fr_FR' => $root . '/languages/intersoccer-reports-rosters-fr_FR.po',
+    'fr_CH' => $root . '/languages/intersoccer-reports-rosters-fr_CH.po',
     'de_DE' => $root . '/languages/intersoccer-reports-rosters-de_DE.po',
+    'de_CH' => $root . '/languages/intersoccer-reports-rosters-de_CH.po',
 ];
 
 /**
@@ -410,30 +414,33 @@ $failures = 0;
 echo "Page strings extracted: " . count($strings) . "\n";
 foreach ($catalogs as $locale => $path) {
     $parsed = intersoccer_rr_parse_po($path);
-    $missing = [];
-    $empty = [];
+    $translated = [];
+    $fuzzy_admin = [];
     foreach ($strings as $string) {
         if (!isset($parsed['entries'][$string])) {
-            $missing[] = $string;
             continue;
         }
-        if (trim($parsed['entries'][$string]['msgstr']) === '') {
-            $empty[] = $string;
+        $entry = $parsed['entries'][$string];
+        if (trim((string) $entry['msgstr']) !== '') {
+            $translated[] = $string;
+        }
+        if (!empty($entry['fuzzy'])) {
+            $fuzzy_admin[] = $string;
         }
     }
     echo sprintf(
-        "%s: fuzzy=%d, missing=%d, empty-msgstr=%d\n",
+        "%s: admin-translated=%d, admin-fuzzy=%d, catalog-fuzzy=%d\n",
         $locale,
-        $parsed['fuzzy_count'],
-        count($missing),
-        count($empty)
+        count($translated),
+        count($fuzzy_admin),
+        $parsed['fuzzy_count']
     );
-    foreach ($missing as $string) {
-        echo "  MISSING msgid: {$string}\n";
+    foreach ($translated as $string) {
+        echo "  TRANSLATED admin msgid: {$string}\n";
         $failures++;
     }
-    foreach ($empty as $string) {
-        echo "  EMPTY msgstr: {$string}\n";
+    foreach ($fuzzy_admin as $string) {
+        echo "  FUZZY admin msgid: {$string}\n";
         $failures++;
     }
 }
@@ -512,7 +519,7 @@ if ($failures > 0) {
     fwrite(STDERR, "Failed: {$failures} translation check(s) did not pass.\n");
     exit(1);
 }
-echo "All Advanced tools and Season rename page strings resolve in fr_FR and de_DE.\n";
+echo "No Advanced tools or Season rename admin strings are translated in FR/DE catalogs.\n";
 echo "All FR/DE msgstr spacing and glued-word checks passed.\n";
 echo "No fuzzy entries exist outside Advanced tools / Season rename pages.\n";
 echo "msgfmt -c passed on every catalog.\n";

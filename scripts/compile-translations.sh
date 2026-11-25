@@ -3,16 +3,15 @@
 # Compile Translation Files (.po → .mo)
 # Run before deployment to ensure .mo files are up to date
 #
-# The French and German Advanced tools drafts are still marked fuzzy
-# (wording is not approved yet). msgfmt skips fuzzy entries unless you
-# pass --use-fuzzy. Until those drafts are approved, compile with:
-#   ./scripts/compile-translations.sh --use-fuzzy
-#
-# --use-fuzzy applies only to the French and German catalogs (fr_FR,
-# fr_CH, de_DE, de_CH). en_CH is always compiled without --use-fuzzy so
-# stale fuzzy English drafts cannot appear in the .mo for Swiss English
-# admins; they see the source msgid instead. en_CH is kept because the
-# locale is in use; dropping it would fall back less predictably.
+# InterSoccer wp-admin stays in English. Do not compile French or German
+# translations for Advanced tools or Season rename admin strings.
+# --use-fuzzy, if passed, applies only to the French and German catalogs
+# (fr_FR, fr_CH, de_DE, de_CH). en_CH is always compiled without
+# --use-fuzzy so stale fuzzy English drafts cannot appear in the .mo for
+# Swiss English admins; they see the source msgid instead. en_CH is kept
+# because the locale is in use; dropping it would fall back less
+# predictably. fr_FR/de_DE catalogs and the fr_*/de_* fallback exist so
+# customer-facing strings still load for those locales.
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -47,9 +46,9 @@ for arg in "$@"; do
         -h|--help)
             echo "Usage: $0 [--use-fuzzy]"
             echo "  --use-fuzzy  Include fuzzy draft translations in the French and"
-            echo "               German .mo files. Needed for now while the FR/DE"
-            echo "               Advanced tools drafts remain fuzzy and unapproved."
-            echo "               en_CH is always compiled without --use-fuzzy."
+            echo "               German .mo files. Do not use this for Advanced tools"
+            echo "               or Season rename admin strings; wp-admin stays in"
+            echo "               English. en_CH is always compiled without --use-fuzzy."
             exit 0
             ;;
         *)
