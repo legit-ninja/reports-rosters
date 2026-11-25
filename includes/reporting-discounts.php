@@ -12,68 +12,6 @@ if (!defined('ABSPATH')) {
 require_once dirname(__FILE__) . '/financial-attribution-helpers.php';
 
 /**
- * CRITICAL: Store discount information when orders are placed
- * This hooks into WooCommerce order processing to capture discount data for reporting
- */
-// add_action('woocommerce_checkout_order_processed', 'intersoccer_store_discount_data_for_reporting', 20, 3);
-// function intersoccer_store_discount_data_for_reporting($order_id, $posted_data, $order) {
-//     try {
-//         error_log("InterSoccer Reporting: Storing discount data for order {$order_id}");
-        
-//         // Get cart fees (our discounts) before cart is cleared
-//         $cart_fees = WC()->cart->get_fees();
-//         $combo_discounts = [];
-//         $total_combo_amount = 0;
-        
-//         foreach ($cart_fees as $fee) {
-//             if ($fee->amount < 0) { // Negative = discount
-//                 $combo_discounts[] = [
-//                     'name' => $fee->name,
-//                     'amount' => abs($fee->amount),
-//                     'type' => intersoccer_determine_discount_type($fee->name)
-//                 ];
-//                 $total_combo_amount += abs($fee->amount);
-//                 error_log("InterSoccer Reporting: Found combo discount: {$fee->name} = " . abs($fee->amount) . " CHF");
-//             }
-//         }
-        
-//         // Get coupon discounts
-//         $coupon_discounts = [];
-//         $total_coupon_amount = 0;
-        
-//         foreach ($order->get_coupon_codes() as $coupon_code) {
-//             $coupon_amount = $order->get_discount_amount($coupon_code);
-//             if ($coupon_amount > 0) {
-//                 $coupon_discounts[] = [
-//                     'name' => $coupon_code,
-//                     'amount' => $coupon_amount,
-//                     'type' => 'coupon'
-//                 ];
-//                 $total_coupon_amount += $coupon_amount;
-//                 error_log("InterSoccer Reporting: Found coupon: {$coupon_code} = {$coupon_amount} CHF");
-//             }
-//         }
-        
-//         // Store comprehensive discount data
-//         $total_discount_amount = $total_combo_amount + $total_coupon_amount;
-//         $all_discounts = array_merge($combo_discounts, $coupon_discounts);
-        
-//         update_post_meta($order_id, '_intersoccer_total_discounts', $total_discount_amount);
-//         update_post_meta($order_id, '_intersoccer_combo_discounts', $combo_discounts);
-//         update_post_meta($order_id, '_intersoccer_coupon_discounts', $coupon_discounts);
-//         update_post_meta($order_id, '_intersoccer_all_discounts', $all_discounts);
-        
-//         // Store item-level discount allocation for precise reporting
-//         intersoccer_allocate_discounts_to_order_items($order_id, $order, $all_discounts);
-        
-//         error_log("InterSoccer Reporting: Stored discount data for order {$order_id}. Total: {$total_discount_amount} CHF");
-        
-//     } catch (Exception $e) {
-//         error_log("InterSoccer Reporting: Error storing discount data for order {$order_id}: " . $e->getMessage());
-//     }
-// }
-
-/**
  * Calculate item-level discount allocation for reporting
  */
 function intersoccer_calculate_item_discount_reporting($cart_item, $discount_fees, $product_type) {
