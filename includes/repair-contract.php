@@ -313,6 +313,56 @@ if (!function_exists('intersoccer_rr_repair_backup_dir_is_plugin')) {
     }
 }
 
+
+if (!function_exists('intersoccer_rr_repair_open_basedir_roots')) {
+    /**
+     * open_basedir roots, or null when the host does not restrict paths.
+     *
+     * @return string[]|null
+     */
+    function intersoccer_rr_repair_open_basedir_roots(): ?array {
+        if (array_key_exists('intersoccer_rr_test_open_basedir', $GLOBALS)) {
+            $open = (string) $GLOBALS['intersoccer_rr_test_open_basedir'];
+        } else {
+            $open = ini_get('open_basedir');
+            $open = is_string($open) ? $open : '';
+        }
+        if ($open === '') {
+            return null;
+        }
+        $roots = [];
+        foreach (explode(PATH_SEPARATOR, $open) as $root) {
+            $root = rtrim(str_replace('\\', '/', $root), '/');
+            if ($root !== '') {
+                $roots[] = $root;
+            }
+        }
+        return $roots;
+    }
+}
+
+if (!function_exists('intersoccer_rr_repair_path_allowed')) {
+    /**
+     * False when $path sits outside open_basedir. Those probes warn on restricted hosts.
+     */
+    function intersoccer_rr_repair_path_allowed(string $path): bool {
+        $roots = intersoccer_rr_repair_open_basedir_roots();
+        if ($roots === null) {
+            return true;
+        }
+        $path = rtrim(str_replace('\\', '/', $path), '/');
+        if ($path === '') {
+            return false;
+        }
+        foreach ($roots as $root) {
+            if ($path === $root || strpos($path, $root . '/') === 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+}
+
 if (!function_exists('intersoccer_rr_repair_backup_dir_choose')) {
     /**
      * Prefer a directory outside the web root.
@@ -337,7 +387,7 @@ if (!function_exists('intersoccer_rr_repair_backup_dir_choose')) {
             return $fallback;
         }
         $parent = dirname($abspath);
-        if ($parent === '' || $parent === '.' || $parent === '/' || $parent === $abspath || !is_dir($parent) || !is_writable($parent)) {
+        if ($parent === '' || $parent === '.' || $parent === '/' || $parent === $abspath || !intersoccer_rr_repair_path_allowed($parent) || !is_dir($parent) || !is_writable($parent)) {
             return $fallback;
         }
         return $parent . '/intersoccer-rr-repair-backups';
@@ -387,10 +437,12 @@ if (!function_exists('intersoccer_rr_repair_backup_dir')) {
             $dir = (string) $GLOBALS['intersoccer_rr_test_backup_dir'];
         } else {
             $dir = intersoccer_rr_repair_backup_dir_choose();
-            if (!is_dir($dir)) {
-                wp_mkdir_p($dir);
+            if (!intersoccer_rr_repair_path_allowed($dir) || !is_dir($dir)) {
+                if (intersoccer_rr_repair_path_allowed($dir)) {
+                    wp_mkdir_p($dir);
+                }
             }
-            if (!is_dir($dir) || !is_writable($dir)) {
+            if (!intersoccer_rr_repair_path_allowed($dir) || !is_dir($dir) || !is_writable($dir)) {
                 $dir = intersoccer_rr_repair_backup_uploads_dir();
             }
         }
@@ -507,14 +559,14 @@ if (!function_exists('intersoccer_rr_repair_backup_locate')) {
         }
         foreach (intersoccer_rr_repair_backup_candidate_dirs($filename) as $dir) {
             $path = $dir . '/' . $filename;
-            if (is_file($path) && is_readable($path)) {
+            if (intersoccer_rr_repair_path_allowed($path) && is_file($path) && is_readable($path)) {
                 return $path;
             }
         }
         $current = rtrim(str_replace('\\', '/', intersoccer_rr_repair_backup_dir()), '/');
         if (intersoccer_rr_repair_backup_dir_is_plugin($current)) {
             $path = $current . '/' . $filename;
-            if (is_file($path) && is_readable($path)) {
+            if (intersoccer_rr_repair_path_allowed($path) && is_file($path) && is_readable($path)) {
                 return $path;
             }
         }
@@ -772,7 +824,7 @@ if (!function_exists('intersoccer_rr_repair_delete_backup_dir')) {
      */
     function intersoccer_rr_repair_delete_backup_dir(string $dir): void {
         $dir = rtrim(str_replace('\\', '/', $dir), '/');
-        if (!intersoccer_rr_repair_backup_dir_is_plugin($dir) || is_link($dir) || !is_dir($dir)) {
+        if (!intersoccer_rr_repair_backup_dir_is_plugin($dir) || !intersoccer_rr_repair_path_allowed($dir) || is_link($dir) || !is_dir($dir)) {
             return;
         }
         $items = scandir($dir);

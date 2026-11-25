@@ -2,6 +2,11 @@
 
 # Compile Translation Files (.po → .mo)
 # Run before deployment to ensure .mo files are up to date
+#
+# The French and German Advanced tools drafts are still marked fuzzy
+# (wording is not approved yet). msgfmt skips fuzzy entries unless you
+# pass --use-fuzzy. Until those drafts are approved, compile with:
+#   ./scripts/compile-translations.sh --use-fuzzy
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -26,6 +31,27 @@ if ! command -v msgfmt &> /dev/null; then
     echo ""
     exit 1
 fi
+
+USE_FUZZY=0
+for arg in "$@"; do
+    case "$arg" in
+        --use-fuzzy)
+            USE_FUZZY=1
+            ;;
+        -h|--help)
+            echo "Usage: $0 [--use-fuzzy]"
+            echo "  --use-fuzzy  Include fuzzy draft translations in the .mo files."
+            echo "               Needed for now while the FR/DE Advanced tools"
+            echo "               drafts remain fuzzy and unapproved."
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $arg" >&2
+            echo "Usage: $0 [--use-fuzzy]" >&2
+            exit 1
+            ;;
+    esac
+done
 
 # Check if languages directory exists
 if [ ! -d "languages" ]; then
@@ -56,13 +82,18 @@ for po_file in *.po; do
     
     echo -n "Compiling $po_file → $mo_file ... "
     
-    if msgfmt -o "$mo_file" "$po_file" 2>/dev/null; then
+    MSGFMT_OPTS=(-o "$mo_file" "$po_file")
+    if [ "$USE_FUZZY" -eq 1 ]; then
+        MSGFMT_OPTS=(--use-fuzzy -o "$mo_file" "$po_file")
+    fi
+
+    if msgfmt "${MSGFMT_OPTS[@]}" 2>/dev/null; then
         echo -e "${GREEN}✓${NC}"
         COMPILED=$((COMPILED + 1))
     else
         echo -e "${RED}✗ FAILED${NC}"
         echo "  Error compiling $po_file"
-        msgfmt -o "$mo_file" "$po_file"  # Show error
+        msgfmt "${MSGFMT_OPTS[@]}"  # Show error
         ERRORS=$((ERRORS + 1))
     fi
 done

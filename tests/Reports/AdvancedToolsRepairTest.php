@@ -145,7 +145,8 @@ class AdvancedToolsRepairTest extends TestCase {
             $GLOBALS['intersoccer_rr_test_tool_runner'],
             $GLOBALS['intersoccer_rr_test_nonce_valid'],
             $GLOBALS['intersoccer_rr_test_pv_active'],
-            $GLOBALS['intersoccer_rr_test_backup_known_dirs']
+            $GLOBALS['intersoccer_rr_test_backup_known_dirs'],
+            $GLOBALS['intersoccer_rr_test_open_basedir']
         );
         $this->previousWpdb = $GLOBALS['wpdb'] ?? null;
         $_POST = [];
@@ -166,6 +167,7 @@ class AdvancedToolsRepairTest extends TestCase {
             $GLOBALS['intersoccer_rr_test_nonce_valid'],
             $GLOBALS['intersoccer_rr_test_pv_active'],
             $GLOBALS['intersoccer_rr_test_backup_known_dirs'],
+            $GLOBALS['intersoccer_rr_test_open_basedir'],
             $GLOBALS['intersoccer_test_current_user_caps'],
             $GLOBALS['intersoccer_test_current_user']
         );
@@ -1047,6 +1049,55 @@ class AdvancedToolsRepairTest extends TestCase {
         @rmdir($base . '/outside');
         @rmdir($base . '/uploads');
         @rmdir($base);
+    }
+
+    public function test_backup_dir_probe_skips_paths_outside_open_basedir(): void {
+        $root = sys_get_temp_dir() . '/rr-open-' . getmypid() . '-' . uniqid('', true);
+        mkdir($root, 0777, true);
+        $GLOBALS['intersoccer_rr_test_open_basedir'] = $root;
+
+        $outside = dirname($root) . '/rr-outside-' . uniqid('', true);
+        mkdir($outside, 0777, true);
+        $this->assertFalse(intersoccer_rr_repair_path_allowed($outside));
+        $this->assertFalse(intersoccer_rr_repair_path_allowed($outside . '/wordpress'));
+        $this->assertTrue(intersoccer_rr_repair_path_allowed($root));
+        $this->assertTrue(intersoccer_rr_repair_path_allowed($root . '/wordpress'));
+
+        $fallback = rtrim(str_replace('\\', '/', intersoccer_rr_repair_backup_uploads_dir()), '/');
+        $chosen_outside = intersoccer_rr_repair_backup_dir_choose($outside . '/wordpress');
+        $this->assertSame($fallback, rtrim(str_replace('\\', '/', $chosen_outside), '/'));
+
+        $inside_wp = $root . '/wordpress';
+        mkdir($inside_wp, 0777, true);
+        $chosen_inside = intersoccer_rr_repair_backup_dir_choose($inside_wp);
+        $this->assertSame($root . '/intersoccer-rr-repair-backups', rtrim(str_replace('\\', '/', $chosen_inside), '/'));
+
+        $outside_dir = $outside . '/intersoccer-rr-repair-backups';
+        mkdir($outside_dir, 0777, true);
+        file_put_contents($outside_dir . '/outside-backup.json', '{"rows":[]}');
+        $allowed_dir = $root . '/intersoccer-rr-repair-backups';
+        mkdir($allowed_dir, 0777, true);
+        $GLOBALS['intersoccer_rr_test_backup_dir'] = $allowed_dir;
+        $GLOBALS['intersoccer_rr_test_backup_known_dirs'] = [$outside_dir, $allowed_dir];
+        $this->assertNull(intersoccer_rr_repair_read_backup('outside-backup.json'));
+        $this->assertFileExists($outside_dir . '/outside-backup.json');
+
+        intersoccer_rr_repair_delete_backup_dir($outside_dir);
+        $this->assertFileExists($outside_dir . '/outside-backup.json');
+        $this->assertDirectoryExists($outside_dir);
+
+        unset($GLOBALS['intersoccer_rr_test_open_basedir']);
+        intersoccer_rr_repair_delete_backup_dir($outside_dir);
+        $this->assertDirectoryDoesNotExist($outside_dir);
+
+        foreach ([$allowed_dir, $inside_wp, $root, $outside] as $dir) {
+            foreach (glob($dir . '/{*,.[!]*}', GLOB_BRACE) ?: [] as $file) {
+                if (is_file($file)) {
+                    unlink($file);
+                }
+            }
+            @rmdir($dir);
+        }
     }
 
     public function test_uninstall_removes_repair_cap_only_when_product_variations_is_inactive(): void {
