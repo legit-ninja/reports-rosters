@@ -103,63 +103,9 @@ class AdminToolsAjaxHandler {
             intersoccer_rr_repair_block_legacy_ajax('process_orders');
             return;
         }
-
-        // Accept both nonce field names used by legacy UI and woo-op.js
-        $nonce_valid = false;
-        if (isset($_POST['intersoccer_rebuild_nonce_field'])) {
-            $nonce_valid = wp_verify_nonce(sanitize_text_field($_POST['intersoccer_rebuild_nonce_field']), 'intersoccer_rebuild_nonce');
-        } elseif (isset($_POST['nonce'])) {
-            $nonce_valid = wp_verify_nonce(sanitize_text_field($_POST['nonce']), 'intersoccer_rebuild_nonce');
-        }
-
-        if (!$nonce_valid) {
-            wp_send_json_error(['message' => __('Security check failed. Please refresh the page and try again.', 'intersoccer-reports-rosters')]);
-        }
-
-        if (!current_user_can('manage_options')) {
-            wp_send_json_error(['message' => __('You do not have permission to process orders.', 'intersoccer-reports-rosters')]);
-        }
-
-        if (!function_exists('wc_get_orders')) {
-            wp_send_json_error(['message' => __('WooCommerce is not available.', 'intersoccer-reports-rosters')]);
-        }
-
-        try {
-            $statuses = ['processing', 'on-hold'];
-            if (!empty($_POST['include_completed']) && $_POST['include_completed'] === '1') {
-                $statuses[] = 'completed';
-            }
-
-            $order_ids = wc_get_orders([
-                'limit' => -1,
-                'status' => $statuses,
-                'return' => 'ids',
-            ]);
-
-            $summary = $this->order_processor->process_batch(array_map('intval', (array) $order_ids));
-
-            if (!empty($summary['success'])) {
-                wp_send_json_success([
-                    'status' => 'success',
-                    'processed' => $summary['processed_orders'] ?? 0,
-                    'completed' => $summary['completed_orders'] ?? 0,
-                    'failed' => count($summary['failed_orders'] ?? []),
-                    'roster_entries' => $summary['roster_entries'] ?? 0,
-                    'message' => $summary['message'] ?? __('Orders processed.', 'intersoccer-reports-rosters'),
-                ]);
-            }
-
-            wp_send_json_error([
-                'message' => $summary['message'] ?? __('Order processing failed. Check logs for details.', 'intersoccer-reports-rosters'),
-            ]);
-        } catch (\Throwable $e) {
-            $this->logger->error('AdminToolsAjaxHandler: processExistingOrders failed', [
-                'error' => $e->getMessage(),
-            ]);
-            wp_send_json_error([
-                'message' => __('Processing failed: ', 'intersoccer-reports-rosters') . $e->getMessage(),
-            ]);
-        }
+        wp_send_json_error([
+            'message' => __('This repair is not available in admin.', 'intersoccer-reports-rosters'),
+        ], 403);
     }
 
     public function closeOutRoster(): void {
@@ -394,68 +340,9 @@ class AdminToolsAjaxHandler {
             intersoccer_rr_repair_block_legacy_ajax('repair_day_presence');
             return;
         }
-
-        // Same nonce used across roster details actions
-        $nonce_ok = false;
-        if (isset($_POST['nonce'])) {
-            $nonce_ok = wp_verify_nonce(sanitize_text_field($_POST['nonce']), 'intersoccer_reports_rosters_nonce');
-        }
-        if (!$nonce_ok) {
-            wp_send_json_error(['message' => __('Security check failed. Please refresh and try again.', 'intersoccer-reports-rosters')]);
-        }
-
-        if (!current_user_can('manage_options')) {
-            wp_send_json_error(['message' => __('Permission denied.', 'intersoccer-reports-rosters')]);
-        }
-
-        $event_signature = isset($_POST['event_signature']) ? sanitize_text_field($_POST['event_signature']) : '';
-        if ($event_signature === '') {
-            wp_send_json_error(['message' => __('Event signature is required.', 'intersoccer-reports-rosters')]);
-        }
-
-        global $wpdb;
-        $table = $wpdb->prefix . 'intersoccer_rosters';
-
-        $rows = $wpdb->get_results($wpdb->prepare(
-            "SELECT id, order_item_id, booking_type, selected_days, days_selected FROM {$table} WHERE event_signature = %s",
-            $event_signature
-        ), ARRAY_A);
-
-        if (!is_array($rows) || empty($rows)) {
-            wp_send_json_error(['message' => __('No roster entries found for this event signature.', 'intersoccer-reports-rosters')]);
-        }
-
-        $updated = 0;
-        foreach ($rows as $row) {
-            $effective_days = $this->resolveSelectedDaysForRepair($row);
-            $presence = $this->computeDayPresence((string) ($row['booking_type'] ?? ''), $effective_days);
-
-            $update_data = ['day_presence' => wp_json_encode($presence)];
-            $formats = ['%s'];
-            $orig_sel = trim((string) ($row['selected_days'] ?? ''));
-            if ($effective_days !== '' && $effective_days !== $orig_sel) {
-                $update_data['selected_days'] = $effective_days;
-                $update_data['days_selected'] = $effective_days;
-                $formats[] = '%s';
-                $formats[] = '%s';
-            }
-
-            $ok = $wpdb->update(
-                $table,
-                $update_data,
-                ['id' => (int) $row['id']],
-                $formats,
-                ['%d']
-            );
-            if ($ok !== false) {
-                $updated++;
-            }
-        }
-
-        wp_send_json_success([
-            'message' => sprintf(__('Repaired day presence for %d roster entries.', 'intersoccer-reports-rosters'), $updated),
-            'updated' => $updated,
-        ]);
+        wp_send_json_error([
+            'message' => __('This repair is not available in admin.', 'intersoccer-reports-rosters'),
+        ], 403);
     }
 
     public function runReportsRostersDiagnostics(): void {
@@ -511,24 +398,9 @@ class AdminToolsAjaxHandler {
             intersoccer_rr_repair_block_legacy_ajax('fix_issues');
             return;
         }
-
-        if (!current_user_can('manage_options')) {
-            wp_send_json_error(['message' => __('Permission denied.', 'intersoccer-reports-rosters')]);
-        }
-        check_ajax_referer('intersoccer_rebuild_nonce', 'nonce');
-
-        try {
-            $service = new ReportsRostersDiagnosticsService();
-            $result = $service->runSafeFix($this->parseDiagnosticsFiltersFromRequest());
-            wp_send_json_success($result);
-        } catch (\Throwable $e) {
-            $this->logger->error('Reports/Rosters safe fix failed', [
-                'error' => $e->getMessage(),
-            ]);
-            wp_send_json_error([
-                'message' => __('Safe fix failed: ', 'intersoccer-reports-rosters') . $e->getMessage(),
-            ]);
-        }
+        wp_send_json_error([
+            'message' => __('This repair is not available in admin.', 'intersoccer-reports-rosters'),
+        ], 403);
     }
 
     /**
@@ -561,139 +433,13 @@ class AdminToolsAjaxHandler {
             intersoccer_rr_repair_block_legacy_ajax('fix_issues');
             return;
         }
-
-        if (!current_user_can('manage_options')) {
-            wp_send_json_error(['message' => __('Permission denied.', 'intersoccer-reports-rosters')]);
-        }
-        check_ajax_referer('intersoccer_rebuild_nonce', 'nonce');
-
-        $order_item_id = isset($_POST['order_item_id']) ? (int) $_POST['order_item_id'] : 0;
-        if ($order_item_id <= 0) {
-            wp_send_json_error(['message' => __('Order item ID is required.', 'intersoccer-reports-rosters')]);
-        }
-
-        try {
-            $service = new ReportsRostersDiagnosticsService();
-            $result = $service->runSafeFixForOrderItem($order_item_id);
-            if (($result['status'] ?? '') === 'error') {
-                wp_send_json_error([
-                    'message' => (string) ($result['message'] ?? __('Item sync fix failed.', 'intersoccer-reports-rosters')),
-                    'result' => $result,
-                ]);
-            }
-            wp_send_json_success($result);
-        } catch (\Throwable $e) {
-            $this->logger->error('Reports/Rosters per-item safe fix failed', [
-                'order_item_id' => $order_item_id,
-                'error' => $e->getMessage(),
-            ]);
-            wp_send_json_error([
-                'message' => __('Safe fix failed: ', 'intersoccer-reports-rosters') . $e->getMessage(),
-            ]);
-        }
+        wp_send_json_error([
+            'message' => __('This repair is not available in admin.', 'intersoccer-reports-rosters'),
+        ], 403);
     }
 
-    /**
-     * Match roster-builder / camp pipeline: use selected_days, then days_selected, then WC order line "Days Selected".
-     */
-    private function resolveSelectedDaysForRepair(array $row): string {
-        $sel = trim((string) ($row['selected_days'] ?? ''));
-        if ($sel === '' && !empty($row['days_selected'])) {
-            $ds = $row['days_selected'];
-            $sel = is_array($ds) ? implode(', ', $ds) : trim((string) $ds);
-        }
-        if ($sel === '' && !empty($row['order_item_id']) && function_exists('wc_get_order_item_meta')) {
-            $oid = (int) $row['order_item_id'];
-            if ($oid > 0) {
-                $from_order = wc_get_order_item_meta($oid, 'Days Selected', true);
-                if (!is_string($from_order) || trim((string) $from_order) === '') {
-                    $from_order = wc_get_order_item_meta($oid, 'days selected', true);
-                }
-                if (is_string($from_order)) {
-                    $t = trim($from_order);
-                    if ($t !== '' && strcasecmp($t, 'N/A') !== 0) {
-                        $sel = $t;
-                    }
-                }
-            }
-        }
-        if ($sel !== '' && function_exists('intersoccer_normalize_selected_days_string_for_reports')) {
-            $sel = intersoccer_normalize_selected_days_string_for_reports($sel);
-        }
 
-        return trim((string) $sel);
-    }
 
-    private function computeDayPresence(string $booking_type, string $selected_days): array {
-        $days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
-
-        $presence = array_fill_keys($days, 'No');
-        $booking_type_raw = trim($booking_type);
-        $booking_type = $booking_type_raw;
-        if (function_exists('intersoccer_normalize_booking_type_slug_for_reports')) {
-            $booking_type = intersoccer_normalize_booking_type_slug_for_reports($booking_type_raw);
-        }
-
-        if ($booking_type === 'full-week') {
-            foreach ($days as $day) {
-                $presence[$day] = 'Yes';
-            }
-            return $presence;
-        }
-
-        // single-days: normalize tokens and mark those present
-        $tokens = preg_split('/[,;\/|\s]+/u', (string) $selected_days) ?: [];
-        $tokens = array_filter(array_map('trim', $tokens));
-        foreach ($tokens as $token) {
-            $normalized = $this->normalizeWeekdayToken($token);
-            if ($normalized && isset($presence[$normalized])) {
-                $presence[$normalized] = 'Yes';
-            }
-        }
-
-        return $presence;
-    }
-
-    private function normalizeWeekdayToken(string $token): ?string {
-        $t = strtolower(trim($token));
-        if ($t === '') {
-            return null;
-        }
-
-        $map = [
-            // English
-            'mon' => 'Monday',
-            'monday' => 'Monday',
-            'tue' => 'Tuesday',
-            'tues' => 'Tuesday',
-            'tuesday' => 'Tuesday',
-            'wed' => 'Wednesday',
-            'weds' => 'Wednesday',
-            'wednesday' => 'Wednesday',
-            'thu' => 'Thursday',
-            'thur' => 'Thursday',
-            'thurs' => 'Thursday',
-            'thursday' => 'Thursday',
-            'fri' => 'Friday',
-            'friday' => 'Friday',
-            // French
-            'lundi' => 'Monday',
-            'mardi' => 'Tuesday',
-            'mercredi' => 'Wednesday',
-            'jeudi' => 'Thursday',
-            'vendredi' => 'Friday',
-            // German
-            'montag' => 'Monday',
-            'dienstag' => 'Tuesday',
-            'mittwoch' => 'Wednesday',
-            'donnerstag' => 'Thursday',
-            'freitag' => 'Friday',
-        ];
-
-        $t = rtrim($t, '.');
-
-        return $map[$t] ?? null;
-    }
 
     public function delegateMovePlayersLegacy(): void {
         // Preserve existing behavior by delegating to the legacy implementation.
@@ -742,45 +488,9 @@ class AdminToolsAjaxHandler {
             intersoccer_rr_repair_block_legacy_ajax('merge_signatures');
             return;
         }
-
-        check_ajax_referer('intersoccer_reports_rosters_nonce', 'nonce');
-        if (!current_user_can('manage_options')) {
-            wp_send_json_error(['message' => __('Permission denied.', 'intersoccer-reports-rosters')]);
-        }
-        $source = isset($_POST['source_signature']) ? sanitize_text_field((string) $_POST['source_signature']) : '';
-        $target = isset($_POST['target_signature']) ? sanitize_text_field((string) $_POST['target_signature']) : '';
-        if ($source === '' || $target === '' || $source === $target) {
-            wp_send_json_error(['message' => __('Source and target signatures must differ and be non-empty.', 'intersoccer-reports-rosters')]);
-        }
-        global $wpdb;
-        $table = $wpdb->prefix . 'intersoccer_rosters';
-        $updated = $wpdb->query($wpdb->prepare(
-            "UPDATE {$table} SET event_signature = %s WHERE event_signature = %s",
-            $target,
-            $source
-        ));
-        if ($updated === false) {
-            wp_send_json_error(['message' => __('Database update failed.', 'intersoccer-reports-rosters')]);
-        }
-        delete_transient('intersoccer_rosters_cache');
-        $log_file = dirname(__DIR__, 2) . '/includes/roster-admin-log.php';
-        if (file_exists($log_file)) {
-            require_once $log_file;
-            if (function_exists('intersoccer_roster_admin_log_insert')) {
-                intersoccer_roster_admin_log_insert('merge_event_signature', $target, [
-                    'source_signature' => $source,
-                    'rows_updated' => (int) $updated,
-                ]);
-            }
-        }
-        $merge_msg = sprintf(__('Updated %d roster row(s).', 'intersoccer-reports-rosters'), (int) $updated);
-        if (function_exists('intersoccer_rosters_flash_admin_notice')) {
-            intersoccer_rosters_flash_admin_notice($merge_msg);
-        }
-        wp_send_json_success([
-            'message' => $merge_msg,
-            'updated' => (int) $updated,
-        ]);
+        wp_send_json_error([
+            'message' => __('This repair is not available in admin.', 'intersoccer-reports-rosters'),
+        ], 403);
     }
 }
 

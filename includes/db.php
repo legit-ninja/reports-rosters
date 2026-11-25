@@ -1529,65 +1529,13 @@ if (defined('INTERSOCCER_OOP_ACTIVE') && INTERSOCCER_OOP_ACTIVE && function_exis
 } else {
     if (!function_exists('intersoccer_rebuild_rosters_and_reports_ajax')) {
         function intersoccer_rebuild_rosters_and_reports_ajax() {
-    if (function_exists('intersoccer_rr_repair_block_legacy_ajax')) {
-        intersoccer_rr_repair_block_legacy_ajax('rebuild_rosters');
-        return;
-    }
-
-            ob_start();
-
-            $nonce_valid = false;
-            if (isset($_POST['nonce'])) {
-                $nonce_valid = wp_verify_nonce(sanitize_text_field($_POST['nonce']), 'intersoccer_rebuild_nonce');
-            } elseif (isset($_POST['intersoccer_rebuild_nonce_field'])) {
-                $nonce_valid = wp_verify_nonce(sanitize_text_field($_POST['intersoccer_rebuild_nonce_field']), 'intersoccer_rebuild_nonce');
+            if (function_exists('intersoccer_rr_repair_block_legacy_ajax')) {
+                intersoccer_rr_repair_block_legacy_ajax('rebuild_rosters');
+                return;
             }
-
-            if (!$nonce_valid) {
-                ob_clean();
-                wp_send_json_error(['message' => __('Security check failed. Please refresh the page and try again.', 'intersoccer-reports-rosters')]);
-            }
-
-            if (!current_user_can('manage_options')) {
-                ob_clean();
-                wp_send_json_error(['message' => __('You do not have permission to rebuild rosters.', 'intersoccer-reports-rosters')]);
-            }
-            if (defined('WP_DEBUG') && WP_DEBUG) {
-                error_log(
-                    'InterSoccer: AJAX rebuild request received with POST keys: '
-                    . implode(',', array_keys($_POST))
-                );
-            }
-
-            try {
-                $result = intersoccer_rebuild_rosters_and_reports();
-                ob_clean();
-                if ($result['status'] === 'success') {
-                    $stats = is_array($result['stats'] ?? null) ? $result['stats'] : [];
-                    $mismatch_count = is_array($stats['age_mismatches'] ?? null) ? count($stats['age_mismatches']) : 0;
-                    $not_checked_count = (int) ($stats['not_checked']['count'] ?? 0);
-                    $detail = $mismatch_count || $not_checked_count
-                        ? sprintf(
-                            ' Age outside group: %d. Age not checked: %d.',
-                            $mismatch_count,
-                            $not_checked_count
-                        )
-                        : '';
-                    wp_send_json_success([
-                        'inserted' => $result['inserted'],
-                        'message' => ($result['message'] ?? '') . $detail,
-                        'results' => $stats,
-                        'age_mismatches' => $stats['age_mismatches'] ?? [],
-                        'not_checked' => $stats['not_checked'] ?? ['count' => 0, 'order_item_ids' => []],
-                    ]);
-                } else {
-                    wp_send_json_error(['message' => __('Rebuild failed: ' . $result['message'], 'intersoccer-reports-rosters')]);
-                }
-            } catch (Exception $e) {
-                error_log('InterSoccer: Rebuild exception: ' . $e->getMessage());
-                ob_clean();
-                wp_send_json_error(['message' => __('Rebuild failed with exception: ' . $e->getMessage(), 'intersoccer-reports-rosters')]);
-            }
+            wp_send_json_error([
+                'message' => __('This repair is not available in admin.', 'intersoccer-reports-rosters'),
+            ], 403);
         }
     }
 
@@ -2611,31 +2559,9 @@ function intersoccer_upgrade_database_ajax() {
         intersoccer_rr_repair_block_legacy_ajax('upgrade_database');
         return;
     }
-
-    check_ajax_referer('intersoccer_rebuild_nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
-        wp_send_json_error(__('You do not have permission to upgrade the database.', 'intersoccer-reports-rosters'));
-    }
-    $success = intersoccer_upgrade_database();
-    $version = get_option('intersoccer_db_version', '1.0.0');
-    $engine_label = (defined('INTERSOCCER_OOP_ACTIVE') && INTERSOCCER_OOP_ACTIVE && function_exists('intersoccer_use_oop_for') && intersoccer_use_oop_for('database'))
-        ? __('OOP Migrator', 'intersoccer-reports-rosters')
-        : __('Legacy Migrator', 'intersoccer-reports-rosters');
-
-    if ($success === false) {
-        wp_send_json_error(__('Database upgrade failed. Check logs for details.', 'intersoccer-reports-rosters'));
-    }
-
-    wp_send_json_success([
-        'message' => sprintf(
-            /* translators: 1: current schema version, 2: migration engine */
-            __('Database upgrade completed. Schema version is now %1$s (Engine: %2$s).', 'intersoccer-reports-rosters'),
-            $version,
-            $engine_label
-        ),
-        'version' => $version,
-        'engine' => $engine_label,
-    ]);
+    wp_send_json_error([
+        'message' => __('This repair is not available in admin.', 'intersoccer-reports-rosters'),
+    ], 403);
 }
 
 function intersoccer_rebuild_event_signatures_ajax() {
@@ -2643,60 +2569,9 @@ function intersoccer_rebuild_event_signatures_ajax() {
         intersoccer_rr_repair_block_legacy_ajax('rebuild_event_signatures');
         return;
     }
-
-    error_log('InterSoccer: AJAX rebuild event signatures handler called');
-    
-    ob_start();
-    
-    try {
-        // Check nonce - try both field names (nonce and intersoccer_rebuild_nonce_field)
-        $nonce_check = false;
-        if (isset($_POST['nonce'])) {
-            $nonce_check = check_ajax_referer('intersoccer_rebuild_nonce', 'nonce', false);
-            error_log('InterSoccer: AJAX rebuild - Checking nonce field "nonce": ' . ($nonce_check ? 'valid' : 'invalid'));
-        }
-        if (!$nonce_check && isset($_POST['intersoccer_rebuild_nonce_field'])) {
-            $nonce_check = check_ajax_referer('intersoccer_rebuild_nonce', 'intersoccer_rebuild_nonce_field', false);
-            error_log('InterSoccer: AJAX rebuild - Checking nonce field "intersoccer_rebuild_nonce_field": ' . ($nonce_check ? 'valid' : 'invalid'));
-        }
-        
-        if (!$nonce_check) {
-            error_log('InterSoccer: AJAX rebuild - Nonce check failed. POST data keys: ' . implode(', ', array_keys($_POST)));
-            ob_clean();
-            wp_send_json_error(['message' => __('Security check failed. Please refresh the page and try again.', 'intersoccer-reports-rosters')]);
-            return;
-        }
-        
-        if (!current_user_can('manage_options')) {
-            error_log('InterSoccer: AJAX rebuild - Permission check failed');
-            ob_clean();
-            wp_send_json_error(['message' => __('You do not have permission to rebuild event signatures.', 'intersoccer-reports-rosters')]);
-            return;
-        }
-        
-        error_log('InterSoccer: AJAX rebuild event signatures request received - calling rebuild function');
-
-        $result = intersoccer_rebuild_event_signatures();
-        
-        error_log('InterSoccer: AJAX rebuild - Function returned: ' . json_encode($result));
-        
-        ob_clean();
-        if ($result['status'] === 'success') {
-            wp_send_json_success(['updated' => $result['updated'], 'message' => __('Event signatures rebuilt for ' . $result['updated'] . ' records.', 'intersoccer-reports-rosters')]);
-        } else {
-            wp_send_json_error(['message' => __('Event signature rebuild failed: ' . $result['message'], 'intersoccer-reports-rosters')]);
-        }
-    } catch (Exception $e) {
-        error_log('InterSoccer: Event signature rebuild exception: ' . $e->getMessage());
-        error_log('InterSoccer: Event signature rebuild exception trace: ' . $e->getTraceAsString());
-        ob_clean();
-        wp_send_json_error(['message' => __('Event signature rebuild failed with exception: ' . $e->getMessage(), 'intersoccer-reports-rosters')]);
-    } catch (Error $e) {
-        error_log('InterSoccer: Event signature rebuild fatal error: ' . $e->getMessage());
-        error_log('InterSoccer: Event signature rebuild fatal error trace: ' . $e->getTraceAsString());
-        ob_clean();
-        wp_send_json_error(['message' => __('Event signature rebuild failed with error: ' . $e->getMessage(), 'intersoccer-reports-rosters')]);
-    }
+    wp_send_json_error([
+        'message' => __('This repair is not available in admin.', 'intersoccer-reports-rosters'),
+    ], 403);
 }
 
 function intersoccer_repair_day_presence_ajax() {
@@ -2704,96 +2579,9 @@ function intersoccer_repair_day_presence_ajax() {
         intersoccer_rr_repair_block_legacy_ajax('repair_day_presence');
         return;
     }
-
-    // Use the same nonce used across roster details AJAX actions.
-    $nonce_ok = false;
-    if (isset($_POST['nonce'])) {
-        $nonce_ok = check_ajax_referer('intersoccer_reports_rosters_nonce', 'nonce', false);
-    }
-
-    if (!$nonce_ok) {
-        wp_send_json_error(['message' => __('Security check failed. Please refresh the page and try again.', 'intersoccer-reports-rosters')]);
-    }
-
-    if (!current_user_can('manage_options')) {
-        wp_send_json_error(['message' => __('You do not have permission to repair day presence.', 'intersoccer-reports-rosters')]);
-    }
-
-    global $wpdb;
-    $rosters_table = $wpdb->prefix . 'intersoccer_rosters';
-
-    $event_signature = isset($_POST['event_signature']) ? sanitize_text_field($_POST['event_signature']) : '';
-    if ($event_signature === '') {
-        wp_send_json_error(['message' => __('Missing event signature.', 'intersoccer-reports-rosters')]);
-    }
-
-
-    // Pull only the columns we need; do not touch event_completed.
-    $rows = $wpdb->get_results(
-        $wpdb->prepare(
-            "SELECT id, booking_type, selected_days, day_presence FROM {$rosters_table} WHERE event_signature = %s",
-            $event_signature
-        ),
-        ARRAY_A
-    );
-
-    if (!is_array($rows) || empty($rows)) {
-        wp_send_json_success([
-            'updated' => 0,
-            'skipped' => 0,
-            'total' => 0,
-            'message' => __('No roster entries found for this event.', 'intersoccer-reports-rosters'),
-        ]);
-    }
-
-    $updated = 0;
-    $skipped = 0;
-
-    foreach ($rows as $row) {
-        $id = (int) ($row['id'] ?? 0);
-        if ($id <= 0) {
-            $skipped++;
-            continue;
-        }
-
-        $new_presence = function_exists('intersoccer_compute_day_presence')
-            ? intersoccer_compute_day_presence($row['booking_type'] ?? '', $row['selected_days'] ?? '')
-            : ['Monday' => 'No', 'Tuesday' => 'No', 'Wednesday' => 'No', 'Thursday' => 'No', 'Friday' => 'No'];
-
-        $new_json = wp_json_encode($new_presence);
-        $old_json = is_string($row['day_presence'] ?? null) ? (string) $row['day_presence'] : '';
-
-        if ($new_json === $old_json) {
-            $skipped++;
-            continue;
-        }
-
-        $result = $wpdb->update(
-            $rosters_table,
-            ['day_presence' => $new_json],
-            ['id' => $id],
-            ['%s'],
-            ['%d']
-        );
-
-        if ($result !== false) {
-            $updated++;
-        } else {
-            $skipped++;
-        }
-    }
-
-    wp_send_json_success([
-        'updated' => $updated,
-        'skipped' => $skipped,
-        'total' => count($rows),
-        'message' => sprintf(
-            /* translators: 1: updated count, 2: total count */
-            __('Repaired day presence for %1$d of %2$d roster entries.', 'intersoccer-reports-rosters'),
-            $updated,
-            count($rows)
-        ),
-    ]);
+    wp_send_json_error([
+        'message' => __('This repair is not available in admin.', 'intersoccer-reports-rosters'),
+    ], 403);
 }
 
 /**

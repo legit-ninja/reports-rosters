@@ -137,84 +137,9 @@ class RosterAjaxHandler {
             intersoccer_rr_repair_block_legacy_ajax('rebuild_rosters');
             return;
         }
-
-        try {
-            // Verify nonce
-            check_ajax_referer('intersoccer_rebuild_nonce', 'nonce');
-            
-            // Check permissions
-            if (!current_user_can('manage_options')) {
-                wp_send_json_error(['message' => __('Unauthorized', 'intersoccer-reports-rosters')]);
-            }
-            
-            $this->logger->info('AJAX: Rebuild rosters request started');
-            
-            if (function_exists('set_time_limit')) {
-                @set_time_limit(0);
-            }
-
-            $dry_run = !empty($_POST['dry_run']) && (string) $_POST['dry_run'] !== '0';
-
-            // Run rebuild (dry run: same work inside a transaction that is always rolled back)
-            $results = $this->roster_builder->buildRosters([
-                'clear_existing' => true,
-                'batch_size' => 100,
-                'dry_run' => $dry_run,
-            ]);
-
-            if (!empty($results['rebuild_failed'])) {
-                wp_send_json_error([
-                    'message' => !empty($results['error'])
-                        ? (string) $results['error']
-                        : __('Rebuild failed; no roster rows were changed.', 'intersoccer-reports-rosters'),
-                    'results' => $results,
-                ]);
-            }
-            
-            $error_count = is_array($results['errors'] ?? null) ? count($results['errors']) : 0;
-            $mismatch_count = is_array($results['age_mismatches'] ?? null) ? count($results['age_mismatches']) : 0;
-            $not_checked_count = (int) ($results['not_checked']['count'] ?? 0);
-
-            $message = sprintf(
-                __('Rebuild completed. Processed: %1$d, Created: %2$d, Errors: %3$d. Age outside group: %4$d. Age not checked: %5$d.', 'intersoccer-reports-rosters'),
-                $results['orders_processed'] ?? 0,
-                $results['rosters_created'] ?? 0,
-                $error_count,
-                $mismatch_count,
-                $not_checked_count
-            );
-            $message .= ' ' . sprintf(
-                __('Kept for review (not deleted): %1$d. Rows conflicting with their order line (not overwritten): %2$d (moved: %3$d). Rows with empty fields filled: %4$d.', 'intersoccer-reports-rosters'),
-                (int) ($results['rows_for_review']['count'] ?? 0),
-                (int) ($results['row_drift']['count'] ?? 0),
-                (int) ($results['row_drift']['moved'] ?? 0),
-                (int) ($results['row_fill']['count'] ?? 0)
-            );
-            if (!empty($results['dry_run'])) {
-                $message = __('Dry run, nothing was saved.', 'intersoccer-reports-rosters') . ' ' . $message;
-            }
-
-            wp_send_json_success([
-                'message' => $message,
-                'results' => $results,
-                'age_mismatches' => $results['age_mismatches'] ?? [],
-                'not_checked' => $results['not_checked'] ?? ['count' => 0, 'order_item_ids' => []],
-                'rows_for_review' => $results['rows_for_review'] ?? ['count' => 0, 'by_reason' => [], 'rows' => []],
-                'row_drift' => $results['row_drift'] ?? ['count' => 0, 'moved' => 0, 'not_moved' => 0, 'rows' => []],
-                'row_fill' => $results['row_fill'] ?? ['count' => 0, 'by_field' => [], 'rows' => []],
-                'created' => $results['created'] ?? ['count' => 0],
-                'dry_run' => !empty($results['dry_run']),
-            ]);
-            
-        } catch (\Exception $e) {
-            $this->logger->error('AJAX: Rebuild rosters failed', [
-                'error' => $e->getMessage()
-            ]);
-            
-            wp_send_json_error([
-                'message' => __('Rebuild failed: ', 'intersoccer-reports-rosters') . $e->getMessage()
-            ]);
-        }
+        wp_send_json_error([
+            'message' => __('This repair is not available in admin.', 'intersoccer-reports-rosters'),
+        ], 403);
     }
     
     /**
@@ -227,108 +152,9 @@ class RosterAjaxHandler {
             intersoccer_rr_repair_block_legacy_ajax('reconcile_rosters');
             return;
         }
-
-        try {
-            // Verify nonce
-            check_ajax_referer('intersoccer_reports_rosters_nonce', 'nonce');
-            
-            // Check permissions
-            if (!current_user_can('manage_options')) {
-                wp_send_json_error(['message' => __('Unauthorized', 'intersoccer-reports-rosters')]);
-            }
-            
-            $this->logger->info('AJAX: Reconcile rosters request started');
-
-            if (function_exists('set_time_limit')) {
-                @set_time_limit(0);
-            }
-
-            $options = ['delete_obsolete' => true];
-            if (!empty($_POST['date_from'])) {
-                $options['date_from'] = sanitize_text_field($_POST['date_from']);
-            }
-            if (!empty($_POST['date_to'])) {
-                $options['date_to'] = sanitize_text_field($_POST['date_to']);
-            }
-            if (!empty($options['date_from']) || !empty($options['date_to'])) {
-                $options['delete_obsolete'] = false;
-            }
-
-            $diag_year = (string) (int) date('Y');
-            $diag_scope = [
-                'year' => $diag_year,
-                'limit' => 500,
-                'offset' => 0,
-            ];
-            $diag_filters = [
-                'year' => $diag_year,
-                'limit' => 1,
-                'offset' => 0,
-            ];
-            if (!empty($options['date_from'])) {
-                $diag_filters['date_from'] = $options['date_from'];
-            }
-            if (!empty($options['date_to'])) {
-                $diag_filters['date_to'] = $options['date_to'];
-            }
-            $diag_service = class_exists(ReportsRostersDiagnosticsService::class)
-                ? new ReportsRostersDiagnosticsService()
-                : null;
-            $diag_before = $diag_service ? $diag_service->runDiagnostics($diag_filters) : null;
-
-            // Run reconcile
-            $results = $this->roster_builder->reconcile($options);
-
-            $alignment_queue = null;
-            $newly_created_alignment = null;
-            if ($diag_service !== null) {
-                $newly_created = is_array($results['newly_created_item_ids'] ?? null)
-                    ? array_map('intval', $results['newly_created_item_ids'])
-                    : [];
-                if (!empty($newly_created)) {
-                    $newly_created_alignment = $diag_service->alignOrderItemsById($newly_created);
-                    $results['newly_created_alignment'] = $newly_created_alignment;
-                }
-
-                $mismatch_before = (int) ($diag_before['summary']['mismatch_rows'] ?? 0);
-                $alignment_queue = [
-                    'prepare' => true,
-                    'year' => $diag_year,
-                    'total' => $mismatch_before,
-                    'batch_size' => 25,
-                    'queue_key' => '',
-                ];
-                $results['alignment_queue'] = $alignment_queue;
-            }
-
-            $message = sprintf(
-                __('Reconciliation completed. Synced: %d, Deleted: %d, Errors: %d', 'intersoccer-reports-rosters'),
-                $results['synced'],
-                $results['deleted'],
-                $results['errors']
-            );
-            if (is_array($alignment_queue) && (int) ($alignment_queue['total'] ?? 0) > 0) {
-                $message .= sprintf(
-                    __(' Sync queue alignment will run in batches for ~%d items.', 'intersoccer-reports-rosters'),
-                    (int) $alignment_queue['total']
-                );
-            }
-
-            wp_send_json_success([
-                'message' => $message,
-                'results' => $results,
-                'alignment_queue' => $alignment_queue,
-            ]);
-            
-        } catch (\Exception $e) {
-            $this->logger->error('AJAX: Reconcile rosters failed', [
-                'error' => $e->getMessage()
-            ]);
-            
-            wp_send_json_error([
-                'message' => __('Reconciliation failed: ', 'intersoccer-reports-rosters') . $e->getMessage()
-            ]);
-        }
+        wp_send_json_error([
+            'message' => __('This repair is not available in admin.', 'intersoccer-reports-rosters'),
+        ], 403);
     }
 
     /**
@@ -341,63 +167,9 @@ class RosterAjaxHandler {
             intersoccer_rr_repair_block_legacy_ajax('reconcile_rosters');
             return;
         }
-
-        try {
-            check_ajax_referer('intersoccer_reports_rosters_nonce', 'nonce');
-
-            if (!current_user_can('manage_options')) {
-                wp_send_json_error(['message' => __('Unauthorized', 'intersoccer-reports-rosters')]);
-            }
-
-            if (function_exists('set_time_limit')) {
-                @set_time_limit(0);
-            }
-
-            $prepare = !empty($_POST['prepare']);
-            $year = sanitize_text_field($_POST['year'] ?? (string) (int) date('Y'));
-            $queue_key = sanitize_text_field($_POST['queue_key'] ?? '');
-            $batch_size = isset($_POST['batch_size']) ? (int) $_POST['batch_size'] : 25;
-
-            if (!class_exists(ReportsRostersDiagnosticsService::class)) {
-                wp_send_json_error(['message' => __('Diagnostics service unavailable.', 'intersoccer-reports-rosters')]);
-            }
-
-            $diag_service = new ReportsRostersDiagnosticsService();
-            $queue_info = null;
-
-            if ($prepare || $queue_key === '') {
-                $this->logger->info('AJAX: Preparing reconcile alignment queue', ['year' => $year]);
-                $queue_info = $diag_service->startReconcileAlignmentQueue([
-                    'year' => $year,
-                    'limit' => 500,
-                    'offset' => 0,
-                ]);
-                $queue_key = (string) ($queue_info['queue_key'] ?? '');
-            }
-
-            if ($queue_key === '') {
-                wp_send_json_error(['message' => __('Missing alignment queue key.', 'intersoccer-reports-rosters')]);
-            }
-
-            $batch = $diag_service->processReconcileAlignmentBatch($queue_key, $batch_size);
-            $batch['queue_key'] = $queue_key;
-            if (is_array($queue_info)) {
-                $batch['total'] = (int) ($queue_info['total'] ?? ($batch['total'] ?? 0));
-            }
-
-            if (($batch['status'] ?? '') === 'error') {
-                wp_send_json_error(['message' => (string) ($batch['message'] ?? __('Alignment batch failed.', 'intersoccer-reports-rosters'))]);
-            }
-
-            wp_send_json_success($batch);
-        } catch (\Exception $e) {
-            $this->logger->error('AJAX: Reconcile alignment batch failed', [
-                'error' => $e->getMessage(),
-            ]);
-            wp_send_json_error([
-                'message' => __('Alignment batch failed: ', 'intersoccer-reports-rosters') . $e->getMessage(),
-            ]);
-        }
+        wp_send_json_error([
+            'message' => __('This repair is not available in admin.', 'intersoccer-reports-rosters'),
+        ], 403);
     }
     
     /**
@@ -478,70 +250,9 @@ class RosterAjaxHandler {
             intersoccer_rr_repair_block_legacy_ajax('normalize_language');
             return;
         }
-
-        try {
-            check_ajax_referer('intersoccer_rebuild_nonce', 'nonce');
-
-            if (!current_user_can('manage_options')) {
-                wp_send_json_error(['message' => __('Unauthorized', 'intersoccer-reports-rosters')]);
-            }
-
-            if (!function_exists('intersoccer_renormalize_roster_language_batch')) {
-                wp_send_json_error(['message' => __('Language normalization is not available.', 'intersoccer-reports-rosters')]);
-            }
-
-            $offset = isset($_POST['offset']) ? max(0, (int) $_POST['offset']) : 0;
-            $limit = isset($_POST['limit']) ? max(1, min(100, (int) $_POST['limit'])) : 40;
-            $phase = isset($_POST['phase']) ? sanitize_key(wp_unslash($_POST['phase'])) : 'orders';
-            if (!in_array($phase, ['orders', 'placeholders'], true)) {
-                $phase = 'orders';
-            }
-
-            $this->logger->info('AJAX: Renormalize roster language batch', [
-                'offset' => $offset,
-                'limit'  => $limit,
-                'phase'  => $phase,
-            ]);
-
-            $batch = intersoccer_renormalize_roster_language_batch($offset, $limit, $phase);
-
-            $processed_so_far = (int) ($batch['next_offset'] ?? 0);
-            $total = (int) ($batch['total'] ?? 0);
-            $progress_message = $batch['done']
-                ? sprintf(
-                    __('Batch complete (%1$s phase).', 'intersoccer-reports-rosters'),
-                    $phase
-                )
-                : sprintf(
-                    __('Processing %1$s phase: %2$d / %3$d rows…', 'intersoccer-reports-rosters'),
-                    $phase,
-                    min($processed_so_far, $total),
-                    $total
-                );
-
-            wp_send_json_success([
-                'message' => $progress_message,
-                'stats'   => [
-                    'updated'      => (int) ($batch['updated'] ?? 0),
-                    'meta_updated' => (int) ($batch['meta_updated'] ?? 0),
-                    'errors'       => (int) ($batch['errors'] ?? 0),
-                    'processed'    => (int) ($batch['processed'] ?? 0),
-                ],
-                'offset'      => $offset,
-                'next_offset' => (int) ($batch['next_offset'] ?? 0),
-                'total'       => $total,
-                'done'        => !empty($batch['done']),
-                'phase'       => $phase,
-                'next_phase'  => (string) ($batch['next_phase'] ?? 'complete'),
-            ]);
-        } catch (\Exception $e) {
-            $this->logger->error('AJAX: Renormalize roster language failed', [
-                'error' => $e->getMessage(),
-            ]);
-            wp_send_json_error([
-                'message' => __('Language normalization failed: ', 'intersoccer-reports-rosters') . $e->getMessage(),
-            ]);
-        }
+        wp_send_json_error([
+            'message' => __('This repair is not available in admin.', 'intersoccer-reports-rosters'),
+        ], 403);
     }
 
     public function handleRebuildEventSignatures() {
@@ -549,39 +260,9 @@ class RosterAjaxHandler {
             intersoccer_rr_repair_block_legacy_ajax('rebuild_event_signatures');
             return;
         }
-
-        try {
-            // Verify nonce
-            check_ajax_referer('intersoccer_rebuild_nonce', 'nonce');
-            
-            // Check permissions
-            if (!current_user_can('manage_options')) {
-                wp_send_json_error(['message' => __('Unauthorized', 'intersoccer-reports-rosters')]);
-            }
-            
-            $this->logger->info('AJAX: Rebuild event signatures request started');
-            
-            // Run rebuild
-            $results = $this->roster_builder->rebuildSignatures();
-            
-            wp_send_json_success([
-                'message' => sprintf(
-                    __('Event signatures rebuilt. Updated: %d, Errors: %d', 'intersoccer-reports-rosters'),
-                    $results['updated'],
-                    $results['errors']
-                ),
-                'results' => $results
-            ]);
-            
-        } catch (\Exception $e) {
-            $this->logger->error('AJAX: Rebuild event signatures failed', [
-                'error' => $e->getMessage()
-            ]);
-            
-            wp_send_json_error([
-                'message' => __('Event signature rebuild failed: ', 'intersoccer-reports-rosters') . $e->getMessage()
-            ]);
-        }
+        wp_send_json_error([
+            'message' => __('This repair is not available in admin.', 'intersoccer-reports-rosters'),
+        ], 403);
     }
     
     /**
@@ -666,34 +347,9 @@ class RosterAjaxHandler {
             intersoccer_rr_repair_block_legacy_ajax('upgrade_database');
             return;
         }
-
-        try {
-            // Verify nonce
-            check_ajax_referer('intersoccer_rebuild_nonce', 'nonce');
-            
-            // Check permissions
-            if (!current_user_can('manage_options')) {
-                wp_send_json_error(['message' => __('Unauthorized', 'intersoccer-reports-rosters')]);
-            }
-            
-            $this->logger->info('AJAX: Upgrade database request started');
-            
-            $result = $this->database_migrator->migrate();
-            $payload = self::buildUpgradeDatabaseAjaxPayload($result);
-            if (!empty($payload['success'])) {
-                wp_send_json_success($payload['data']);
-            }
-            wp_send_json_error($payload['data']);
-            
-        } catch (\Exception $e) {
-            $this->logger->error('AJAX: Upgrade database failed', [
-                'error' => $e->getMessage()
-            ]);
-            
-            wp_send_json_error([
-                'message' => __('Database upgrade failed: ', 'intersoccer-reports-rosters') . $e->getMessage()
-            ]);
-        }
+        wp_send_json_error([
+            'message' => __('This repair is not available in admin.', 'intersoccer-reports-rosters'),
+        ], 403);
     }
     
     /**
@@ -706,40 +362,9 @@ class RosterAjaxHandler {
             intersoccer_rr_repair_block_legacy_ajax('sync_placeholders');
             return;
         }
-
-        try {
-            // Verify nonce
-            check_ajax_referer('intersoccer_reports_rosters_nonce', 'nonce');
-            
-            // Check permissions
-            if (!current_user_can('manage_options')) {
-                wp_send_json_error(['message' => __('Unauthorized', 'intersoccer-reports-rosters')]);
-            }
-            
-            $this->logger->info('AJAX: Sync placeholders request started');
-            
-            // Run sync
-            $results = $this->placeholder_manager->syncAll();
-            
-            wp_send_json_success([
-                'message' => sprintf(
-                    __('Placeholder sync completed. Processed: %d products, Created: %d, Updated: %d', 'intersoccer-reports-rosters'),
-                    $results['processed'],
-                    $results['created'],
-                    $results['updated']
-                ),
-                'results' => $results
-            ]);
-            
-        } catch (\Exception $e) {
-            $this->logger->error('AJAX: Sync placeholders failed', [
-                'error' => $e->getMessage()
-            ]);
-            
-            wp_send_json_error([
-                'message' => __('Placeholder sync failed: ', 'intersoccer-reports-rosters') . $e->getMessage()
-            ]);
-        }
+        wp_send_json_error([
+            'message' => __('This repair is not available in admin.', 'intersoccer-reports-rosters'),
+        ], 403);
     }
     
     /**
@@ -752,38 +377,9 @@ class RosterAjaxHandler {
             intersoccer_rr_repair_block_legacy_ajax('sync_placeholders');
             return;
         }
-
-        try {
-            // Verify nonce
-            check_ajax_referer('intersoccer_reports_rosters_nonce', 'nonce');
-            
-            // Check permissions
-            if (!current_user_can('manage_options')) {
-                wp_send_json_error(['message' => __('Unauthorized', 'intersoccer-reports-rosters')]);
-            }
-            
-            $this->logger->info('AJAX: Cleanup placeholders request started');
-            
-            // Run cleanup
-            $results = $this->placeholder_manager->cleanup();
-            
-            wp_send_json_success([
-                'message' => sprintf(
-                    __('Placeholder cleanup completed. Deleted: %d orphaned placeholders', 'intersoccer-reports-rosters'),
-                    $results['deleted']
-                ),
-                'results' => $results
-            ]);
-            
-        } catch (\Exception $e) {
-            $this->logger->error('AJAX: Cleanup placeholders failed', [
-                'error' => $e->getMessage()
-            ]);
-            
-            wp_send_json_error([
-                'message' => __('Placeholder cleanup failed: ', 'intersoccer-reports-rosters') . $e->getMessage()
-            ]);
-        }
+        wp_send_json_error([
+            'message' => __('This repair is not available in admin.', 'intersoccer-reports-rosters'),
+        ], 403);
     }
 }
 
