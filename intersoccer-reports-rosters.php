@@ -85,6 +85,11 @@ if (!file_exists($autoloader)) {
 
 require_once $autoloader;
 
+$intersoccer_rr_repair_contract = plugin_dir_path(__FILE__) . 'includes/repair-contract.php';
+if (is_readable($intersoccer_rr_repair_contract)) {
+    require_once $intersoccer_rr_repair_contract;
+}
+
 if (!defined('INTERSOCCER_ORDER_AUTO_COMPLETE_CRON_HOOK')) {
     define('INTERSOCCER_ORDER_AUTO_COMPLETE_CRON_HOOK', 'intersoccer_auto_complete_orders');
 }

@@ -281,19 +281,6 @@ function intersoccer_get_roster_details_url_for_order_item($order_item_id) {
         $resolved_sig = intersoccer_roster_row_resolve_event_signature_for_url($anchor);
         if ($resolved_sig !== '') {
             $anchor['event_signature'] = $resolved_sig;
-            $anchor_id = (int) ($anchor['id'] ?? 0);
-            if ($anchor_id > 0 && empty(trim((string) ($rows[0]['event_signature'] ?? '')))) {
-                global $wpdb;
-                if (isset($wpdb) && is_object($wpdb)) {
-                    $wpdb->update(
-                        $table,
-                        ['event_signature' => $resolved_sig],
-                        ['id' => $anchor_id],
-                        ['%s'],
-                        ['%d']
-                    );
-                }
-            }
         }
     }
 

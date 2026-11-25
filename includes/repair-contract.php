@@ -29,6 +29,14 @@ if (!defined('INTERSOCCER_RR_REPAIR_GLOBAL_PHRASE')) {
 if (!defined('INTERSOCCER_RR_REPAIR_DELETE_PHRASE')) {
     define('INTERSOCCER_RR_REPAIR_DELETE_PHRASE', 'DELETE');
 }
+if (!defined('INTERSOCCER_RR_REPAIR_BACKUP_ROW_CAP')) {
+    define('INTERSOCCER_RR_REPAIR_BACKUP_ROW_CAP', 200);
+}
+if (!defined('INTERSOCCER_RR_REPAIR_PREVIEW_TTL')) {
+    $intersoccer_rr_repair_minute = defined('MINUTE_IN_SECONDS') ? (int) MINUTE_IN_SECONDS : 60;
+    define('INTERSOCCER_RR_REPAIR_PREVIEW_TTL', 30 * $intersoccer_rr_repair_minute);
+    unset($intersoccer_rr_repair_minute);
+}
 
 if (!function_exists('intersoccer_rr_repair_grant_administrator_cap')) {
     /**
@@ -36,9 +44,13 @@ if (!function_exists('intersoccer_rr_repair_grant_administrator_cap')) {
      */
     function intersoccer_rr_repair_grant_administrator_cap(): void {
         $role = get_role('administrator');
-        if ($role && method_exists($role, 'add_cap')) {
-            $role->add_cap(INTERSOCCER_RR_REPAIR_CAP, true);
+        if (!$role || !method_exists($role, 'has_cap') || !method_exists($role, 'add_cap')) {
+            return;
         }
+        if ($role->has_cap(INTERSOCCER_RR_REPAIR_CAP)) {
+            return;
+        }
+        $role->add_cap(INTERSOCCER_RR_REPAIR_CAP, true);
     }
 }
 
@@ -171,6 +183,7 @@ if (!function_exists('intersoccer_rr_repair_store_preview')) {
             'shop_wide' => !empty($result['shop_wide']),
             'deletes' => (int) ($counts['deleted'] ?? 0),
             'changed' => $changed,
+            'over_cap' => !empty($result['over_cap']),
             'created_at' => time(),
         ]);
     }
@@ -180,6 +193,10 @@ if (!function_exists('intersoccer_rr_repair_get_preview')) {
     function intersoccer_rr_repair_get_preview(int $user_id, string $tool): ?array {
         $stored = intersoccer_rr_repair_state_get(intersoccer_rr_repair_preview_key($user_id, $tool), null);
         if (!is_array($stored) || empty($stored['fingerprint']) || !empty($stored['consumed'])) {
+            return null;
+        }
+        $created = (int) ($stored['created_at'] ?? 0);
+        if ($created <= 0 || (time() - $created) > (int) INTERSOCCER_RR_REPAIR_PREVIEW_TTL) {
             return null;
         }
         return $stored;
@@ -258,6 +275,14 @@ if (!function_exists('intersoccer_rr_repair_gate_apply')) {
                 'code' => 'empty',
             ];
         }
+        $preview_rows = is_array($preview['rows'] ?? null) ? $preview['rows'] : [];
+        if (!empty($preview['over_cap']) || count($preview_rows) > (int) INTERSOCCER_RR_REPAIR_BACKUP_ROW_CAP) {
+            return [
+                'ok' => false,
+                'error' => intersoccer_rr_repair_over_cap_message(max(count($preview_rows), (int) ($preview['changed'] ?? 0))),
+                'code' => 'over_cap',
+            ];
+        }
         return ['ok' => true, 'error' => '', 'code' => 'ok'];
     }
 }
@@ -278,6 +303,10 @@ if (!function_exists('intersoccer_rr_repair_backup_dir')) {
         if (!file_exists($index)) {
             file_put_contents($index, "<?php\n// Silence is golden.\n");
         }
+        $deny = $dir . '/.htaccess';
+        if (!file_exists($deny)) {
+            file_put_contents($deny, "<IfModule mod_authz_core.c>\nRequire all denied\n</IfModule>\n<IfModule !mod_authz_core.c>\nDeny from all\n</IfModule>\n");
+        }
         return $dir;
     }
 }
@@ -288,7 +317,7 @@ if (!function_exists('intersoccer_rr_repair_write_backup')) {
      */
     function intersoccer_rr_repair_write_backup(string $tool, int $user_id, array $rows): string {
         $dir = intersoccer_rr_repair_backup_dir();
-        $name = sanitize_key($tool) . '-' . gmdate('Ymd-His') . '-' . $user_id . '-' . bin2hex(random_bytes(3)) . '.json';
+        $name = sanitize_key($tool) . '-' . gmdate('Ymd-His') . '-' . $user_id . '-' . bin2hex(random_bytes(16)) . '.json';
         $payload = [
             'tool' => sanitize_key($tool),
             'user_id' => $user_id,
@@ -383,13 +412,19 @@ if (!function_exists('intersoccer_rr_repair_rollback_rows')) {
             if (!is_array($row) || !array_key_exists('id', $row)) {
                 continue;
             }
+            $before = $row['before'] ?? null;
+            $after = array_key_exists('after', $row) ? $row['after'] : null;
             $current = $read_current($row['id']);
-            if (intersoccer_rr_repair_values_equal($current, $row['after'] ?? null)) {
-                $restore($row['id'], $row['before'] ?? null);
-                $restored++;
-            } else {
-                $conflicts[] = $row['id'];
+            if (intersoccer_rr_repair_values_equal($current, $before)) {
+                continue;
             }
+            $after_known = $after !== null && !intersoccer_rr_repair_values_equal($before, $after);
+            if ($after_known && !intersoccer_rr_repair_values_equal($current, $after)) {
+                $conflicts[] = $row['id'];
+                continue;
+            }
+            $restore($row['id'], $before);
+            $restored++;
         }
         return ['restored' => $restored, 'conflicts' => $conflicts];
     }
@@ -447,21 +482,100 @@ if (!function_exists('intersoccer_rr_scope_is_shop_wide')) {
         };
         switch ($tool) {
             case 'reconcile_rosters':
-                return $blank($scope['date_from'] ?? '')
-                    && $blank($scope['date_to'] ?? '')
-                    && $blank($scope['order_ids'] ?? '')
-                    && $blank($scope['product_ids'] ?? '');
+                return !intersoccer_rr_repair_scope_has_ids($scope['order_ids'] ?? '')
+                    && !intersoccer_rr_repair_scope_has_ids($scope['product_ids'] ?? '');
             case 'financial_backfill':
                 return $blank($scope['start_date'] ?? '');
             case 'fix_issues':
                 return $blank($scope['order_id'] ?? '') && $blank($scope['year'] ?? '');
             case 'upgrade_database':
-            case 'process_orders':
             case 'normalize_language':
             case 'sync_placeholders':
                 return true;
             default:
                 return false;
+        }
+    }
+}
+
+if (!function_exists('intersoccer_rr_repair_over_cap_message')) {
+    function intersoccer_rr_repair_over_cap_message(int $count): string {
+        return sprintf(
+            /* translators: 1: row count, 2: backup row cap */
+            __('This change set has %1$d rows, above the backup limit of %2$d. Narrow the scope and run Preview again. Apply was not run.', 'intersoccer-reports-rosters'),
+            $count,
+            (int) INTERSOCCER_RR_REPAIR_BACKUP_ROW_CAP
+        );
+    }
+}
+
+if (!function_exists('intersoccer_rr_repair_scope_has_ids')) {
+    /**
+     * True when the field contains at least one positive id.
+     * Dates are not ids. A blank or non-numeric list is not a scope.
+     *
+     * @param mixed $raw
+     */
+    function intersoccer_rr_repair_scope_has_ids($raw): bool {
+        $raw = is_array($raw) ? implode(',', $raw) : (string) $raw;
+        if (function_exists('intersoccer_rr_tool_id_list')) {
+            return intersoccer_rr_tool_id_list($raw) !== [];
+        }
+        $parts = preg_split('/[\s,]+/', $raw) ?: [];
+        foreach ($parts as $part) {
+            if ((int) $part > 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+}
+
+if (!function_exists('intersoccer_rr_repair_tool_supports_rollback')) {
+    function intersoccer_rr_repair_tool_supports_rollback(string $tool): bool {
+        return !in_array($tool, ['upgrade_database', 'fix_issues'], true);
+    }
+}
+
+if (!function_exists('intersoccer_rr_repair_uninstall')) {
+    /**
+     * Remove the repair capability and repair options. Roster tables stay.
+     */
+    function intersoccer_rr_repair_uninstall(): void {
+        $names = ['administrator', 'shop_manager', 'coach'];
+        if (isset($GLOBALS['intersoccer_test_roles']) && is_array($GLOBALS['intersoccer_test_roles'])) {
+            $names = array_values(array_unique(array_merge($names, array_keys($GLOBALS['intersoccer_test_roles']))));
+        }
+        if (function_exists('wp_roles')) {
+            $wp_roles = wp_roles();
+            if (is_object($wp_roles) && isset($wp_roles->role_names) && is_array($wp_roles->role_names)) {
+                $names = array_values(array_unique(array_merge($names, array_keys($wp_roles->role_names))));
+            }
+        }
+        foreach ($names as $name) {
+            $role = get_role($name);
+            if ($role && method_exists($role, 'remove_cap')) {
+                $role->remove_cap(INTERSOCCER_RR_REPAIR_CAP);
+            }
+        }
+        if (isset($GLOBALS['intersoccer_test_option_store']) && is_array($GLOBALS['intersoccer_test_option_store'])) {
+            foreach (array_keys($GLOBALS['intersoccer_test_option_store']) as $key) {
+                if (is_string($key) && strpos($key, 'intersoccer_rr_repair_') === 0) {
+                    unset($GLOBALS['intersoccer_test_option_store'][$key]);
+                }
+            }
+        }
+        if (isset($GLOBALS['intersoccer_rr_repair_memory']) && is_array($GLOBALS['intersoccer_rr_repair_memory'])) {
+            foreach (array_keys($GLOBALS['intersoccer_rr_repair_memory']) as $key) {
+                if (is_string($key) && strpos($key, 'intersoccer_rr_repair_') === 0) {
+                    unset($GLOBALS['intersoccer_rr_repair_memory'][$key]);
+                }
+            }
+        }
+        global $wpdb;
+        if (isset($wpdb) && isset($wpdb->options) && method_exists($wpdb, 'query') && method_exists($wpdb, 'prepare')) {
+            $like = method_exists($wpdb, 'esc_like') ? $wpdb->esc_like('intersoccer_rr_repair_') . '%' : 'intersoccer_rr_repair_%';
+            $wpdb->query($wpdb->prepare("DELETE FROM {$wpdb->options} WHERE option_name LIKE %s", $like));
         }
     }
 }

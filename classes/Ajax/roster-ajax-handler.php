@@ -133,13 +133,8 @@ class RosterAjaxHandler {
      * @return void
      */
     public function handleRebuildRosters() {
-        if (function_exists('intersoccer_rr_repair_block_legacy_ajax')) {
-            intersoccer_rr_repair_block_legacy_ajax('rebuild_rosters');
+                    intersoccer_rr_repair_block_legacy_ajax('rebuild_rosters');
             return;
-        }
-        wp_send_json_error([
-            'message' => __('This repair is not available in admin.', 'intersoccer-reports-rosters'),
-        ], 403);
     }
     
     /**
@@ -148,13 +143,8 @@ class RosterAjaxHandler {
      * @return void
      */
     public function handleReconcileRosters() {
-        if (function_exists('intersoccer_rr_repair_block_legacy_ajax')) {
-            intersoccer_rr_repair_block_legacy_ajax('reconcile_rosters');
+                    intersoccer_rr_repair_block_legacy_ajax('reconcile_rosters');
             return;
-        }
-        wp_send_json_error([
-            'message' => __('This repair is not available in admin.', 'intersoccer-reports-rosters'),
-        ], 403);
     }
 
     /**
@@ -163,13 +153,8 @@ class RosterAjaxHandler {
      * @return void
      */
     public function handleReconcileAlignmentBatch() {
-        if (function_exists('intersoccer_rr_repair_block_legacy_ajax')) {
-            intersoccer_rr_repair_block_legacy_ajax('reconcile_rosters');
+                    intersoccer_rr_repair_block_legacy_ajax('reconcile_rosters');
             return;
-        }
-        wp_send_json_error([
-            'message' => __('This repair is not available in admin.', 'intersoccer-reports-rosters'),
-        ], 403);
     }
     
     /**
@@ -246,23 +231,13 @@ class RosterAjaxHandler {
      * @return void
      */
     public function handleRenormalizeRosterLanguage() {
-        if (function_exists('intersoccer_rr_repair_block_legacy_ajax')) {
-            intersoccer_rr_repair_block_legacy_ajax('normalize_language');
+                    intersoccer_rr_repair_block_legacy_ajax('normalize_language');
             return;
-        }
-        wp_send_json_error([
-            'message' => __('This repair is not available in admin.', 'intersoccer-reports-rosters'),
-        ], 403);
     }
 
     public function handleRebuildEventSignatures() {
-        if (function_exists('intersoccer_rr_repair_block_legacy_ajax')) {
-            intersoccer_rr_repair_block_legacy_ajax('rebuild_event_signatures');
+                    intersoccer_rr_repair_block_legacy_ajax('rebuild_event_signatures');
             return;
-        }
-        wp_send_json_error([
-            'message' => __('This repair is not available in admin.', 'intersoccer-reports-rosters'),
-        ], 403);
     }
     
     /**
@@ -343,13 +318,8 @@ class RosterAjaxHandler {
      * @return void
      */
     public function handleUpgradeDatabase() {
-        if (function_exists('intersoccer_rr_repair_block_legacy_ajax')) {
-            intersoccer_rr_repair_block_legacy_ajax('upgrade_database');
+                    intersoccer_rr_repair_block_legacy_ajax('upgrade_database');
             return;
-        }
-        wp_send_json_error([
-            'message' => __('This repair is not available in admin.', 'intersoccer-reports-rosters'),
-        ], 403);
     }
     
     /**
@@ -358,13 +328,8 @@ class RosterAjaxHandler {
      * @return void
      */
     public function handleSyncPlaceholders() {
-        if (function_exists('intersoccer_rr_repair_block_legacy_ajax')) {
-            intersoccer_rr_repair_block_legacy_ajax('sync_placeholders');
+                    intersoccer_rr_repair_block_legacy_ajax('sync_placeholders');
             return;
-        }
-        wp_send_json_error([
-            'message' => __('This repair is not available in admin.', 'intersoccer-reports-rosters'),
-        ], 403);
     }
     
     /**
@@ -373,13 +338,8 @@ class RosterAjaxHandler {
      * @return void
      */
     public function handleCleanupPlaceholders() {
-        if (function_exists('intersoccer_rr_repair_block_legacy_ajax')) {
-            intersoccer_rr_repair_block_legacy_ajax('sync_placeholders');
+                    intersoccer_rr_repair_block_legacy_ajax('sync_placeholders');
             return;
-        }
-        wp_send_json_error([
-            'message' => __('This repair is not available in admin.', 'intersoccer-reports-rosters'),
-        ], 403);
     }
 }
 

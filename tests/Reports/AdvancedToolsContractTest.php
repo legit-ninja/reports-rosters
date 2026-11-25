@@ -75,6 +75,8 @@ class AdvancedToolsContractTest extends TestCase {
         $this->assertDoesNotMatchRegularExpression('/<button[^>]*>\s*Rebuild Event Signatures/', $html);
         $this->assertStringNotContainsString('intersoccer_rebuild_rosters_and_reports', $html);
         $this->assertStringNotContainsString('value="intersoccer_rebuild_event_signatures"', $html);
+        $this->assertStringNotContainsString('Process Orders', $html);
+        $this->assertStringNotContainsString('value="process_orders"', $html);
 
         intersoccer_test_set_user_caps([
             'manage_woocommerce' => true,
@@ -173,8 +175,9 @@ class AdvancedToolsContractTest extends TestCase {
     public function test_scoped_apply_does_not_require_global_and_creates_backup(): void {
         $state = ['changed' => 1];
         $this->runner($state);
-        $this->postTool('preview', ['date_from' => '2026-01-01', 'date_to' => '2026-01-31']);
+        $this->postTool('preview', ['order_ids' => '1001', 'date_from' => '2026-01-01', 'date_to' => '2026-01-31']);
         $applied = $this->postTool('apply', [
+            'order_ids' => '1001',
             'date_from' => '2026-01-01',
             'date_to' => '2026-01-31',
             'intersoccer_rr_repair_phrase' => 'APPLY',
@@ -193,14 +196,16 @@ class AdvancedToolsContractTest extends TestCase {
     public function test_second_apply_after_empty_preview_is_refused(): void {
         $state = ['changed' => 1];
         $this->runner($state);
-        $this->postTool('preview', ['date_from' => '2026-03-01']);
+        $this->postTool('preview', ['order_ids' => '1001', 'date_from' => '2026-03-01']);
         $this->postTool('apply', [
+            'order_ids' => '1001',
             'date_from' => '2026-03-01',
             'intersoccer_rr_repair_phrase' => 'APPLY',
         ]);
         $this->assertSame(1, $GLOBALS['intersoccer_rr_test_writes']);
-        $this->postTool('preview', ['date_from' => '2026-03-01']);
+        $this->postTool('preview', ['order_ids' => '1001', 'date_from' => '2026-03-01']);
         $again = $this->postTool('apply', [
+            'order_ids' => '1001',
             'date_from' => '2026-03-01',
             'intersoccer_rr_repair_phrase' => 'APPLY',
         ]);

@@ -253,7 +253,6 @@ class HooksManager {
         echo '<div class="intersoccer-order-item-sync-controls" data-order-item-id="' . esc_attr((string) $item_id) . '" style="margin-top:8px;">';
         echo '  <span class="intersoccer-sync-badge intersoccer-sync-badge-unchecked">' . esc_html__('Unchecked', 'intersoccer-reports-rosters') . '</span>';
         echo '  <button type="button" class="button button-small intersoccer-check-sync">' . esc_html__('Check Sync', 'intersoccer-reports-rosters') . '</button> ';
-        echo '  <button type="button" class="button button-small intersoccer-fix-sync" style="margin-left:6px;">' . esc_html__('Fix Sync', 'intersoccer-reports-rosters') . '</button> ';
 
         if ($rosters_count > 0 && function_exists('intersoccer_get_roster_details_url_for_order_item')) {
             $roster_url = intersoccer_get_roster_details_url_for_order_item($item_id);

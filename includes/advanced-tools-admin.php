@@ -25,17 +25,13 @@ if (!function_exists('intersoccer_rr_advanced_tools_definitions')) {
         return [
             'upgrade_database' => [
                 'label' => __('Upgrade Database', 'intersoccer-reports-rosters'),
-                'description' => __('Adds missing roster columns and records the schema version. Shop-wide. Rollback restores the recorded schema version option, not structural changes that were already applied.', 'intersoccer-reports-rosters'),
+                'description' => __('Runs pending schema migrations. Shop-wide. No rollback. Apply is refused when no migration step is pending.', 'intersoccer-reports-rosters'),
                 'fields' => [],
-            ],
-            'process_orders' => [
-                'label' => __('Process Orders', 'intersoccer-reports-rosters'),
-                'description' => __('Fills missing roster rows for processing and on-hold orders and may mark those orders completed. This path is shop-wide.', 'intersoccer-reports-rosters'),
-                'fields' => [],
+                'no_rollback' => true,
             ],
             'reconcile_rosters' => [
                 'label' => __('Reconcile Rosters', 'intersoccer-reports-rosters'),
-                'description' => __('Syncs roster rows from orders in the date range or id list. An empty range is shop-wide and requires GLOBAL. This path does not delete roster rows. Use Season rename repair when the work is a renamed season.', 'intersoccer-reports-rosters'),
+                'description' => __('Syncs roster rows for the order IDs or product IDs you enter. A date range alone is shop-wide and requires GLOBAL. Dates filter that shop-wide run. Default does not delete roster rows. order-sync: no rollback. Use Season rename repair when the work is a renamed season.', 'intersoccer-reports-rosters'),
                 'fields' => [
                     ['name' => 'date_from', 'label' => __('Order date from', 'intersoccer-reports-rosters'), 'type' => 'date'],
                     ['name' => 'date_to', 'label' => __('Order date to', 'intersoccer-reports-rosters'), 'type' => 'date'],
@@ -45,7 +41,7 @@ if (!function_exists('intersoccer_rr_advanced_tools_definitions')) {
             ],
             'normalize_language' => [
                 'label' => __('Normalize Roster Language (EN)', 'intersoccer-reports-rosters'),
-                'description' => __('Rewrites event columns and linked order-line event metadata to English. Player fields are not changed. Shop-wide. The backup stores event columns for up to 2000 roster rows.', 'intersoccer-reports-rosters'),
+                'description' => __('Rewrites event columns and linked order-line event metadata that are not already English. Player fields are not changed. Shop-wide. Apply is refused when more rows would change than the backup limit.', 'intersoccer-reports-rosters'),
                 'fields' => [],
             ],
             'sync_placeholders' => [
@@ -63,7 +59,7 @@ if (!function_exists('intersoccer_rr_advanced_tools_definitions')) {
             ],
             'fix_issues' => [
                 'label' => __('Fix Issues (Safe)', 'intersoccer-reports-rosters'),
-                'description' => __('Inserts missing roster rows and backfills missing course-day metadata for the year or order you enter. Leave both empty only for a shop-wide run (GLOBAL).', 'intersoccer-reports-rosters'),
+                'description' => __('Preview lists the safe-fix counts from diagnostics for the year or order you enter. Leave both empty only for a shop-wide run (GLOBAL). No rollback.', 'intersoccer-reports-rosters'),
                 'fields' => [
                     ['name' => 'year', 'label' => __('Year', 'intersoccer-reports-rosters'), 'type' => 'text'],
                     ['name' => 'order_id', 'label' => __('Order ID', 'intersoccer-reports-rosters'), 'type' => 'number'],
@@ -78,7 +74,7 @@ if (!function_exists('intersoccer_rr_advanced_tools_definitions')) {
             ],
             'merge_signatures' => [
                 'label' => __('Merge signatures', 'intersoccer-reports-rosters'),
-                'description' => __('Rewrites event_signature from the source value to the target value. Scoped to those two signatures.', 'intersoccer-reports-rosters'),
+                'description' => __('Rewrites event_signature from the source value to the target value. Scoped to those two signatures. Apply is refused when the source has more rows than the backup limit.', 'intersoccer-reports-rosters'),
                 'fields' => [
                     ['name' => 'source_signature', 'label' => __('Source signature', 'intersoccer-reports-rosters'), 'type' => 'text'],
                     ['name' => 'target_signature', 'label' => __('Target signature', 'intersoccer-reports-rosters'), 'type' => 'text'],
@@ -148,6 +144,9 @@ if (!function_exists('intersoccer_rr_advanced_tools_normalize_result')) {
             'shop_wide' => $shop_wide || !empty($result['shop_wide']),
             'wrote' => $dry_run ? false : !empty($result['wrote']),
             'raw' => $result['raw'] ?? null,
+            'over_cap' => !empty($result['over_cap']),
+            'note' => (string) ($result['note'] ?? ''),
+            'no_rollback' => !empty($result['no_rollback']),
         ];
     }
 }
@@ -168,9 +167,6 @@ if (!function_exists('intersoccer_rr_advanced_tools_execute')) {
         switch ($tool) {
             case 'upgrade_database':
                 $result = intersoccer_rr_tool_upgrade_database($dry_run);
-                break;
-            case 'process_orders':
-                $result = intersoccer_rr_tool_process_orders($dry_run);
                 break;
             case 'reconcile_rosters':
                 $result = intersoccer_rr_tool_reconcile($dry_run, $scope);
@@ -229,145 +225,113 @@ if (!function_exists('intersoccer_rr_tool_id_list')) {
     }
 }
 
+if (!function_exists('intersoccer_rr_tool_upgrade_pending_steps')) {
+    /**
+     * Pending schema steps. Empty means Apply must not write.
+     *
+     * @return array<int,array{version:string,label:string}>
+     */
+    function intersoccer_rr_tool_upgrade_pending_steps(): array {
+        $current = (string) get_option('intersoccer_db_version', '1.0.0');
+        $catalog = [
+            '2.0.0' => __('Add event signature and placeholder columns.', 'intersoccer-reports-rosters'),
+            '2.1.0' => __('Add the event completed column.', 'intersoccer-reports-rosters'),
+            '2.2.0' => __('Set roster start and end date defaults to empty.', 'intersoccer-reports-rosters'),
+            '2.3.0' => __('Clear legacy 1970-01-01 roster dates.', 'intersoccer-reports-rosters'),
+            '2.4.0' => __('Widen event type and time columns.', 'intersoccer-reports-rosters'),
+        ];
+        $pending = [];
+        foreach ($catalog as $version => $label) {
+            if (version_compare($current, $version, '<')) {
+                $pending[] = ['version' => $version, 'label' => $label];
+            }
+        }
+        return $pending;
+    }
+}
+
 if (!function_exists('intersoccer_rr_tool_upgrade_database')) {
     function intersoccer_rr_tool_upgrade_database(bool $dry_run): array {
-        $before = (string) get_option('intersoccer_db_version', '1.0.0');
+        $pending = intersoccer_rr_tool_upgrade_pending_steps();
+        $note = __('no rollback', 'intersoccer-reports-rosters');
+        if ($pending === []) {
+            return [
+                'error' => __('No database upgrades are pending. Apply was not run.', 'intersoccer-reports-rosters'),
+                'summary' => __('No pending migration steps. no rollback.', 'intersoccer-reports-rosters'),
+                'counts' => ['changed' => 0, 'added' => 0, 'updated' => 0, 'deleted' => 0],
+                'rows' => [],
+                'wrote' => false,
+                'note' => $note,
+                'no_rollback' => true,
+            ];
+        }
+        $rows = [];
+        $labels = [];
+        foreach ($pending as $step) {
+            $labels[] = $step['version'] . ' ' . $step['label'];
+            $rows[] = [
+                'id' => 'migration:' . $step['version'],
+                'before' => ['step' => $step['label']],
+                'after' => ['step' => $step['label']],
+            ];
+        }
+        $summary = sprintf(
+            /* translators: %s: pending migration steps */
+            __('Pending migration steps: %s. no rollback. Nothing was written.', 'intersoccer-reports-rosters'),
+            implode('; ', $labels)
+        );
         if ($dry_run) {
             return [
-                'summary' => sprintf(
-                    /* translators: %s: schema version */
-                    __('Schema version is %s. Apply runs the database upgrade.', 'intersoccer-reports-rosters'),
-                    $before
-                ),
-                'counts' => ['changed' => 1, 'added' => 0, 'updated' => 1, 'deleted' => 0],
-                'rows' => [['id' => 'schema_version', 'before' => ['value' => $before], 'after' => ['value' => $before]]],
+                'summary' => $summary,
+                'counts' => ['changed' => count($pending), 'added' => 0, 'updated' => count($pending), 'deleted' => 0],
+                'rows' => $rows,
                 'wrote' => false,
+                'note' => $note,
+                'no_rollback' => true,
             ];
         }
         $ok = true;
-        if (function_exists('intersoccer_upgrade_database')) {
+        if (class_exists(\InterSoccer\ReportsRosters\Core\DatabaseMigrator::class)) {
+            $migrator = new \InterSoccer\ReportsRosters\Core\DatabaseMigrator();
+            $result = $migrator->migrate();
+            $ok = in_array($result, [
+                \InterSoccer\ReportsRosters\Core\DatabaseMigrator::RESULT_UPGRADED,
+                \InterSoccer\ReportsRosters\Core\DatabaseMigrator::RESULT_ALREADY_CURRENT,
+            ], true);
+        } elseif (function_exists('intersoccer_upgrade_database')) {
             $ok = intersoccer_upgrade_database() !== false;
         }
-        $after = (string) get_option('intersoccer_db_version', $before);
         return [
             'error' => $ok ? '' : __('Database upgrade failed.', 'intersoccer-reports-rosters'),
-            'summary' => sprintf(
-                /* translators: 1: version before, 2: version after */
-                __('Schema version %1$s → %2$s.', 'intersoccer-reports-rosters'),
-                $before,
-                $after
-            ),
-            'counts' => ['changed' => 1, 'added' => 0, 'updated' => 1, 'deleted' => 0],
-            'rows' => [['id' => 'schema_version', 'before' => ['value' => $before], 'after' => ['value' => $after]]],
+            'summary' => $ok
+                ? __('Database upgrade finished. no rollback.', 'intersoccer-reports-rosters')
+                : __('Database upgrade failed. no rollback.', 'intersoccer-reports-rosters'),
+            'counts' => ['changed' => count($pending), 'added' => 0, 'updated' => count($pending), 'deleted' => 0],
+            'rows' => $rows,
             'wrote' => $ok,
+            'note' => $note,
+            'no_rollback' => true,
         ];
     }
 }
 
-if (!function_exists('intersoccer_rr_tool_process_orders')) {
-    function intersoccer_rr_tool_process_orders(bool $dry_run): array {
-        $count = 0;
-        if (function_exists('wc_get_orders')) {
-            $ids = wc_get_orders([
-                'limit' => -1,
-                'status' => ['processing', 'on-hold'],
-                'return' => 'ids',
-            ]);
-            $count = is_array($ids) ? count($ids) : 0;
-        }
-        if ($dry_run) {
-            return [
-                'summary' => sprintf(
-                    /* translators: %d: order count */
-                    __('Preview: %d processing or on-hold orders in scope. Nothing was written.', 'intersoccer-reports-rosters'),
-                    $count
-                ),
-                'counts' => ['changed' => $count, 'added' => $count, 'updated' => 0, 'deleted' => 0],
-                'rows' => [],
-                'wrote' => false,
-            ];
-        }
-        $processed = 0;
-        if (function_exists('intersoccer_process_existing_orders')) {
-            $raw = intersoccer_process_existing_orders();
-            $processed = (int) (is_array($raw) ? ($raw['processed'] ?? 0) : 0);
-        }
-        return [
-            'summary' => sprintf(
-                /* translators: %d: processed orders */
-                __('Processed %d orders.', 'intersoccer-reports-rosters'),
-                $processed
-            ),
-            'counts' => ['changed' => $processed, 'added' => $processed, 'updated' => 0, 'deleted' => 0],
-            'rows' => [],
-            'wrote' => true,
-        ];
-    }
-}
-
-if (!function_exists('intersoccer_rr_tool_reconcile')) {
-    function intersoccer_rr_tool_reconcile(bool $dry_run, array $scope): array {
-        $added = 0;
-        if (function_exists('wc_get_orders')) {
-            $args = [
-                'limit' => -1,
-                'return' => 'ids',
-                'status' => ['completed', 'processing', 'on-hold', 'pending'],
-            ];
-            $from = (string) ($scope['date_from'] ?? '');
-            $to = (string) ($scope['date_to'] ?? '');
-            if ($from !== '' || $to !== '') {
-                $args['date_created'] = ($from !== '' ? $from : '1970-01-01') . '...' . ($to !== '' ? $to : gmdate('Y-m-d'));
-            }
-            $order_ids = intersoccer_rr_tool_id_list((string) ($scope['order_ids'] ?? ''));
-            if ($order_ids !== []) {
-                $args['include'] = $order_ids;
-            }
-            $ids = wc_get_orders($args);
-            $added = is_array($ids) ? count($ids) : 0;
-        }
-        $updated = 0;
+if (!function_exists('intersoccer_rr_tool_reconcile_rows_from_changes')) {
+    /**
+     * @param array<int,mixed> $changes
+     * @return array<int,array<string,mixed>>
+     */
+    function intersoccer_rr_tool_reconcile_rows_from_changes(array $changes): array {
         $rows = [];
-        $deleted = 0;
-        if (!function_exists('intersoccer_rr_load_reconcile') || !intersoccer_rr_load_reconcile() || !function_exists('intersoccer_reconcile_rosters')) {
-            if ($dry_run) {
-                return [
-                    'summary' => sprintf(
-                        /* translators: 1: orders in scope, 2: deletes (always 0 on this path) */
-                        __('Orders in scope: %1$d. Updates from the signature pass are unavailable. Deletes: %2$d. Nothing was written.', 'intersoccer-reports-rosters'),
-                        $added,
-                        0
-                    ),
-                    'counts' => ['changed' => $added, 'added' => $added, 'updated' => 0, 'deleted' => 0],
-                    'rows' => [],
-                    'wrote' => false,
-                ];
-            }
-            return intersoccer_rr_advanced_tools_empty_result(
-                __('Roster reconcile could not be loaded.', 'intersoccer-reports-rosters'),
-                intersoccer_rr_scope_is_shop_wide('reconcile_rosters', $scope),
-                'unavailable'
-            );
-        }
-        $raw = intersoccer_reconcile_rosters([
-            'dry_run' => $dry_run,
-            'delete_obsolete' => false,
-            'skip_order_sync' => $dry_run,
-            'date_from' => (string) ($scope['date_from'] ?? ''),
-            'date_to' => (string) ($scope['date_to'] ?? ''),
-            'order_ids' => (string) ($scope['order_ids'] ?? ''),
-            'product_ids' => (string) ($scope['product_ids'] ?? ''),
-        ]);
-        $season = is_array($raw['season_signature'] ?? null) ? $raw['season_signature'] : [];
-        $changes = is_array($season['changes'] ?? null) ? $season['changes'] : [];
-        $updated = (int) ($season['needing_rename_merge'] ?? $season['updated'] ?? 0);
-        $deleted = (int) ($raw['deleted'] ?? 0);
-        foreach (array_slice($changes, 0, 200) as $change) {
+        foreach ($changes as $change) {
             if (!is_array($change)) {
                 continue;
             }
+            $id = (int) ($change['id'] ?? 0);
+            if ($id <= 0) {
+                continue;
+            }
             $rows[] = [
-                'id' => (int) ($change['id'] ?? 0),
+                'id' => $id,
                 'before' => [
                     'season' => (string) ($change['old_season'] ?? ''),
                     'event_signature' => (string) ($change['old_signature'] ?? ''),
@@ -380,79 +344,308 @@ if (!function_exists('intersoccer_rr_tool_reconcile')) {
                 ],
             ];
         }
-        if (!$dry_run) {
-            $added = (int) ($raw['synced'] ?? $added);
+        return $rows;
+    }
+}
+
+if (!function_exists('intersoccer_rr_tool_reconcile')) {
+    function intersoccer_rr_tool_reconcile(bool $dry_run, array $scope): array {
+        $note = 'order-sync: no rollback';
+        $shop_wide = intersoccer_rr_scope_is_shop_wide('reconcile_rosters', $scope);
+        $delete_requested = !empty($scope['delete_obsolete']) && (string) $scope['delete_obsolete'] !== '0';
+        if (!function_exists('intersoccer_rr_load_reconcile') || !intersoccer_rr_load_reconcile() || !function_exists('intersoccer_reconcile_rosters')) {
+            return intersoccer_rr_advanced_tools_empty_result(
+                __('Roster reconcile could not be loaded.', 'intersoccer-reports-rosters'),
+                $shop_wide,
+                'unavailable'
+            );
         }
+        $raw = intersoccer_reconcile_rosters([
+            'dry_run' => true,
+            'delete_obsolete' => false,
+            'skip_order_sync' => true,
+            'date_from' => (string) ($scope['date_from'] ?? ''),
+            'date_to' => (string) ($scope['date_to'] ?? ''),
+            'order_ids' => (string) ($scope['order_ids'] ?? ''),
+            'product_ids' => (string) ($scope['product_ids'] ?? ''),
+        ]);
+        $raw = is_array($raw) ? $raw : [];
+        $season = is_array($raw['season_signature'] ?? null) ? $raw['season_signature'] : [];
+        $changes = is_array($season['changes'] ?? null) ? $season['changes'] : [];
+        $rows = intersoccer_rr_tool_reconcile_rows_from_changes($changes);
+        $deleted = $delete_requested ? (int) ($raw['deleted'] ?? 0) : 0;
+        if ($delete_requested && $deleted > 0 && count($rows) < $deleted) {
+            return [
+                'error' => __('Preview could not list every row that would be deleted. Apply was not run.', 'intersoccer-reports-rosters'),
+                'summary' => __('Deletes were not fully previewed. order-sync: no rollback.', 'intersoccer-reports-rosters'),
+                'counts' => ['changed' => 0, 'added' => 0, 'updated' => 0, 'deleted' => $deleted],
+                'rows' => [],
+                'note' => $note,
+                'wrote' => false,
+            ];
+        }
+        $change_count = count($rows) + $deleted;
+        if ($change_count > (int) INTERSOCCER_RR_REPAIR_BACKUP_ROW_CAP) {
+            return [
+                'error' => intersoccer_rr_repair_over_cap_message($change_count),
+                'summary' => intersoccer_rr_repair_over_cap_message($change_count) . ' ' . $note,
+                'counts' => ['changed' => 0, 'added' => 0, 'updated' => 0, 'deleted' => 0],
+                'rows' => [],
+                'over_cap' => true,
+                'note' => $note,
+                'wrote' => false,
+            ];
+        }
+        $summary = sprintf(
+            /* translators: 1: roster rows that would change, 2: deletes */
+            __('Roster rows that would change: %1$d. Deletes: %2$d. order-sync: no rollback.', 'intersoccer-reports-rosters'),
+            count($rows),
+            $deleted
+        );
+        if ($dry_run) {
+            return [
+                'summary' => $summary . ' ' . __('Nothing was written.', 'intersoccer-reports-rosters'),
+                'counts' => [
+                    'changed' => $change_count,
+                    'added' => 0,
+                    'updated' => count($rows),
+                    'deleted' => $deleted,
+                ],
+                'rows' => $rows,
+                'note' => $note,
+                'wrote' => false,
+            ];
+        }
+        $applied = intersoccer_reconcile_rosters([
+            'dry_run' => false,
+            'delete_obsolete' => $delete_requested,
+            'skip_order_sync' => false,
+            'date_from' => (string) ($scope['date_from'] ?? ''),
+            'date_to' => (string) ($scope['date_to'] ?? ''),
+            'order_ids' => (string) ($scope['order_ids'] ?? ''),
+            'product_ids' => (string) ($scope['product_ids'] ?? ''),
+        ]);
+        $applied = is_array($applied) ? $applied : [];
+        $ok = ($applied['status'] ?? '') !== 'error';
         return [
+            'error' => $ok ? '' : (string) ($applied['message'] ?? __('Roster reconcile failed.', 'intersoccer-reports-rosters')),
             'summary' => sprintf(
-                /* translators: 1: adds or orders in scope, 2: signature updates, 3: deletes */
-                __('Adds: %1$d. Updates: %2$d. Deletes: %3$d.', 'intersoccer-reports-rosters'),
-                $added,
-                $updated,
+                /* translators: 1: roster rows updated, 2: deletes */
+                __('Updated %1$d roster rows. Deletes: %2$d. order-sync: no rollback.', 'intersoccer-reports-rosters'),
+                count($rows),
                 $deleted
             ),
-            'counts' => ['changed' => $added + $updated + $deleted, 'added' => $added, 'updated' => $updated, 'deleted' => $deleted],
+            'counts' => [
+                'changed' => $change_count,
+                'added' => (int) ($applied['synced'] ?? 0),
+                'updated' => count($rows),
+                'deleted' => $deleted,
+            ],
             'rows' => $rows,
-            'wrote' => !$dry_run,
+            'note' => $note,
+            'wrote' => $ok,
         ];
     }
 }
 
-if (!function_exists('intersoccer_rr_tool_normalize_snapshot')) {
+if (!function_exists('intersoccer_rr_tool_normalize_plan')) {
     /**
+     * Rows and linked order-item meta that language normalize would change.
+     *
      * @return array<int,array<string,mixed>>
      */
-    function intersoccer_rr_tool_normalize_snapshot(): array {
+    function intersoccer_rr_tool_normalize_plan(): array {
         global $wpdb;
         if (!isset($wpdb) || !method_exists($wpdb, 'get_results')) {
             return [];
         }
         $table = $wpdb->prefix . 'intersoccer_rosters';
-        $rows = $wpdb->get_results(
-            "SELECT id, venue, season, booking_type, selected_days, course_day, camp_terms, times FROM {$table} ORDER BY id ASC LIMIT 2000",
-            ARRAY_A
-        );
-        if (!is_array($rows)) {
+        $records = $wpdb->get_results("SELECT * FROM {$table} ORDER BY id ASC", ARRAY_A);
+        if (!is_array($records)) {
+            return [];
+        }
+        $changes = [];
+        foreach ($records as $record) {
+            if (!is_array($record)) {
+                continue;
+            }
+            $row = intersoccer_rr_tool_normalize_row_diff($record);
+            if ($row !== null) {
+                $changes[] = $row;
+            }
+            foreach (intersoccer_rr_tool_normalize_meta_diffs($record) as $meta) {
+                $changes[] = $meta;
+            }
+        }
+        return $changes;
+    }
+}
+
+if (!function_exists('intersoccer_rr_tool_normalize_row_diff')) {
+    /**
+     * @param array<string,mixed> $record
+     * @return array<string,mixed>|null
+     */
+    function intersoccer_rr_tool_normalize_row_diff(array $record): ?array {
+        $id = (int) ($record['id'] ?? 0);
+        if ($id <= 0) {
+            return null;
+        }
+        $before = [];
+        $after = [];
+        $course_day = (string) ($record['course_day'] ?? '');
+        $new_day = function_exists('intersoccer_roster_course_day_for_storage')
+            ? (string) intersoccer_roster_course_day_for_storage($course_day)
+            : $course_day;
+        $event_data = [
+            'activity_type' => $record['activity_type'] ?? '',
+            'venue' => $record['venue'] ?? '',
+            'age_group' => $record['age_group'] ?? '',
+            'camp_terms' => $record['camp_terms'] ?? '',
+            'course_day' => $new_day !== '' ? $new_day : $course_day,
+            'times' => $record['times'] ?? '',
+            'season' => $record['season'] ?? '',
+            'girls_only' => (int) ($record['girls_only'] ?? 0),
+            'city' => $record['city'] ?? '',
+            'canton_region' => $record['canton_region'] ?? '',
+            'product_id' => (int) ($record['product_id'] ?? 0),
+            'start_date' => $record['start_date'] ?? '',
+        ];
+        $update = [];
+        if (function_exists('intersoccer_normalize_roster_facets_for_storage') && function_exists('intersoccer_build_roster_facet_db_update')) {
+            $normalized = intersoccer_normalize_roster_facets_for_storage($event_data);
+            if ($new_day !== '') {
+                $normalized['course_day'] = $new_day;
+            }
+            $update = intersoccer_build_roster_facet_db_update($normalized, $record, (string) ($record['product_name'] ?? ''));
+        } elseif ($new_day !== $course_day) {
+            $update = ['course_day' => $new_day];
+        }
+        $columns = ['venue', 'season', 'booking_type', 'selected_days', 'course_day', 'camp_terms', 'times', 'activity_type', 'city', 'canton_region'];
+        foreach ($columns as $column) {
+            if (!array_key_exists($column, $update)) {
+                continue;
+            }
+            $old = (string) ($record[$column] ?? '');
+            $new = (string) $update[$column];
+            if ($new === $old) {
+                continue;
+            }
+            $before[$column] = $old;
+            $after[$column] = $new;
+        }
+        if ($before === []) {
+            return null;
+        }
+        if (isset($update['event_signature'])) {
+            $old_sig = (string) ($record['event_signature'] ?? '');
+            $new_sig = (string) $update['event_signature'];
+            if ($new_sig !== '' && $new_sig !== $old_sig) {
+                $before['event_signature'] = $old_sig;
+                $after['event_signature'] = $new_sig;
+            }
+        }
+        return ['id' => $id, 'before' => $before, 'after' => $after];
+    }
+}
+
+if (!function_exists('intersoccer_rr_tool_normalize_meta_diffs')) {
+    /**
+     * @param array<string,mixed> $record
+     * @return array<int,array<string,mixed>>
+     */
+    function intersoccer_rr_tool_normalize_meta_diffs(array $record): array {
+        $order_item_id = (int) ($record['order_item_id'] ?? 0);
+        if ($order_item_id <= 0 || !function_exists('wc_get_order_item_meta')) {
+            return [];
+        }
+        $course_day = (string) ($record['course_day'] ?? '');
+        $new_day = function_exists('intersoccer_roster_course_day_for_storage')
+            ? (string) intersoccer_roster_course_day_for_storage($course_day)
+            : $course_day;
+        if ($new_day === '' || $new_day === $course_day) {
             return [];
         }
         $out = [];
-        foreach ($rows as $row) {
-            if (!is_array($row)) {
+        foreach (['Course Day', 'course_day', 'Jour du cours', 'Kurstag'] as $key) {
+            $current = wc_get_order_item_meta($order_item_id, $key, true);
+            if ($current === '' || $current === null || $current === false) {
                 continue;
             }
-            $before = [
-                'venue' => (string) ($row['venue'] ?? ''),
-                'season' => (string) ($row['season'] ?? ''),
-                'booking_type' => (string) ($row['booking_type'] ?? ''),
-                'selected_days' => (string) ($row['selected_days'] ?? ''),
-                'course_day' => (string) ($row['course_day'] ?? ''),
-                'camp_terms' => (string) ($row['camp_terms'] ?? ''),
-                'times' => (string) ($row['times'] ?? ''),
-            ];
+            if ((string) $current === $new_day) {
+                continue;
+            }
             $out[] = [
-                'id' => (int) ($row['id'] ?? 0),
-                'before' => $before,
-                'after' => $before,
+                'id' => 'meta:' . $order_item_id . ':' . $key,
+                'before' => ['value' => (string) $current],
+                'after' => ['value' => $new_day],
             ];
         }
         return $out;
     }
 }
 
+if (!function_exists('intersoccer_rr_tool_normalize_apply_plan')) {
+    /**
+     * @param array<int,array<string,mixed>> $rows
+     */
+    function intersoccer_rr_tool_normalize_apply_plan(array $rows): int {
+        global $wpdb;
+        $table = $wpdb->prefix . 'intersoccer_rosters';
+        $written = 0;
+        foreach ($rows as $row) {
+            $id = $row['id'] ?? 0;
+            $after = is_array($row['after'] ?? null) ? $row['after'] : [];
+            if (is_string($id) && strpos($id, 'meta:') === 0) {
+                $parts = explode(':', $id, 3);
+                $item_id = (int) ($parts[1] ?? 0);
+                $meta_key = (string) ($parts[2] ?? '');
+                if ($item_id > 0 && $meta_key !== '' && function_exists('wc_update_order_item_meta')) {
+                    wc_update_order_item_meta($item_id, $meta_key, (string) ($after['value'] ?? ''));
+                    $written++;
+                }
+                continue;
+            }
+            $data = [];
+            $formats = [];
+            foreach ($after as $column => $value) {
+                if (!is_string($column) || $column === '') {
+                    continue;
+                }
+                $data[$column] = (string) $value;
+                $formats[] = '%s';
+            }
+            if ($data === []) {
+                continue;
+            }
+            $ok = $wpdb->update($table, $data, ['id' => (int) $id], $formats, ['%d']);
+            if ($ok !== false) {
+                $written++;
+            }
+        }
+        return $written;
+    }
+}
+
 if (!function_exists('intersoccer_rr_tool_normalize')) {
     function intersoccer_rr_tool_normalize(bool $dry_run): array {
-        global $wpdb;
-        $count = 0;
-        if (isset($wpdb) && method_exists($wpdb, 'get_var')) {
-            $table = $wpdb->prefix . 'intersoccer_rosters';
-            $count = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$table}");
+        $rows = intersoccer_rr_tool_normalize_plan();
+        $count = count($rows);
+        if ($count > (int) INTERSOCCER_RR_REPAIR_BACKUP_ROW_CAP) {
+            return [
+                'error' => intersoccer_rr_repair_over_cap_message($count),
+                'summary' => intersoccer_rr_repair_over_cap_message($count),
+                'counts' => ['changed' => 0, 'added' => 0, 'updated' => 0, 'deleted' => 0],
+                'rows' => [],
+                'over_cap' => true,
+                'wrote' => false,
+            ];
         }
-        $rows = intersoccer_rr_tool_normalize_snapshot();
         if ($dry_run) {
             return [
                 'summary' => sprintf(
-                    /* translators: %d: roster row count */
-                    __('Preview: %d roster rows would be examined. Nothing was written.', 'intersoccer-reports-rosters'),
+                    /* translators: %d: rows and order-item meta values that would change */
+                    __('Preview: %d roster rows or order-line values would change. Nothing was written.', 'intersoccer-reports-rosters'),
                     $count
                 ),
                 'counts' => ['changed' => $count, 'added' => 0, 'updated' => $count, 'deleted' => 0],
@@ -460,29 +653,14 @@ if (!function_exists('intersoccer_rr_tool_normalize')) {
                 'wrote' => false,
             ];
         }
-        $updated = 0;
-        if (function_exists('intersoccer_renormalize_roster_language')) {
-            $raw = intersoccer_renormalize_roster_language();
-            $updated = (int) (is_array($raw) ? ($raw['updated'] ?? 0) : 0);
-        }
-        $after_rows = intersoccer_rr_tool_normalize_snapshot();
-        $after_by_id = [];
-        foreach ($after_rows as $row) {
-            $after_by_id[(int) $row['id']] = $row['before'];
-        }
-        foreach ($rows as $index => $row) {
-            $id = (int) $row['id'];
-            if (isset($after_by_id[$id])) {
-                $rows[$index]['after'] = $after_by_id[$id];
-            }
-        }
+        $written = intersoccer_rr_tool_normalize_apply_plan($rows);
         return [
             'summary' => sprintf(
                 /* translators: %d: rows updated */
-                __('Normalized %d roster rows.', 'intersoccer-reports-rosters'),
-                $updated
+                __('Normalized %d roster rows or order-line values.', 'intersoccer-reports-rosters'),
+                $written
             ),
-            'counts' => ['changed' => max($updated, $count), 'added' => 0, 'updated' => $updated, 'deleted' => 0],
+            'counts' => ['changed' => $written, 'added' => 0, 'updated' => $written, 'deleted' => 0],
             'rows' => $rows,
             'wrote' => true,
         ];
@@ -584,37 +762,168 @@ if (!function_exists('intersoccer_rr_tool_financial')) {
     }
 }
 
-if (!function_exists('intersoccer_rr_tool_fix_issues')) {
-    function intersoccer_rr_tool_fix_issues(bool $dry_run, array $scope): array {
-        $filters = [
+if (!function_exists('intersoccer_rr_tool_fix_issues_filters')) {
+    /**
+     * Filters shared by diagnostics Preview and safe-fix Apply.
+     *
+     * @param array<string,mixed> $scope
+     * @return array<string,mixed>
+     */
+    function intersoccer_rr_tool_fix_issues_filters(array $scope): array {
+        return [
             'year' => (string) ($scope['year'] ?? ''),
             'order_id' => (int) ($scope['order_id'] ?? 0),
             'activity_type' => 'All',
-            'limit' => 200,
+            'limit' => (int) INTERSOCCER_RR_REPAIR_BACKUP_ROW_CAP,
             'offset' => 0,
         ];
-        if ($dry_run) {
-            return [
-                'summary' => __('Preview: safe fix will use WooCommerce as the source of truth for this scope. Nothing was written.', 'intersoccer-reports-rosters'),
-                'counts' => ['changed' => 1, 'added' => 0, 'updated' => 1, 'deleted' => 0],
-                'rows' => [],
-                'wrote' => false,
-            ];
+    }
+}
+
+if (!function_exists('intersoccer_rr_tool_fix_issues_service')) {
+    /**
+     * @return object|null
+     */
+    function intersoccer_rr_tool_fix_issues_service() {
+        $filtered = apply_filters('intersoccer_rr_diagnostics_service', null);
+        if (is_object($filtered) && method_exists($filtered, 'runDiagnostics') && method_exists($filtered, 'runSafeFix')) {
+            return $filtered;
         }
         if (!class_exists(\InterSoccer\ReportsRosters\Services\ReportsRostersDiagnosticsService::class)) {
+            return null;
+        }
+        return new \InterSoccer\ReportsRosters\Services\ReportsRostersDiagnosticsService();
+    }
+}
+
+if (!function_exists('intersoccer_rr_tool_fix_issues_counts_from_diagnostics')) {
+    /**
+     * @param array<string,mixed> $diagnostics
+     * @return array<string,int>
+     */
+    function intersoccer_rr_tool_fix_issues_counts_from_diagnostics(array $diagnostics): array {
+        $reasons = is_array($diagnostics['reason_counts'] ?? null) ? $diagnostics['reason_counts'] : [];
+        return [
+            'fixed_missing_in_rosters' => (int) ($reasons['missing_in_rosters'] ?? 0),
+            'fixed_missing_in_woo_meta' => (int) ($reasons['missing_in_woo_meta'] ?? 0),
+            'quarantined_missing_in_woo' => (int) ($reasons['missing_in_woo'] ?? 0),
+        ];
+    }
+}
+
+if (!function_exists('intersoccer_rr_tool_fix_issues_summary')) {
+    /**
+     * @param array<string,int> $counts
+     */
+    function intersoccer_rr_tool_fix_issues_summary(array $counts, bool $dry_run): string {
+        $summary = sprintf(
+            /* translators: 1: roster rows inserted, 2: order-line meta backfilled, 3: roster rows quarantined */
+            __('fixed_missing_in_rosters: %1$d. fixed_missing_in_woo_meta: %2$d. quarantined_missing_in_woo: %3$d. no rollback.', 'intersoccer-reports-rosters'),
+            (int) ($counts['fixed_missing_in_rosters'] ?? 0),
+            (int) ($counts['fixed_missing_in_woo_meta'] ?? 0),
+            (int) ($counts['quarantined_missing_in_woo'] ?? 0)
+        );
+        if ($dry_run) {
+            $summary .= ' ' . __('Nothing was written.', 'intersoccer-reports-rosters');
+        }
+        return $summary;
+    }
+}
+
+if (!function_exists('intersoccer_rr_tool_fix_issues')) {
+    function intersoccer_rr_tool_fix_issues(bool $dry_run, array $scope): array {
+        $filters = intersoccer_rr_tool_fix_issues_filters($scope);
+        $note = __('no rollback', 'intersoccer-reports-rosters');
+        $service = intersoccer_rr_tool_fix_issues_service();
+        if ($service === null) {
             return intersoccer_rr_advanced_tools_empty_result(
                 __('Safe fix is unavailable.', 'intersoccer-reports-rosters'),
                 intersoccer_rr_scope_is_shop_wide('fix_issues', $scope),
                 'unavailable'
             );
         }
-        $service = new \InterSoccer\ReportsRosters\Services\ReportsRostersDiagnosticsService();
+        $diagnostics = $service->runDiagnostics($filters);
+        $diagnostics = is_array($diagnostics) ? $diagnostics : [];
+        $projected = intersoccer_rr_tool_fix_issues_counts_from_diagnostics($diagnostics);
+        $projected_total = (int) $projected['fixed_missing_in_rosters'] + (int) $projected['fixed_missing_in_woo_meta'] + (int) $projected['quarantined_missing_in_woo'];
+        if ($projected_total > (int) INTERSOCCER_RR_REPAIR_BACKUP_ROW_CAP) {
+            return [
+                'error' => intersoccer_rr_repair_over_cap_message($projected_total),
+                'summary' => intersoccer_rr_repair_over_cap_message($projected_total),
+                'counts' => [
+                    'changed' => 0,
+                    'added' => 0,
+                    'updated' => 0,
+                    'deleted' => 0,
+                    'fixed_missing_in_rosters' => 0,
+                    'fixed_missing_in_woo_meta' => 0,
+                    'quarantined_missing_in_woo' => 0,
+                ],
+                'rows' => [],
+                'over_cap' => true,
+                'note' => $note,
+                'no_rollback' => true,
+                'wrote' => false,
+            ];
+        }
+        $rows = [];
+        $mismatches = is_array($diagnostics['mismatches'] ?? null) ? $diagnostics['mismatches'] : [];
+        foreach ($mismatches as $mismatch) {
+            if (!is_array($mismatch)) {
+                continue;
+            }
+            $item_id = (int) ($mismatch['order_item_id'] ?? 0);
+            if ($item_id <= 0) {
+                continue;
+            }
+            $reasons = is_array($mismatch['reasons'] ?? null) ? implode(',', $mismatch['reasons']) : '';
+            $rows[] = [
+                'id' => 'diag:' . $item_id,
+                'before' => ['reasons' => $reasons],
+                'after' => ['reasons' => $reasons],
+            ];
+        }
+        if ($dry_run) {
+            return [
+                'summary' => intersoccer_rr_tool_fix_issues_summary($projected, true),
+                'counts' => [
+                    'changed' => $projected_total,
+                    'added' => 0,
+                    'updated' => 0,
+                    'deleted' => 0,
+                    'fixed_missing_in_rosters' => $projected['fixed_missing_in_rosters'],
+                    'fixed_missing_in_woo_meta' => $projected['fixed_missing_in_woo_meta'],
+                    'quarantined_missing_in_woo' => $projected['quarantined_missing_in_woo'],
+                ],
+                'rows' => $rows,
+                'note' => $note,
+                'no_rollback' => true,
+                'wrote' => false,
+            ];
+        }
         $raw = $service->runSafeFix($filters);
+        $raw = is_array($raw) ? $raw : [];
+        $applied = [
+            'fixed_missing_in_rosters' => (int) ($raw['fixed_missing_in_rosters'] ?? 0),
+            'fixed_missing_in_woo_meta' => (int) ($raw['fixed_missing_in_woo_meta'] ?? 0),
+            'quarantined_missing_in_woo' => (int) ($raw['quarantined_missing_in_woo'] ?? 0),
+        ];
+        $applied_total = $applied['fixed_missing_in_rosters'] + $applied['fixed_missing_in_woo_meta'] + $applied['quarantined_missing_in_woo'];
         return [
-            'summary' => __('Safe fix finished.', 'intersoccer-reports-rosters'),
-            'counts' => ['changed' => 1, 'added' => (int) ($raw['inserted'] ?? 0), 'updated' => (int) ($raw['updated'] ?? 0), 'deleted' => 0],
-            'rows' => [],
+            'summary' => intersoccer_rr_tool_fix_issues_summary($applied, false),
+            'counts' => [
+                'changed' => $applied_total,
+                'added' => 0,
+                'updated' => 0,
+                'deleted' => 0,
+                'fixed_missing_in_rosters' => $applied['fixed_missing_in_rosters'],
+                'fixed_missing_in_woo_meta' => $applied['fixed_missing_in_woo_meta'],
+                'quarantined_missing_in_woo' => $applied['quarantined_missing_in_woo'],
+            ],
+            'rows' => $rows,
             'raw' => $raw,
+            'note' => $note,
+            'no_rollback' => true,
             'wrote' => true,
         ];
     }
@@ -697,11 +1006,37 @@ if (!function_exists('intersoccer_rr_tool_merge_signatures')) {
         }
         global $wpdb;
         $table = $wpdb->prefix . 'intersoccer_rosters';
-        $found = $wpdb->get_results($wpdb->prepare(
-            "SELECT id, event_signature FROM {$table} WHERE event_signature = %s LIMIT 2000",
+        $cap = (int) INTERSOCCER_RR_REPAIR_BACKUP_ROW_CAP;
+        $count = (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM {$table} WHERE event_signature = %s",
             $source
+        ));
+        if ($count > $cap) {
+            return [
+                'error' => intersoccer_rr_repair_over_cap_message($count),
+                'summary' => intersoccer_rr_repair_over_cap_message($count),
+                'counts' => ['changed' => 0, 'added' => 0, 'updated' => 0, 'deleted' => 0],
+                'rows' => [],
+                'over_cap' => true,
+                'wrote' => false,
+            ];
+        }
+        $found = $wpdb->get_results($wpdb->prepare(
+            "SELECT id, event_signature FROM {$table} WHERE event_signature = %s LIMIT %d",
+            $source,
+            $cap
         ), ARRAY_A);
         $found = is_array($found) ? $found : [];
+        if (count($found) !== $count) {
+            return [
+                'error' => intersoccer_rr_repair_over_cap_message(max($count, count($found))),
+                'summary' => intersoccer_rr_repair_over_cap_message(max($count, count($found))),
+                'counts' => ['changed' => 0, 'added' => 0, 'updated' => 0, 'deleted' => 0],
+                'rows' => [],
+                'over_cap' => true,
+                'wrote' => false,
+            ];
+        }
         $rows = [];
         foreach ($found as $row) {
             $rows[] = [
@@ -710,7 +1045,6 @@ if (!function_exists('intersoccer_rr_tool_merge_signatures')) {
                 'after' => ['event_signature' => $target],
             ];
         }
-        $count = count($rows);
         if ($dry_run) {
             return [
                 'summary' => sprintf(
@@ -724,9 +1058,10 @@ if (!function_exists('intersoccer_rr_tool_merge_signatures')) {
             ];
         }
         $updated = $wpdb->query($wpdb->prepare(
-            "UPDATE {$table} SET event_signature = %s WHERE event_signature = %s",
+            "UPDATE {$table} SET event_signature = %s WHERE event_signature = %s LIMIT %d",
             $target,
-            $source
+            $source,
+            $cap
         ));
         return [
             'summary' => sprintf(
@@ -867,23 +1202,42 @@ if (!function_exists('intersoccer_rr_advanced_tools_handle_request')) {
         $scope = intersoccer_rr_advanced_tools_scope_from_post($tool);
         if ($mode === 'preview') {
             $result = intersoccer_rr_advanced_tools_execute($tool, true, $scope);
+            $preview_scope = intersoccer_rr_advanced_tools_scope_label($scope);
+            if (($result['note'] ?? '') !== '') {
+                $preview_scope = trim($preview_scope . ' ' . $result['note']);
+            }
+            if (!empty($result['over_cap']) || count($result['rows']) > (int) INTERSOCCER_RR_REPAIR_BACKUP_ROW_CAP) {
+                $cap_message = $result['error'] !== ''
+                    ? $result['error']
+                    : intersoccer_rr_repair_over_cap_message(count($result['rows']));
+                intersoccer_rr_repair_log([
+                    'user_id' => $user_id,
+                    'tool' => $tool,
+                    'mode' => 'preview',
+                    'scope' => $preview_scope,
+                    'counts' => $result['counts'],
+                    'backup' => '',
+                ]);
+                return ['type' => 'error', 'message' => $cap_message, 'result' => $result];
+            }
             if ($result['error'] !== '' && (int) $result['counts']['changed'] === 0) {
                 intersoccer_rr_repair_log([
                     'user_id' => $user_id,
                     'tool' => $tool,
                     'mode' => 'preview',
-                    'scope' => intersoccer_rr_advanced_tools_scope_label($scope),
+                    'scope' => $preview_scope,
                     'counts' => $result['counts'],
                     'backup' => '',
                 ]);
                 return ['type' => 'error', 'message' => $result['error'], 'result' => $result];
             }
+            $result['shop_wide'] = intersoccer_rr_scope_is_shop_wide($tool, $scope);
             intersoccer_rr_repair_store_preview($user_id, $tool, $scope, $result);
             intersoccer_rr_repair_log([
                 'user_id' => $user_id,
                 'tool' => $tool,
                 'mode' => 'preview',
-                'scope' => intersoccer_rr_advanced_tools_scope_label($scope),
+                'scope' => $preview_scope,
                 'counts' => $result['counts'],
                 'backup' => '',
             ]);
@@ -913,17 +1267,29 @@ if (!function_exists('intersoccer_rr_advanced_tools_handle_request')) {
                 'result' => null,
             ];
         }
-        $backup = intersoccer_rr_repair_write_backup($tool, $user_id, $again['rows']);
-        $applied = intersoccer_rr_advanced_tools_execute($tool, false, $scope);
-        if ($applied['rows'] !== []) {
-            intersoccer_rr_repair_replace_backup_rows($backup, $applied['rows']);
+        if (!empty($again['over_cap']) || count($again['rows']) > (int) INTERSOCCER_RR_REPAIR_BACKUP_ROW_CAP) {
+            return [
+                'type' => 'error',
+                'message' => $again['error'] !== ''
+                    ? $again['error']
+                    : intersoccer_rr_repair_over_cap_message(count($again['rows'])),
+                'result' => null,
+            ];
         }
+        $no_rollback = !empty($again['no_rollback']) || !intersoccer_rr_repair_tool_supports_rollback($tool);
+        $backup = $no_rollback ? '' : intersoccer_rr_repair_write_backup($tool, $user_id, $again['rows']);
+        $applied = intersoccer_rr_advanced_tools_execute($tool, false, $scope);
         intersoccer_rr_repair_clear_preview($user_id, $tool);
+        $apply_scope = intersoccer_rr_advanced_tools_scope_label($scope);
+        $apply_note = (string) ($applied['note'] ?? $again['note'] ?? '');
+        if ($apply_note !== '') {
+            $apply_scope = trim($apply_scope . ' ' . $apply_note);
+        }
         intersoccer_rr_repair_log([
             'user_id' => $user_id,
             'tool' => $tool,
             'mode' => 'apply',
-            'scope' => intersoccer_rr_advanced_tools_scope_label($scope),
+            'scope' => $apply_scope,
             'counts' => $applied['counts'],
             'backup' => $backup,
         ]);
@@ -948,6 +1314,14 @@ if (!function_exists('intersoccer_rr_advanced_tools_handle_rollback')) {
         $backup = intersoccer_rr_repair_read_backup($filename);
         if ($backup === null) {
             return ['type' => 'error', 'message' => __('Backup file was not found.', 'intersoccer-reports-rosters'), 'result' => null];
+        }
+        $backup_tool = (string) ($backup['tool'] ?? '');
+        if (!intersoccer_rr_repair_tool_supports_rollback($backup_tool)) {
+            return [
+                'type' => 'error',
+                'message' => __('This repair has no rollback.', 'intersoccer-reports-rosters'),
+                'result' => null,
+            ];
         }
         $outcome = intersoccer_rr_repair_rollback_rows(
             $backup,
@@ -978,8 +1352,12 @@ if (!function_exists('intersoccer_rr_repair_read_roster_value')) {
      * @return array<string,string>
      */
     function intersoccer_rr_repair_read_roster_value($id): array {
-        if ($id === 'schema_version') {
-            return ['value' => (string) get_option('intersoccer_db_version', '')];
+        if (is_string($id) && strpos($id, 'meta:') === 0 && function_exists('wc_get_order_item_meta')) {
+            $parts = explode(':', $id, 3);
+            return ['value' => (string) wc_get_order_item_meta((int) ($parts[1] ?? 0), (string) ($parts[2] ?? ''), true)];
+        }
+        if (!is_numeric($id)) {
+            return [];
         }
         global $wpdb;
         $row = $wpdb->get_row($wpdb->prepare(
@@ -999,12 +1377,20 @@ if (!function_exists('intersoccer_rr_repair_restore_roster_value')) {
         if (!is_array($before)) {
             return;
         }
-        if ($id === 'schema_version' && isset($before['value'])) {
-            update_option('intersoccer_db_version', (string) $before['value'], false);
+        if (is_string($id) && strpos($id, 'meta:') === 0 && function_exists('wc_update_order_item_meta')) {
+            $parts = explode(':', $id, 3);
+            $item_id = (int) ($parts[1] ?? 0);
+            $meta_key = (string) ($parts[2] ?? '');
+            if ($item_id > 0 && $meta_key !== '') {
+                wc_update_order_item_meta($item_id, $meta_key, (string) ($before['value'] ?? ''));
+            }
+            return;
+        }
+        if (!is_numeric($id)) {
             return;
         }
         global $wpdb;
-        $allowed = ['season', 'event_signature', 'course_day', 'day_presence', 'venue', 'booking_type', 'selected_days', 'camp_terms', 'times'];
+        $allowed = ['season', 'event_signature', 'course_day', 'day_presence', 'venue', 'booking_type', 'selected_days', 'camp_terms', 'times', 'city', 'canton_region', 'activity_type'];
         $data = [];
         $formats = [];
         foreach ($allowed as $column) {
@@ -1029,7 +1415,7 @@ if (!function_exists('intersoccer_rr_render_advanced_tools_page')) {
         ?>
         <div class="wrap">
             <h1><?php esc_html_e('Advanced tools', 'intersoccer-reports-rosters'); ?></h1>
-            <p><?php esc_html_e('Repairs run here so everyday roster screens stay read-only. Preview writes nothing. Apply stays off until a Preview exists for that tool. Type APPLY to confirm. Shop-wide runs also require GLOBAL. A backup is stored before Apply, and rollback restores a row only while it still has the value Apply wrote.', 'intersoccer-reports-rosters'); ?></p>
+            <p><?php esc_html_e('Repairs run here so everyday roster screens stay read-only. Preview writes nothing and expires after 30 minutes. Apply stays off until a Preview exists for that tool. Type APPLY to confirm. Shop-wide runs also require GLOBAL. A backup of every changed row is stored before Apply when the change set is within the backup limit. Rollback restores a written row from that pre-Apply snapshot. Upgrade Database and Fix Issues have no rollback. Reconcile order-sync has no rollback.', 'intersoccer-reports-rosters'); ?></p>
             <?php if (($notice['message'] ?? '') !== '') : ?>
                 <div class="notice notice-<?php echo esc_attr($notice['type'] === 'error' ? 'error' : ($notice['type'] === 'success' ? 'success' : 'info')); ?>"><p><?php echo esc_html($notice['message']); ?></p></div>
             <?php endif; ?>
@@ -1148,6 +1534,20 @@ if (!function_exists('intersoccer_rr_render_repair_rollback_form')) {
             return;
         }
         $index = array_reverse($index);
+        $rollback_items = [];
+        foreach ($index as $item) {
+            if (!is_array($item) || empty($item['file'])) {
+                continue;
+            }
+            if (!intersoccer_rr_repair_tool_supports_rollback((string) ($item['tool'] ?? ''))) {
+                continue;
+            }
+            $rollback_items[] = $item;
+        }
+        if ($rollback_items === []) {
+            echo '<p>' . esc_html__('No backups yet.', 'intersoccer-reports-rosters') . '</p>';
+            return;
+        }
         ?>
         <form method="post" action="">
             <input type="hidden" name="intersoccer_rr_repair_tool" value="rollback" />
@@ -1155,8 +1555,7 @@ if (!function_exists('intersoccer_rr_render_repair_rollback_form')) {
             <p>
                 <label for="intersoccer_rr_repair_backup"><?php esc_html_e('Backup', 'intersoccer-reports-rosters'); ?></label>
                 <select name="intersoccer_rr_repair_backup" id="intersoccer_rr_repair_backup">
-                    <?php foreach (array_slice($index, 0, 20) as $item) : ?>
-                        <?php if (!is_array($item) || empty($item['file'])) { continue; } ?>
+                    <?php foreach (array_slice($rollback_items, 0, 20) as $item) : ?>
                         <option value="<?php echo esc_attr((string) $item['file']); ?>"><?php echo esc_html((string) $item['tool'] . ' ' . (string) $item['created_at']); ?></option>
                     <?php endforeach; ?>
                 </select>

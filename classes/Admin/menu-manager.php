@@ -411,6 +411,15 @@ class MenuManager {
         );
 
         add_submenu_page(
+            null,
+            '',
+            '',
+            'read',
+            'intersoccer-season-rename-repair',
+            [$this, 'render_legacy_season_rename_redirect']
+        );
+
+        add_submenu_page(
             'intersoccer-reports-rosters',
             __('InterSoccer Settings', 'intersoccer-reports-rosters'),
             __('Settings', 'intersoccer-reports-rosters'),
@@ -628,6 +637,11 @@ class MenuManager {
 
     public function render_legacy_all_rosters_redirect(): void {
         wp_safe_redirect(admin_url('admin.php?page=intersoccer-rosters'));
+        exit;
+    }
+
+    public function render_legacy_season_rename_redirect(): void {
+        wp_safe_redirect(admin_url('admin.php?page=intersoccer-advanced-tools#intersoccer-rr-season-rename'));
         exit;
     }
 

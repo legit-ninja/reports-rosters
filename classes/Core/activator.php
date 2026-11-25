@@ -611,6 +611,7 @@ class Activator {
                 'export_intersoccer_rosters',
                 'view_intersoccer_reports',
                 'manage_intersoccer_settings',
+                'intersoccer_run_repairs',
             ];
             
             $roles = ['administrator', 'shop_manager', 'coach'];

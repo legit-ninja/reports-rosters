@@ -822,17 +822,30 @@ if (!function_exists('get_userdata')) {
 
 if (!function_exists('get_role')) {
     function get_role($role) {
-        return new class {
-            public $capabilities = [];
+        if (!isset($GLOBALS['intersoccer_test_roles']) || !is_array($GLOBALS['intersoccer_test_roles'])) {
+            $GLOBALS['intersoccer_test_roles'] = [];
+        }
+        $key = (string) $role;
+        if (!isset($GLOBALS['intersoccer_test_roles'][$key])) {
+            $GLOBALS['intersoccer_test_roles'][$key] = new class {
+                public $capabilities = [];
+                public $add_calls = 0;
 
-            public function add_cap($cap, $grant = true) {
-                $this->capabilities[$cap] = (bool) $grant;
-            }
+                public function add_cap($cap, $grant = true) {
+                    $this->add_calls++;
+                    $this->capabilities[$cap] = (bool) $grant;
+                }
 
-            public function remove_cap($cap) {
-                unset($this->capabilities[$cap]);
-            }
-        };
+                public function remove_cap($cap) {
+                    unset($this->capabilities[$cap]);
+                }
+
+                public function has_cap($cap) {
+                    return !empty($this->capabilities[$cap]);
+                }
+            };
+        }
+        return $GLOBALS['intersoccer_test_roles'][$key];
     }
 }
 

@@ -275,7 +275,7 @@ if (!function_exists('intersoccer_rr_season_rename_tool_run')) {
                 'deleted' => 0,
             ],
             'rows' => $rows,
-            'shop_wide' => false,
+            'shop_wide' => $season === '',
             'wrote' => !$dry_run && ($run['error'] ?? '') === '',
             'raw' => $run,
         ];
@@ -331,7 +331,10 @@ if (!function_exists('intersoccer_rr_render_season_rename_page')) {
                     $typed = isset($_POST['intersoccer_rr_repair_phrase'])
                         ? sanitize_text_field(wp_unslash((string) $_POST['intersoccer_rr_repair_phrase']))
                         : '';
-                    $gate = intersoccer_rr_repair_gate_apply($user_id, $tool, $scope, $typed, '', '');
+                    $typed_global = isset($_POST['intersoccer_rr_repair_global'])
+                        ? sanitize_text_field(wp_unslash((string) $_POST['intersoccer_rr_repair_global']))
+                        : '';
+                    $gate = intersoccer_rr_repair_gate_apply($user_id, $tool, $scope, $typed, $typed_global, '');
                     if (!$gate['ok']) {
                         $notice = (string) $gate['error'];
                     } else {
@@ -339,13 +342,12 @@ if (!function_exists('intersoccer_rr_render_season_rename_page')) {
                         $stored = intersoccer_rr_repair_get_preview($user_id, $tool);
                         if ($stored === null || (string) ($stored['rows_fingerprint'] ?? '') !== intersoccer_rr_repair_rows_fingerprint($again['rows'])) {
                             $notice = __('The change set no longer matches the Preview. Run Preview again.', 'intersoccer-reports-rosters');
+                        } elseif (count($again['rows']) > (int) INTERSOCCER_RR_REPAIR_BACKUP_ROW_CAP) {
+                            $notice = intersoccer_rr_repair_over_cap_message(count($again['rows']));
                         } else {
                             $backup = intersoccer_rr_repair_write_backup($tool, $user_id, $again['rows']);
                             $mapped = intersoccer_rr_season_rename_tool_run(false, $scope);
                             $run = is_array($mapped['raw'] ?? null) ? $mapped['raw'] : null;
-                            if (($mapped['rows'] ?? []) !== []) {
-                                intersoccer_rr_repair_replace_backup_rows($backup, $mapped['rows']);
-                            }
                             intersoccer_rr_repair_clear_preview($user_id, $tool);
                             intersoccer_rr_repair_log([
                                 'user_id' => $user_id,
@@ -372,7 +374,7 @@ if (!function_exists('intersoccer_rr_render_season_rename_page')) {
         $preview = intersoccer_rr_repair_get_preview($user_id, $tool);
         ?>
         <div class="wrap">
-            <h1><?php esc_html_e('Season rename repair', 'intersoccer-reports-rosters'); ?></h1>
+            <h1 id="intersoccer-rr-season-rename"><?php esc_html_e('Season rename repair', 'intersoccer-reports-rosters'); ?></h1>
             <p><?php esc_html_e('Merges duplicate rosters caused by renamed program seasons (for example "Winter 2027" renamed to "Winter Courses"). Only products whose current season term has no year are touched. Rows are never deleted. Run the Product Variations "Season labels" repair first.', 'intersoccer-reports-rosters'); ?></p>
             <p><?php esc_html_e('To repair French or German weekdays in one named season (for example Autumn 2026), choose that season below. That mode only rewrites those weekdays to English and re-signs those rows. It does not re-sync orders, does not change session times, and does not touch other seasons. Never use Reconcile Rosters or Rebuild Event Signatures.', 'intersoccer-reports-rosters'); ?></p>
             <?php if ($notice !== '') : ?>
@@ -395,6 +397,11 @@ if (!function_exists('intersoccer_rr_render_season_rename_page')) {
                 <p>
                     <label for="intersoccer_rr_repair_phrase"><?php esc_html_e('Type APPLY to confirm Apply', 'intersoccer-reports-rosters'); ?></label>
                     <input type="text" name="intersoccer_rr_repair_phrase" id="intersoccer_rr_repair_phrase" value="" autocomplete="off" />
+                </p>
+                <p>
+                    <label for="intersoccer_rr_repair_global"><?php esc_html_e('Shop-wide confirm', 'intersoccer-reports-rosters'); ?></label>
+                    <input type="text" name="intersoccer_rr_repair_global" id="intersoccer_rr_repair_global" value="" autocomplete="off" />
+                    <span class="description"><?php esc_html_e('Renamed-seasons mode, with no single season selected, is shop-wide. Type GLOBAL as well as APPLY.', 'intersoccer-reports-rosters'); ?></span>
                 </p>
                 <p>
                     <button type="submit" class="button" name="intersoccer_rr_season_rename_action" value="preview"><?php esc_html_e('Preview (dry run)', 'intersoccer-reports-rosters'); ?></button>

@@ -717,13 +717,8 @@ function intersoccer_oop_attribute_order_refund($order_id, $refund_id) {
  */
 if (!function_exists('intersoccer_oop_backfill_financial_attribution_ajax')) {
 function intersoccer_oop_backfill_financial_attribution_ajax() {
-    if (function_exists('intersoccer_rr_repair_block_legacy_ajax')) {
-        intersoccer_rr_repair_block_legacy_ajax('financial_backfill');
+            intersoccer_rr_repair_block_legacy_ajax('financial_backfill');
         return;
-    }
-    wp_send_json_error([
-        'message' => __('This repair is not available in admin.', 'intersoccer-reports-rosters'),
-    ], 403);
 }
 }
 
