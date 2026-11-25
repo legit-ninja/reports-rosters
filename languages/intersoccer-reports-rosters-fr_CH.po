@@ -2600,12 +2600,12 @@ msgid ""
 "Default does not delete roster rows. order-sync: no rollback. Use Season "
 "rename repair when the work is a renamed season."
 msgstr ""
-"Synchronise les lignes d'effectif pour les IDs de commande ou de produit que "
-"vous entrez. Un seul intervalle de dates est pour toute la boutique et "
-"nécessite GLOBAL. Les dates filtre cette exécution à toute la boutique. La "
-"valeur par défaut ne supprime pas les lignes d'effectif. order-sync : aucune "
-"annulation. Utilisez le réparateur de renommage de saison lorsque le travail "
-"est une saison renommée."
+"Synchronise les lignes d'effectif pour les IDs de commande ou de produit "
+"que vous entrez. Un intervalle de dates, à lui seul, s'applique à toute la "
+"boutique et nécessite GLOBAL. Les dates filtrent cette exécution à "
+"l'échelle de la boutique. Par défaut, les lignes d'effectif ne sont pas "
+"supprimées. order-sync : aucune annulation. Utilisez l'outil de renommage "
+"de saison lorsque le travail consiste en une saison renommée."
 
 #: includes/advanced-tools-admin.php:36
 #, fuzzy

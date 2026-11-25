@@ -2600,11 +2600,12 @@ msgid ""
 "Default does not delete roster rows. order-sync: no rollback. Use Season "
 "rename repair when the work is a renamed season."
 msgstr ""
-"Synchronisiert die Listenzeilen für die angegebenen Bestell-IDs oder Produkt-"
-"IDs. Ein einzelner Datumsbereich ist shopweit und erfordert GLOBAL. Die "
-"Datumsfilterung betrifft diesen shopweiten Vorgang. Der Standardwert löscht "
-"keine Listenzeilen. order-sync: kein Rollback. Verwenden Sie die "
-"Saisonumbenennungsreparatur, wenn der Arbeit eine umbenannte Saison ist."
+"Synchronisiert die Listenzeilen für die angegebenen Bestell-IDs oder "
+"Produkt-IDs. Ein Datumsbereich allein ist shopweit und erfordert GLOBAL. "
+"Die Datumsangaben filtern diesen shopweiten Vorgang. Standardmäßig werden "
+"keine Listenzeilen gelöscht. order-sync: kein Rollback. Verwenden Sie die "
+"Reparatur zur Saisonumbenennung, wenn die Arbeit eine umbenannte Saison "
+"ist."
 
 #: includes/advanced-tools-admin.php:36
 #, fuzzy
@@ -2727,8 +2728,8 @@ msgid ""
 "Recomputes event_signature for the roster row IDs you list. A shop-wide "
 "signature rebuild is not available."
 msgstr ""
-"Rechne die event_signature neu für die ausgewählten Listenzeilen-IDs. Eine "
-"shopweite Signaturenneuberechnung ist nicht verfügbar."
+"Berechnet die event_signature für die angegebenen Listenzeilen-IDs neu. "
+"Eine shopweite Signatur-Neuberechnung ist nicht verfügbar."
 
 #: includes/advanced-tools-admin.php:79
 #, fuzzy
@@ -2926,7 +2927,8 @@ msgstr "%d Zeilen der Liste oder Bestellzeilenwerte wurden normalisiert."
 #, fuzzy, php-format
 msgid "Preview: %d published variable products. Nothing was written."
 msgstr ""
-"Vorschau: %d veröffentlichte variante Produkte. Es wurde nichts geschrieben."
+"Vorschau: %d veröffentlichte variable Produkte. Es wurde nichts "
+"geschrieben."
 
 #. translators: 1: created, 2: updated
 #: includes/advanced-tools-admin.php:813
@@ -2982,8 +2984,8 @@ msgid ""
 "Enter at least one roster row ID. A shop-wide signature rebuild is not "
 "available."
 msgstr ""
-"Geben Sie mindestens eine ID einer Listezeile ein. Eine shopweite "
-"Signaturneuerstellung ist nicht verfügbar."
+"Geben Sie mindestens eine Listenzeilen-ID ein. Eine shopweite "
+"Signatur-Neuberechnung ist nicht verfügbar."
 
 #. translators: %d: roster rows whose signature would change
 #: includes/advanced-tools-admin.php:1102
@@ -3013,7 +3015,7 @@ msgstr ""
 #: includes/advanced-tools-admin.php:1250
 #, fuzzy, php-format
 msgid "Updated %d roster rows."
-msgstr "%d Listezeilen wurden aktualisiert."
+msgstr "%d Listenzeilen wurden aktualisiert."
 
 #: includes/advanced-tools-admin.php:1265
 #, fuzzy
