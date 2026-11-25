@@ -2644,7 +2644,7 @@ msgstr ""
 "Schreibt Stadt, Kanton, Aktivitätstyp und Kurstag um, wenn diese Werte noch "
 "nicht auf Englisch vorliegen. Saison und Ereignissignatur werden niemals "
 "geändert. Spielerfelder werden nicht geändert. Begrenzen Sie den Lauf über "
-"die Saison oder einen Bestell-ID-Bereich, damit ein Stapel die "
+"die Saison oder einen Bestell-ID-Bereich, damit ein Stapel das "
 "Sicherungslimit nicht überschreitet. Lassen Sie diese Felder nur für einen "
 "shopweiten Lauf (GLOBAL) leer. Das Rollback stellt dieselben Werte für Stadt, "
 "Kanton, Aktivitätstyp und Kurstag wieder her."
@@ -2749,7 +2749,7 @@ msgid ""
 msgstr ""
 "Schreibt die event_signature von der Quellwerte auf den Zielwert um. "
 "Gesteuert durch diese beiden Signaturen. Die Anwendung wird abgelehnt, wenn "
-"die Quelle mehr Zeilen hat als der Sicherungslimit."
+"die Quelle mehr Zeilen hat als das Sicherungslimit."
 
 #: includes/advanced-tools-admin.php:86
 #, fuzzy
@@ -4535,7 +4535,7 @@ msgid ""
 "This change set has %1$d rows, above the backup limit of %2$d. Narrow the "
 "scope and run Preview again. Apply was not run."
 msgstr ""
-"Dieses Änderungssatz hat %1$d Zeilen, die den Sicherungslimit von %2$d "
+"Dieses Änderungssatz hat %1$d Zeilen, die das Sicherungslimit von %2$d "
 "überschreiten. Verengen Sie den Bereich und führen Sie die Vorschau erneut "
 "durch. Die Anwendung wurde nicht durchgeführt."
 
@@ -6255,7 +6255,7 @@ msgstr "Zeilen, die repariert werden müssen: %1$d. Maximaler Speicher: %2$s MB"
 #, fuzzy
 msgid "That season is not in the roster table. Choose a season from the list."
 msgstr ""
-"Diese Saison steht nicht in der Listentabelle. Wählen Sie eine Saison ausder "
+"Diese Saison steht nicht in der Listentabelle. Wählen Sie eine Saison aus der "
 "Liste."
 
 #: includes/season-rename-reconcile-admin.php:328
@@ -6276,10 +6276,10 @@ msgid ""
 "season term has no year are touched. Rows are never deleted. Run the Product "
 "Variations \"Season labels\" repair first."
 msgstr ""
-"Führt doppelte Listen zusammen, die durch umbenannte "
-"Programmsaisonsentstanden sind (zum Beispiel „Winter 2027“ umbenannt in "
-"„Winter Courses“). Nur Produkte, deren aktueller Saisonterm kein Jahr hat, "
-"werdenberücksichtigt. Zeilen werden nie gelöscht. Führen Sie zuerst die "
+"Führt doppelte Listen zusammen, die durch umbenannte Programmsaisons "
+"entstanden sind (zum Beispiel „Winter 2027“ umbenannt in „Winter Courses“). "
+"Nur Produkte, deren aktueller Saisonterm kein Jahr hat, werden "
+"berücksichtigt. Zeilen werden nie gelöscht. Führen Sie zuerst die "
 "Product-Variations-Reparatur „Season labels“ aus."
 
 #: includes/season-rename-reconcile-admin.php:379
@@ -6293,8 +6293,8 @@ msgid ""
 msgstr ""
 "Um französische oder deutsche Wochentage in einer benannten Saison (zum "
 "Beispiel Herbst 2026) zu reparieren, wählen Sie diese Saison unten aus. "
-"Dieser Modus schreibt nur diese Wochentage auf Englisch und aktualisiertdiese "
-"Zeilen neu. Er repariert nicht die Bestellungen, ändert nicht die "
+"Dieser Modus schreibt nur diese Wochentage auf Englisch und aktualisiert "
+"diese Zeilen neu. Er repariert nicht die Bestellungen, ändert nicht die "
 "Sitzungszeiten und berührt nicht andere Saisons. Verwenden Sie niemals "
 "Reconcile Rosters oder Rebuild Event Signatures."
 
@@ -6314,8 +6314,8 @@ msgid ""
 "Renamed-seasons mode, with no single season selected, is shop-wide. Type "
 "GLOBAL as well as APPLY."
 msgstr ""
-"Der Modus für umbenannte Saisons, ohne dass eine einzelne Saison "
-"ausgewähltist, ist shopweit. Geben Sie GLOBAL sowie APPLY ein."
+"Der Modus für umbenannte Saisons, ohne dass eine einzelne Saison ausgewählt "
+"ist, ist shopweit. Geben Sie GLOBAL sowie APPLY ein."
 
 #: includes/season-rename-reconcile-admin.php:412
 #, fuzzy
@@ -6331,8 +6331,8 @@ msgid ""
 "MB"
 msgstr ""
 "Modus: %1$s | Saison: %2$s | Zeilen untersucht: %3$d | Zeilen, die "
-"Wochentagsreparatur benötigen: %4$d | Zeilen geändert: %5$d | "
-"Zeilenunverändert: %6$d | Maximaler Speicher: %7$s MB"
+"Wochentagsreparatur benötigen: %4$d | Zeilen geändert: %5$d | Zeilen "
+"unverändert: %6$d | Maximaler Speicher: %7$s MB"
 
 #: includes/season-rename-reconcile-admin.php:418
 #: includes/season-rename-reconcile-admin.php:430
@@ -6355,8 +6355,8 @@ msgid ""
 "memory: %7$s MB"
 msgstr ""
 "Modus: %1$s | Produkte: %2$d | Bestellzeilen neu synchronisiert: %3$d | "
-"Zeilen, die umbenannt werden müssen: %4$d | Zeilen geändert: %5$d | "
-"Zeilenunverändert: %6$d | Maximaler Speicher: %7$s MB"
+"Zeilen, die umbenannt werden müssen: %4$d | Zeilen geändert: %5$d | Zeilen "
+"unverändert: %6$d | Maximaler Speicher: %7$s MB"
 
 #: includes/season-rename-reconcile-admin.php:442
 #, fuzzy
@@ -6421,8 +6421,8 @@ msgid ""
 "Variations that stay split after this pass (session times or other fields, "
 "not weekdays)"
 msgstr ""
-"Variationen, die nach dieser Durchgang ungetrennt bleiben "
-"(Sitzungszeitenoder andere Felder, nicht Wochentage)"
+"Variationen, die nach dieser Durchgang ungetrennt bleiben (Sitzungszeiten "
+"oder andere Felder, nicht Wochentage)"
 
 #: includes/season-rename-reconcile-admin.php:494
 #, fuzzy

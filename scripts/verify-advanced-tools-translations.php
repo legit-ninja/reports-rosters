@@ -267,6 +267,117 @@ function intersoccer_rr_msgstr_spacing_issues($path) {
     return $issues;
 }
 
+
+/**
+ * Fragments and function words used to detect lowercase+lowercase joins
+ * (for example "unesaison", "ausgewähltist") that wrap and camel checks miss.
+ *
+ * @return array{forbidden:array<int,string>,glue:array<int,string>,partners:array<int,string>,de_suffix_allow:array<string,true>}
+ */
+function intersoccer_rr_join_lexicon() {
+    return [
+        'forbidden' => [
+            'unesaison',
+            'uneréparation',
+            'sontconcernés',
+            'saisondans',
+            're-signeces',
+            'programmerenommées',
+            "oud'autres",
+            'laréparation',
+            'heuresde',
+            'lignesinchangées',
+            'rénommation',
+            'werdenberücksichtigt',
+            'ausgewähltist',
+            'ausder',
+            'aktualisiertdiese',
+            'sitzungszeitenoder',
+            'programmsaisonsentstanden',
+            'zeilenunverändert',
+        ],
+        'glue' => [
+            'une', 'sont', 'la', 'les', 'ces', 'dans', 'ou', 'de',
+            'werden', 'ist', 'aus', 'oder', 'diese', 'der', 'den', 'das',
+        ],
+        'partners' => [
+            'saison', 'réparation', 'concernés', 'programme', 'renommées',
+            'autres', 'heures', 'lignes', 'inchangées', 'berücksichtigt',
+            'ausgewählt', 'aktualisiert', 'sitzungszeiten', 'programmsaisons',
+            'entstanden', 'zeilen', 'unverändert', 'liste', 'saison',
+        ],
+        'suffix_de_allow' => [
+            'commande' => true,
+            'sauvegarde' => true,
+            'période' => true,
+            'periode' => true,
+            'upgrade' => true,
+            'methode' => true,
+            'méthode' => true,
+        ],
+    ];
+}
+
+/**
+ * @param string $path Catalog path.
+ * @return array<int,string>
+ */
+function intersoccer_rr_msgstr_word_join_issues($path) {
+    $parsed = intersoccer_rr_parse_po($path);
+    $lex = intersoccer_rr_join_lexicon();
+    $issues = [];
+    foreach ($parsed['entries'] as $msgid => $entry) {
+        $msgstr = (string) $entry['msgstr'];
+        if ($msgstr === '') {
+            continue;
+        }
+        $label = strlen($msgid) > 60 ? substr($msgid, 0, 57) . '...' : $msgid;
+        $lower = function_exists('mb_strtolower') ? mb_strtolower($msgstr, 'UTF-8') : strtolower($msgstr);
+        foreach ($lex['forbidden'] as $bad) {
+            if ($bad !== '' && (function_exists('mb_strpos') ? mb_strpos($lower, $bad) !== false : strpos($lower, $bad) !== false)) {
+                $issues[] = sprintf(
+                    '%s glued-word %s in msgstr for "%s"',
+                    basename($path),
+                    $bad,
+                    $label
+                );
+            }
+        }
+        if (preg_match('/\bOuvri(?!r)\b/u', $msgstr)) {
+            $issues[] = sprintf('%s typo "Ouvri" in msgstr for "%s"', basename($path), $label);
+        }
+        if (!preg_match_all("/[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'’-]*/u", $msgstr, $matches)) {
+            continue;
+        }
+        foreach ($matches[0] as $token) {
+            $tl = function_exists('mb_strtolower') ? mb_strtolower($token, 'UTF-8') : strtolower($token);
+            $tl = str_replace('’', "'", $tl);
+            foreach ($lex['glue'] as $glue) {
+                foreach ($lex['partners'] as $partner) {
+                    if ($tl === $glue . $partner || $tl === $partner . $glue) {
+                        $issues[] = sprintf(
+                            '%s glued token "%s" (%s+%s) in msgstr for "%s"',
+                            basename($path),
+                            $token,
+                            $glue,
+                            $partner,
+                            $label
+                        );
+                    }
+                }
+            }
+            // "oud'autres"
+            if (preg_match("/^ouda['']autres$/u", $tl) || $tl === "oud'autres") {
+                $issues[] = sprintf('%s glued token "%s" in msgstr for "%s"', basename($path), $token, $label);
+            }
+        }
+        // Optional hunspell dictionaries (system or INTERSOCCER_RR_DICT_DIR).
+        $dict_dir = getenv('INTERSOCCER_RR_DICT_DIR') ?: '';
+        unset($dict_dir);
+    }
+    return $issues;
+}
+
 $strings = intersoccer_rr_extract_page_strings($files);
 sort($strings);
 $failures = 0;
@@ -315,11 +426,20 @@ foreach ($spacing_issues as $issue) {
     echo "  SPACING: {$issue}\n";
     $failures++;
 }
+$join_issues = [];
+foreach ($spacing_catalogs as $path) {
+    $join_issues = array_merge($join_issues, intersoccer_rr_msgstr_word_join_issues($path));
+}
+echo "msgstr glued-word issues: " . count($join_issues) . "\n";
+foreach ($join_issues as $issue) {
+    echo "  JOIN: {$issue}\n";
+    $failures++;
+}
 
 if ($failures > 0) {
     fwrite(STDERR, "Failed: {$failures} translation check(s) did not pass.\n");
     exit(1);
 }
 echo "All Advanced tools and Season rename page strings resolve in fr_FR and de_DE.\n";
-echo "All FR/DE msgstr spacing checks passed.\n";
+echo "All FR/DE msgstr spacing and glued-word checks passed.\n";
 exit(0);

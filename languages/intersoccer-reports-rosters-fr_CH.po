@@ -373,7 +373,7 @@ msgstr "Le correctif sécurisé n'est pas disponible."
 #: classes/Admin/menu-manager.php:745
 #, fuzzy
 msgid "Signature drift report is not available."
-msgstr "La réparation de la rénommation de la saison n'est pas disponible."
+msgstr "La réparation de la renommage de la saison n'est pas disponible."
 
 #: classes/Admin/menu-manager.php:757
 msgid "Campaign Analytics page is not available."
@@ -477,7 +477,7 @@ msgstr ""
 #: classes/Ajax/admin-tools-ajax-handler.php:436
 #, fuzzy
 msgid "Legacy move-players handler is unavailable."
-msgstr "La réparation de la rénommation de la saison n'est pas disponible."
+msgstr "La réparation de la renommage de la saison n'est pas disponible."
 
 #: classes/Ajax/admin-tools-ajax-handler.php:450
 #: includes/advanced-tools-admin.php:1183
@@ -2646,10 +2646,10 @@ msgstr ""
 "ces valeurs ne sont pas déjà en anglais. La saison et la signature "
 "d'événement ne sont jamais modifiées. Les champs joueur ne sont pas modifiés. "
 "Restreignez l'exécution par saison ou plage d'IDs de commande pour qu'un lot "
-"reste au niveau ou sous la limite de sauvegarde. Laissez ces champs vides "
-"uniquement pour une exécution à l'échelle de la boutique (GLOBAL). Le "
-"rollback restaure les mêmes valeurs de ville, de canton, de type d'activité "
-"et de jour du cours."
+"ne dépasse pas la limite de sauvegarde. Laissez ces champs vides uniquement "
+"pour une exécution à l'échelle de la boutique (GLOBAL). Le rollback restaure "
+"les mêmes valeurs de ville, de canton, de type d'activité et de jour du "
+"cours."
 
 #: includes/advanced-tools-admin.php:47
 #, fuzzy
@@ -2774,7 +2774,7 @@ msgid ""
 "Rewrites day_presence for one event signature. Opened from a roster, the "
 "signature is filled in. The write still happens on this page."
 msgstr ""
-"Réécrit day_presence pour une signature d'événement spécifique. Ouvri de "
+"Réécrit day_presence pour une signature d'événement spécifique. Ouvrir de "
 "l'effectif, la signature est remplie. L'écriture se produit toujours sur "
 "cette page."
 
@@ -2786,7 +2786,7 @@ msgstr "Signature d'événement"
 #: includes/advanced-tools-admin.php:220
 #, fuzzy
 msgid "Season rename repair is unavailable."
-msgstr "La réparation de la rénommation de la saison n'est pas disponible."
+msgstr "La réparation de la renommage de la saison n'est pas disponible."
 
 #: includes/advanced-tools-admin.php:223 includes/advanced-tools-admin.php:1381
 #, fuzzy
@@ -6254,8 +6254,8 @@ msgstr "Lignes nécessitant une réparation: %1$d. Mémoire maximale: %2$s MB"
 #, fuzzy
 msgid "That season is not in the roster table. Choose a season from the list."
 msgstr ""
-"Cette saison n'est pas dans la table des effectifs. Choisissez une "
-"saisondans la liste."
+"Cette saison n'est pas dans la table des effectifs. Choisissez une saison "
+"dans la liste."
 
 #: includes/season-rename-reconcile-admin.php:328
 #, fuzzy
@@ -6276,10 +6276,10 @@ msgid ""
 "season term has no year are touched. Rows are never deleted. Run the Product "
 "Variations \"Season labels\" repair first."
 msgstr ""
-"Fusionne les effectifs en double causés par des saisons de programmerenommées "
-"(par exemple « Winter 2027 » renommée en « Winter Courses »). Seuls les "
-"produits dont le terme de saison actuel n'a pas d'année sontconcernés. Les "
-"lignes ne sont jamais supprimées. Exécutez d'abord laréparation « Season "
+"Fusionne les effectifs en double causés par des saisons de programme "
+"renommées (par exemple « Winter 2027 » renommée en « Winter Courses »). Seuls "
+"les produits dont le terme de saison actuel n'a pas d'année sont concernés. "
+"Les lignes ne sont jamais supprimées. Exécutez d'abord la réparation « Season "
 "labels » de Product Variations."
 
 #: includes/season-rename-reconcile-admin.php:379
@@ -6291,12 +6291,12 @@ msgid ""
 "session times, and does not touch other seasons. Never use Reconcile Rosters "
 "or Rebuild Event Signatures."
 msgstr ""
-"Pour réparer les jours de la semaine en français ou en allemand dans "
-"unesaison nommée (par exemple Autumn 2026), choisissez cette saison "
-"ci-dessous. Ce mode réécrit uniquement ces jours de la semaine en anglais et "
-"re-signeces lignes. Il ne resynchronise pas les commandes, ne change pas les "
-"heuresde session et ne touche pas les autres saisons. N'utilisez jamais "
-"Reconcile Rosters ni Rebuild Event Signatures."
+"Pour réparer les jours de la semaine en français ou en allemand dans une "
+"saison nommée (par exemple Autumn 2026), choisissez cette saison ci-dessous. "
+"Ce mode réécrit uniquement ces jours de la semaine en anglais et re-signe ces "
+"lignes. Il ne resynchronise pas les commandes, ne change pas les heures de "
+"session et ne touche pas les autres saisons. N'utilisez jamais Reconcile "
+"Rosters ni Rebuild Event Signatures."
 
 #: includes/season-rename-reconcile-admin.php:391
 #, fuzzy
@@ -6330,9 +6330,9 @@ msgid ""
 "repair: %4$d | Rows changed: %5$d | Rows unchanged: %6$d | Peak memory: %7$s "
 "MB"
 msgstr ""
-"Mode: %1$s | Saison: %2$s | Lignes examinées: %3$d | Lignes nécessitant "
-"uneréparation des jours de la semaine: %4$d | Lignes modifiées: %5$d | "
-"Lignesinchangées: %6$d | Mémoire maximale: %7$s MB"
+"Mode: %1$s | Saison: %2$s | Lignes examinées: %3$d | Lignes nécessitant une "
+"réparation des jours de la semaine: %4$d | Lignes modifiées: %5$d | Lignes "
+"inchangées: %6$d | Mémoire maximale: %7$s MB"
 
 #: includes/season-rename-reconcile-admin.php:418
 #: includes/season-rename-reconcile-admin.php:430
@@ -6421,8 +6421,8 @@ msgid ""
 "Variations that stay split after this pass (session times or other fields, "
 "not weekdays)"
 msgstr ""
-"Variations qui restent divisées après cette passe (heures de session "
-"oud'autres champs, pas les jours de la semaine)"
+"Variations qui restent divisées après cette passe (heures de session ou "
+"d'autres champs, pas les jours de la semaine)"
 
 #: includes/season-rename-reconcile-admin.php:494
 #, fuzzy
