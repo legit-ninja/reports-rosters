@@ -1810,3 +1810,79 @@ msgstr "Tous les événements"
 #, php-format
 msgid "Event type: %s"
 msgstr "Type d'événement : %s"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "InterSoccer Advanced tools: Rosters & reports"
+msgstr "InterSoccer Outils avancés : Effectifs et rapports"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "InterSoccer Advanced tools: Products & orders"
+msgstr "InterSoccer Outils avancés : Produits et commandes"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "This repair has no rollback."
+msgstr "Cette réparation ne peut pas être annulée."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Creates or updates placeholder roster rows for published variations. Shop-wide. No rollback. This repair cannot restore the previous placeholder rows."
+msgstr "Crée ou met à jour les lignes d'effectif provisoires des variations publiées. Toute la boutique. Pas d'annulation. Cette réparation ne peut pas restaurer les lignes provisoires précédentes."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Allocates order-level discounts and refunds onto booking lines. Leave the start date empty only for a shop-wide run (GLOBAL). No rollback. This repair cannot restore the previous allocation."
+msgstr "Répartit les remises et les remboursements de la commande sur les lignes de réservation. Laissez la date de début vide seulement pour une exécution sur toute la boutique (GLOBAL). Pas d'annulation. Cette réparation ne peut pas restaurer la répartition précédente."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy, php-format
+msgid "Roster rows to insert: %1$d. Order-line details to fill in: %2$d. Roster rows to set aside: %3$d. This repair has no rollback."
+msgstr "Lignes d'effectif à insérer : %1$d. Détails de ligne de commande à compléter : %2$d. Lignes d'effectif à mettre de côté : %3$d. Cette réparation ne peut pas être annulée."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy, php-format
+msgid "Preview: %d roster rows would get a new event signature. Nothing was written."
+msgstr "Aperçu : %d lignes d'effectif recevraient une nouvelle signature d'événement. Rien n'a été écrit."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Repairs run here so everyday roster screens stay read-only. Preview writes nothing and expires after 30 minutes. Apply stays off until a Preview exists for that tool. Type APPLY to confirm. Shop-wide runs also require GLOBAL. A backup of every changed row is stored before Apply when the change set is within the backup limit. Rollback restores a written row from that pre-Apply snapshot. Upgrade Database, Fix Issues, Financial Attribution Backfill, and Sync All Placeholders have no rollback. Reconcile order-sync has no rollback."
+msgstr "Les réparations s'exécutent ici afin que les écrans d'effectifs du quotidien restent en lecture seule. L'aperçu n'écrit rien et expire après 30 minutes. Appliquer reste désactivé tant qu'un aperçu n'existe pas pour cet outil. Saisissez APPLY pour confirmer. Les exécutions sur toute la boutique exigent aussi GLOBAL. Une sauvegarde de chaque ligne modifiée est enregistrée avant Appliquer lorsque l'ensemble reste dans la limite. L'annulation restaure une ligne écrite à partir de cet instantané. Upgrade Database, Fix Issues, Financial Attribution Backfill et Sync All Placeholders n'ont pas d'annulation. La synchro des commandes de Reconcile n'a pas d'annulation."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Changed"
+msgstr "Modifiées"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Added"
+msgstr "Ajoutées"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Updated"
+msgstr "Mises à jour"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Deleted"
+msgstr "Supprimées"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Roster rows to insert"
+msgstr "Lignes d'effectif à insérer"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Order-line details to fill in"
+msgstr "Détails de ligne de commande à compléter"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Roster rows to set aside"
+msgstr "Lignes d'effectif à mettre de côté"
+

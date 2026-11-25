@@ -403,8 +403,8 @@ class MenuManager {
 
         add_submenu_page(
             'intersoccer-reports-rosters',
-            __('Advanced tools', 'intersoccer-reports-rosters'),
-            __('Advanced tools', 'intersoccer-reports-rosters'),
+            __('InterSoccer Advanced tools: Rosters & reports', 'intersoccer-reports-rosters'),
+            __('InterSoccer Advanced tools: Rosters & reports', 'intersoccer-reports-rosters'),
             'intersoccer_run_repairs',
             'intersoccer-advanced-tools',
             [$this, 'render_advanced_tools']

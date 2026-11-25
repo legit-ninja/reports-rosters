@@ -1853,3 +1853,79 @@ msgstr "All events"
 #, php-format
 msgid "Event type: %s"
 msgstr "Event type: %s"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "InterSoccer Advanced tools: Rosters & reports"
+msgstr "InterSoccer Advanced tools: Rosters & reports"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "InterSoccer Advanced tools: Products & orders"
+msgstr "InterSoccer Advanced tools: Products & orders"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "This repair has no rollback."
+msgstr "This repair has no rollback."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Creates or updates placeholder roster rows for published variations. Shop-wide. No rollback. This repair cannot restore the previous placeholder rows."
+msgstr "Creates or updates placeholder roster rows for published variations. Shop-wide. No rollback. This repair cannot restore the previous placeholder rows."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Allocates order-level discounts and refunds onto booking lines. Leave the start date empty only for a shop-wide run (GLOBAL). No rollback. This repair cannot restore the previous allocation."
+msgstr "Allocates order-level discounts and refunds onto booking lines. Leave the start date empty only for a shop-wide run (GLOBAL). No rollback. This repair cannot restore the previous allocation."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy, php-format
+msgid "Roster rows to insert: %1$d. Order-line details to fill in: %2$d. Roster rows to set aside: %3$d. This repair has no rollback."
+msgstr "Roster rows to insert: %1$d. Order-line details to fill in: %2$d. Roster rows to set aside: %3$d. This repair has no rollback."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy, php-format
+msgid "Preview: %d roster rows would get a new event signature. Nothing was written."
+msgstr "Preview: %d roster rows would get a new event signature. Nothing was written."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Repairs run here so everyday roster screens stay read-only. Preview writes nothing and expires after 30 minutes. Apply stays off until a Preview exists for that tool. Type APPLY to confirm. Shop-wide runs also require GLOBAL. A backup of every changed row is stored before Apply when the change set is within the backup limit. Rollback restores a written row from that pre-Apply snapshot. Upgrade Database, Fix Issues, Financial Attribution Backfill, and Sync All Placeholders have no rollback. Reconcile order-sync has no rollback."
+msgstr "Repairs run here so everyday roster screens stay read-only. Preview writes nothing and expires after 30 minutes. Apply stays off until a Preview exists for that tool. Type APPLY to confirm. Shop-wide runs also require GLOBAL. A backup of every changed row is stored before Apply when the change set is within the backup limit. Rollback restores a written row from that pre-Apply snapshot. Upgrade Database, Fix Issues, Financial Attribution Backfill, and Sync All Placeholders have no rollback. Reconcile order-sync has no rollback."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Changed"
+msgstr "Changed"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Added"
+msgstr "Added"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Updated"
+msgstr "Updated"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Deleted"
+msgstr "Deleted"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Roster rows to insert"
+msgstr "Roster rows to insert"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Order-line details to fill in"
+msgstr "Order-line details to fill in"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Roster rows to set aside"
+msgstr "Roster rows to set aside"
+

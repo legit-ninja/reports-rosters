@@ -287,14 +287,64 @@ if (!function_exists('intersoccer_rr_repair_gate_apply')) {
     }
 }
 
+if (!function_exists('intersoccer_rr_repair_backup_uploads_dir')) {
+    /**
+     * Fallback directory under the uploads basedir.
+     */
+    function intersoccer_rr_repair_backup_uploads_dir(): string {
+        $uploads = function_exists('wp_upload_dir') ? wp_upload_dir() : ['basedir' => sys_get_temp_dir()];
+        $base = isset($uploads['basedir']) && is_string($uploads['basedir']) && $uploads['basedir'] !== ''
+            ? $uploads['basedir']
+            : sys_get_temp_dir();
+        return rtrim($base, '/') . '/intersoccer-rr-repair-backups';
+    }
+}
+
+if (!function_exists('intersoccer_rr_repair_backup_dir_choose')) {
+    /**
+     * Prefer a directory outside the web root.
+     *
+     * Backups store roster fields, which can include personal data. The
+     * preferred path is a sibling of the WordPress content directory:
+     * dirname(WP_CONTENT_DIR) . '/intersoccer-rr-repair-backups'. That sits
+     * beside wp-content, outside the public tree when content lives inside
+     * the site directory. When that parent is missing or not writable, the
+     * fallback is the uploads directory from
+     * intersoccer_rr_repair_backup_uploads_dir(). The caller still writes
+     * index.php and a deny-web .htaccess, and each file name keeps its long
+     * random suffix.
+     *
+     * @param string|null $content_dir WordPress content directory. Null uses WP_CONTENT_DIR.
+     */
+    function intersoccer_rr_repair_backup_dir_choose(?string $content_dir = null): string {
+        $fallback = intersoccer_rr_repair_backup_uploads_dir();
+        if ($content_dir === null && defined('WP_CONTENT_DIR')) {
+            $content_dir = (string) WP_CONTENT_DIR;
+        }
+        $content_dir = rtrim((string) $content_dir, '/');
+        if ($content_dir === '') {
+            return $fallback;
+        }
+        $parent = dirname($content_dir);
+        if ($parent === '' || $parent === '.' || $parent === $content_dir || !is_dir($parent) || !is_writable($parent)) {
+            return $fallback;
+        }
+        return $parent . '/intersoccer-rr-repair-backups';
+    }
+}
+
 if (!function_exists('intersoccer_rr_repair_backup_dir')) {
     function intersoccer_rr_repair_backup_dir(): string {
         if (!empty($GLOBALS['intersoccer_rr_test_backup_dir'])) {
             $dir = (string) $GLOBALS['intersoccer_rr_test_backup_dir'];
         } else {
-            $uploads = function_exists('wp_upload_dir') ? wp_upload_dir() : ['basedir' => sys_get_temp_dir()];
-            $base = isset($uploads['basedir']) ? (string) $uploads['basedir'] : sys_get_temp_dir();
-            $dir = rtrim($base, '/') . '/intersoccer-rr-repair-backups';
+            $dir = intersoccer_rr_repair_backup_dir_choose();
+            if (!is_dir($dir)) {
+                wp_mkdir_p($dir);
+            }
+            if (!is_dir($dir) || !is_writable($dir)) {
+                $dir = intersoccer_rr_repair_backup_uploads_dir();
+            }
         }
         if (!is_dir($dir)) {
             wp_mkdir_p($dir);
@@ -533,7 +583,13 @@ if (!function_exists('intersoccer_rr_repair_scope_has_ids')) {
 
 if (!function_exists('intersoccer_rr_repair_tool_supports_rollback')) {
     function intersoccer_rr_repair_tool_supports_rollback(string $tool): bool {
-        return !in_array($tool, ['upgrade_database', 'fix_issues'], true);
+        if (function_exists('intersoccer_rr_advanced_tools_definitions')) {
+            $definitions = intersoccer_rr_advanced_tools_definitions();
+            if (isset($definitions[$tool])) {
+                return empty($definitions[$tool]['no_rollback']);
+            }
+        }
+        return !in_array($tool, ['upgrade_database', 'fix_issues', 'financial_backfill', 'sync_placeholders'], true);
     }
 }
 

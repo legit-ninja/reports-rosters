@@ -46,16 +46,18 @@ if (!function_exists('intersoccer_rr_advanced_tools_definitions')) {
             ],
             'sync_placeholders' => [
                 'label' => __('Sync All Placeholders', 'intersoccer-reports-rosters'),
-                'description' => __('Creates or updates placeholder roster rows for published variations. Shop-wide.', 'intersoccer-reports-rosters'),
+                'description' => __('Creates or updates placeholder roster rows for published variations. Shop-wide. No rollback. This repair cannot restore the previous placeholder rows.', 'intersoccer-reports-rosters'),
                 'fields' => [],
+                'no_rollback' => true,
             ],
             'financial_backfill' => [
                 'label' => __('Financial Attribution Backfill', 'intersoccer-reports-rosters'),
-                'description' => __('Allocates order-level discounts and refunds onto booking lines. Leave the start date empty only for a shop-wide run (GLOBAL).', 'intersoccer-reports-rosters'),
+                'description' => __('Allocates order-level discounts and refunds onto booking lines. Leave the start date empty only for a shop-wide run (GLOBAL). No rollback. This repair cannot restore the previous allocation.', 'intersoccer-reports-rosters'),
                 'fields' => [
                     ['name' => 'start_date', 'label' => __('Start date', 'intersoccer-reports-rosters'), 'type' => 'date'],
                     ['name' => 'batch_size', 'label' => __('Batch size', 'intersoccer-reports-rosters'), 'type' => 'number'],
                 ],
+                'no_rollback' => true,
             ],
             'fix_issues' => [
                 'label' => __('Fix Issues (Safe)', 'intersoccer-reports-rosters'),
@@ -64,6 +66,7 @@ if (!function_exists('intersoccer_rr_advanced_tools_definitions')) {
                     ['name' => 'year', 'label' => __('Year', 'intersoccer-reports-rosters'), 'type' => 'text'],
                     ['name' => 'order_id', 'label' => __('Order ID', 'intersoccer-reports-rosters'), 'type' => 'number'],
                 ],
+                'no_rollback' => true,
             ],
             'rebuild_selected' => [
                 'label' => __('Rebuild selected signatures', 'intersoccer-reports-rosters'),
@@ -157,12 +160,20 @@ if (!function_exists('intersoccer_rr_advanced_tools_execute')) {
         if (isset($GLOBALS['intersoccer_rr_test_tool_runner']) && is_callable($GLOBALS['intersoccer_rr_test_tool_runner'])) {
             $override = call_user_func($GLOBALS['intersoccer_rr_test_tool_runner'], $tool, $dry_run, $scope);
             if (is_array($override)) {
-                return intersoccer_rr_advanced_tools_normalize_result($override, $dry_run, $shop_wide);
+                return intersoccer_rr_advanced_tools_normalize_result(
+                    intersoccer_rr_advanced_tools_mark_no_rollback($tool, $override),
+                    $dry_run,
+                    $shop_wide
+                );
             }
         }
         $filtered = apply_filters('intersoccer_rr_advanced_tools_execute', null, $tool, $dry_run, $scope);
         if (is_array($filtered)) {
-            return intersoccer_rr_advanced_tools_normalize_result($filtered, $dry_run, $shop_wide);
+            return intersoccer_rr_advanced_tools_normalize_result(
+                intersoccer_rr_advanced_tools_mark_no_rollback($tool, $filtered),
+                $dry_run,
+                $shop_wide
+            );
         }
         switch ($tool) {
             case 'upgrade_database':
@@ -201,7 +212,32 @@ if (!function_exists('intersoccer_rr_advanced_tools_execute')) {
                 $result = intersoccer_rr_advanced_tools_empty_result(__('Unknown repair.', 'intersoccer-reports-rosters'), false, 'unknown');
                 break;
         }
-        return intersoccer_rr_advanced_tools_normalize_result($result, $dry_run, $shop_wide);
+        return intersoccer_rr_advanced_tools_normalize_result(
+            intersoccer_rr_advanced_tools_mark_no_rollback($tool, $result),
+            $dry_run,
+            $shop_wide
+        );
+    }
+}
+
+if (!function_exists('intersoccer_rr_advanced_tools_mark_no_rollback')) {
+    /**
+     * Tools that cannot restore prior rows stay out of the backup file.
+     *
+     * @param array<string,mixed> $result
+     * @return array<string,mixed>
+     */
+    function intersoccer_rr_advanced_tools_mark_no_rollback(string $tool, array $result): array {
+        $definitions = intersoccer_rr_advanced_tools_definitions();
+        if (empty($definitions[$tool]['no_rollback'])) {
+            return $result;
+        }
+        $result['no_rollback'] = true;
+        $summary = (string) ($result['summary'] ?? '');
+        if ($summary !== '' && stripos($summary, 'no rollback') === false) {
+            $result['summary'] = trim($summary . ' ' . __('This repair has no rollback.', 'intersoccer-reports-rosters'));
+        }
+        return $result;
     }
 }
 
@@ -456,27 +492,45 @@ if (!function_exists('intersoccer_rr_tool_normalize_plan')) {
      */
     function intersoccer_rr_tool_normalize_plan(): array {
         global $wpdb;
-        if (!isset($wpdb) || !method_exists($wpdb, 'get_results')) {
+        if (!isset($wpdb) || !method_exists($wpdb, 'get_results') || !method_exists($wpdb, 'prepare')) {
             return [];
         }
         $table = $wpdb->prefix . 'intersoccer_rosters';
-        $records = $wpdb->get_results("SELECT * FROM {$table} ORDER BY id ASC", ARRAY_A);
-        if (!is_array($records)) {
-            return [];
-        }
+        $columns = 'id, order_item_id, product_id, product_name, activity_type, venue, age_group, camp_terms, course_day, times, season, girls_only, city, canton_region, start_date, booking_type, selected_days, event_signature';
         $changes = [];
-        foreach ($records as $record) {
-            if (!is_array($record)) {
-                continue;
+        $cursor = 0;
+        $page_size = 200;
+        do {
+            $records = $wpdb->get_results($wpdb->prepare(
+                "SELECT {$columns} FROM {$table} WHERE id > %d ORDER BY id ASC LIMIT %d",
+                $cursor,
+                $page_size
+            ), ARRAY_A);
+            if (!is_array($records) || $records === []) {
+                break;
             }
-            $row = intersoccer_rr_tool_normalize_row_diff($record);
-            if ($row !== null) {
-                $changes[] = $row;
+            $last_id = $cursor;
+            foreach ($records as $record) {
+                if (!is_array($record)) {
+                    continue;
+                }
+                $id = (int) ($record['id'] ?? 0);
+                if ($id > $last_id) {
+                    $last_id = $id;
+                }
+                $row = intersoccer_rr_tool_normalize_row_diff($record);
+                if ($row !== null) {
+                    $changes[] = $row;
+                }
+                foreach (intersoccer_rr_tool_normalize_meta_diffs($record) as $meta) {
+                    $changes[] = $meta;
+                }
             }
-            foreach (intersoccer_rr_tool_normalize_meta_diffs($record) as $meta) {
-                $changes[] = $meta;
+            if ($last_id <= $cursor) {
+                break;
             }
-        }
+            $cursor = $last_id;
+        } while (count($records) === $page_size);
         return $changes;
     }
 }
@@ -718,13 +772,34 @@ if (!function_exists('intersoccer_rr_tool_placeholders')) {
     }
 }
 
+if (!function_exists('intersoccer_rr_tool_financial_batch_size')) {
+    /**
+     * Empty or non-numeric batch size uses 100. Other values stay inside 1–500.
+     *
+     * @param mixed $raw
+     */
+    function intersoccer_rr_tool_financial_batch_size($raw): int {
+        if (is_string($raw)) {
+            $raw = trim($raw);
+        }
+        if ($raw === null || $raw === '' || !is_numeric($raw)) {
+            return 100;
+        }
+        $batch = (int) $raw;
+        if ($batch < 1) {
+            return 100;
+        }
+        return min(500, $batch);
+    }
+}
+
 if (!function_exists('intersoccer_rr_tool_financial')) {
     function intersoccer_rr_tool_financial(bool $dry_run, array $scope): array {
         $start = (string) ($scope['start_date'] ?? '');
         if ($start === '') {
             $start = '1970-01-01';
         }
-        $batch = max(1, min(500, (int) ($scope['batch_size'] ?? 100)));
+        $batch = intersoccer_rr_tool_financial_batch_size($scope['batch_size'] ?? '');
         if (!function_exists('intersoccer_oop_get_order_financial_attribution_service')) {
             return intersoccer_rr_advanced_tools_empty_result(
                 __('Financial attribution is unavailable.', 'intersoccer-reports-rosters'),
@@ -818,7 +893,7 @@ if (!function_exists('intersoccer_rr_tool_fix_issues_summary')) {
     function intersoccer_rr_tool_fix_issues_summary(array $counts, bool $dry_run): string {
         $summary = sprintf(
             /* translators: 1: roster rows inserted, 2: order-line meta backfilled, 3: roster rows quarantined */
-            __('fixed_missing_in_rosters: %1$d. fixed_missing_in_woo_meta: %2$d. quarantined_missing_in_woo: %3$d. no rollback.', 'intersoccer-reports-rosters'),
+            __('Roster rows to insert: %1$d. Order-line details to fill in: %2$d. Roster rows to set aside: %3$d. This repair has no rollback.', 'intersoccer-reports-rosters'),
             (int) ($counts['fixed_missing_in_rosters'] ?? 0),
             (int) ($counts['fixed_missing_in_woo_meta'] ?? 0),
             (int) ($counts['quarantined_missing_in_woo'] ?? 0)
@@ -939,46 +1014,32 @@ if (!function_exists('intersoccer_rr_tool_rebuild_selected')) {
                 'scope'
             );
         }
-        global $wpdb;
-        $rows = [];
-        if (isset($wpdb) && method_exists($wpdb, 'get_row')) {
-            $table = $wpdb->prefix . 'intersoccer_rosters';
-            foreach ($ids as $id) {
-                $current = $wpdb->get_row($wpdb->prepare("SELECT id, event_signature FROM {$table} WHERE id = %d", $id), ARRAY_A);
-                $before = is_array($current) ? (string) ($current['event_signature'] ?? '') : '';
-                $rows[] = [
-                    'id' => $id,
-                    'before' => ['event_signature' => $before],
-                    'after' => ['event_signature' => $before],
-                ];
-            }
-        }
+        $rows = intersoccer_rr_tool_rebuild_selected_plan($ids);
+        $count = count($rows);
         if ($dry_run) {
             return [
                 'summary' => sprintf(
-                    /* translators: %d: roster row count */
-                    __('Preview: %d selected rows. Nothing was written.', 'intersoccer-reports-rosters'),
-                    count($ids)
+                    /* translators: %d: roster rows whose signature would change */
+                    __('Preview: %d roster rows would get a new event signature. Nothing was written.', 'intersoccer-reports-rosters'),
+                    $count
                 ),
-                'counts' => ['changed' => count($ids), 'added' => 0, 'updated' => count($ids), 'deleted' => 0],
+                'counts' => ['changed' => $count, 'added' => 0, 'updated' => $count, 'deleted' => 0],
                 'rows' => $rows,
                 'wrote' => false,
             ];
         }
         $updated = 0;
-        if (class_exists(\InterSoccer\ReportsRosters\Services\SignatureDriftService::class)) {
-            $service = new \InterSoccer\ReportsRosters\Services\SignatureDriftService();
-            $raw = $service->rebuildSignaturesForIds($ids);
-            $updated = (int) ($raw['updated'] ?? 0);
-        }
-        if (isset($wpdb) && method_exists($wpdb, 'get_row')) {
-            $table = $wpdb->prefix . 'intersoccer_rosters';
-            foreach ($rows as $index => $row) {
-                $current = $wpdb->get_row($wpdb->prepare("SELECT event_signature FROM {$table} WHERE id = %d", (int) $row['id']), ARRAY_A);
-                if (is_array($current)) {
-                    $rows[$index]['after'] = ['event_signature' => (string) ($current['event_signature'] ?? '')];
-                }
+        $write_ids = [];
+        foreach ($rows as $row) {
+            $id = (int) ($row['id'] ?? 0);
+            if ($id > 0) {
+                $write_ids[] = $id;
             }
+        }
+        if ($write_ids !== [] && class_exists(\InterSoccer\ReportsRosters\Services\SignatureDriftService::class)) {
+            $service = new \InterSoccer\ReportsRosters\Services\SignatureDriftService();
+            $raw = $service->rebuildSignaturesForIds($write_ids);
+            $updated = (int) ($raw['updated'] ?? 0);
         }
         return [
             'summary' => sprintf(
@@ -988,8 +1049,49 @@ if (!function_exists('intersoccer_rr_tool_rebuild_selected')) {
             ),
             'counts' => ['changed' => $updated, 'added' => 0, 'updated' => $updated, 'deleted' => 0],
             'rows' => $rows,
-            'wrote' => true,
+            'wrote' => $updated > 0,
         ];
+    }
+}
+
+if (!function_exists('intersoccer_rr_tool_rebuild_selected_plan')) {
+    /**
+     * Backup rows for selected signatures. After is the expected signature.
+     *
+     * @param int[] $ids
+     * @return array<int,array<string,mixed>>
+     */
+    function intersoccer_rr_tool_rebuild_selected_plan(array $ids): array {
+        global $wpdb;
+        if (!isset($wpdb) || !method_exists($wpdb, 'get_row') || !method_exists($wpdb, 'prepare')) {
+            return [];
+        }
+        if (!class_exists(\InterSoccer\ReportsRosters\Services\SignatureDriftService::class)) {
+            return [];
+        }
+        $service = new \InterSoccer\ReportsRosters\Services\SignatureDriftService();
+        $table = $wpdb->prefix . 'intersoccer_rosters';
+        $rows = [];
+        foreach ($ids as $id) {
+            $current = $wpdb->get_row($wpdb->prepare(
+                "SELECT id, activity_type, venue, age_group, camp_terms, course_day, times, season, girls_only, city, canton_region, product_id, start_date, event_signature FROM {$table} WHERE id = %d",
+                (int) $id
+            ), ARRAY_A);
+            if (!is_array($current)) {
+                continue;
+            }
+            $before = (string) ($current['event_signature'] ?? '');
+            $after = $service->expectedSignatureForRow($current);
+            if ($after === '' || $after === $before) {
+                continue;
+            }
+            $rows[] = [
+                'id' => (int) $id,
+                'before' => ['event_signature' => $before],
+                'after' => ['event_signature' => $after],
+            ];
+        }
+        return $rows;
     }
 }
 
@@ -1346,6 +1448,17 @@ if (!function_exists('intersoccer_rr_advanced_tools_handle_rollback')) {
     }
 }
 
+if (!function_exists('intersoccer_rr_repair_roster_rollback_columns')) {
+    /**
+     * Columns read back and restored together. Keep the SELECT and the restore allow-list on this list.
+     *
+     * @return string[]
+     */
+    function intersoccer_rr_repair_roster_rollback_columns(): array {
+        return ['season', 'event_signature', 'course_day', 'day_presence', 'venue', 'booking_type', 'selected_days', 'camp_terms', 'times', 'city', 'canton_region', 'activity_type'];
+    }
+}
+
 if (!function_exists('intersoccer_rr_repair_read_roster_value')) {
     /**
      * @param mixed $id
@@ -1360,8 +1473,9 @@ if (!function_exists('intersoccer_rr_repair_read_roster_value')) {
             return [];
         }
         global $wpdb;
+        $columns = implode(', ', intersoccer_rr_repair_roster_rollback_columns());
         $row = $wpdb->get_row($wpdb->prepare(
-            "SELECT season, event_signature, course_day, day_presence, venue, booking_type, selected_days, camp_terms, times FROM {$wpdb->prefix}intersoccer_rosters WHERE id = %d",
+            "SELECT {$columns} FROM {$wpdb->prefix}intersoccer_rosters WHERE id = %d",
             (int) $id
         ), ARRAY_A);
         return is_array($row) ? $row : [];
@@ -1390,7 +1504,7 @@ if (!function_exists('intersoccer_rr_repair_restore_roster_value')) {
             return;
         }
         global $wpdb;
-        $allowed = ['season', 'event_signature', 'course_day', 'day_presence', 'venue', 'booking_type', 'selected_days', 'camp_terms', 'times', 'city', 'canton_region', 'activity_type'];
+        $allowed = intersoccer_rr_repair_roster_rollback_columns();
         $data = [];
         $formats = [];
         foreach ($allowed as $column) {
@@ -1406,6 +1520,72 @@ if (!function_exists('intersoccer_rr_repair_restore_roster_value')) {
     }
 }
 
+if (!function_exists('intersoccer_rr_advanced_tools_products_orders_url')) {
+    /**
+     * Cross-link to Product Variations advanced tools when that page is registered.
+     */
+    function intersoccer_rr_advanced_tools_products_orders_url(): string {
+        if (!function_exists('current_user_can') || !current_user_can('intersoccer_run_repairs')) {
+            return '';
+        }
+        $slug = 'intersoccer-pv-advanced-tools';
+        if (!intersoccer_rr_admin_page_is_registered($slug)) {
+            return '';
+        }
+        return admin_url('admin.php?page=' . $slug);
+    }
+}
+
+if (!function_exists('intersoccer_rr_admin_page_is_registered')) {
+    function intersoccer_rr_admin_page_is_registered(string $slug): bool {
+        global $submenu, $_parent_pages;
+        if (isset($_parent_pages) && is_array($_parent_pages) && array_key_exists($slug, $_parent_pages)) {
+            return true;
+        }
+        if (!isset($submenu) || !is_array($submenu)) {
+            return false;
+        }
+        foreach ($submenu as $items) {
+            if (!is_array($items)) {
+                continue;
+            }
+            foreach ($items as $item) {
+                if (is_array($item) && isset($item[2]) && (string) $item[2] === $slug) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+}
+
+if (!function_exists('intersoccer_rr_repair_format_counts_for_display')) {
+    /**
+     * Translated count labels for the run log. Structured keys stay in the stored result.
+     *
+     * @param array<string,mixed> $counts
+     */
+    function intersoccer_rr_repair_format_counts_for_display(array $counts): string {
+        $labels = [
+            'changed' => __('Changed', 'intersoccer-reports-rosters'),
+            'added' => __('Added', 'intersoccer-reports-rosters'),
+            'updated' => __('Updated', 'intersoccer-reports-rosters'),
+            'deleted' => __('Deleted', 'intersoccer-reports-rosters'),
+            'fixed_missing_in_rosters' => __('Roster rows to insert', 'intersoccer-reports-rosters'),
+            'fixed_missing_in_woo_meta' => __('Order-line details to fill in', 'intersoccer-reports-rosters'),
+            'quarantined_missing_in_woo' => __('Roster rows to set aside', 'intersoccer-reports-rosters'),
+        ];
+        $parts = [];
+        foreach ($counts as $key => $value) {
+            if (!is_string($key) || !isset($labels[$key]) || is_array($value)) {
+                continue;
+            }
+            $parts[] = $labels[$key] . ': ' . (int) $value;
+        }
+        return implode('. ', $parts);
+    }
+}
+
 if (!function_exists('intersoccer_rr_render_advanced_tools_page')) {
     function intersoccer_rr_render_advanced_tools_page(): void {
         intersoccer_rr_repair_require_cap();
@@ -1414,8 +1594,14 @@ if (!function_exists('intersoccer_rr_render_advanced_tools_page')) {
         $definitions = intersoccer_rr_advanced_tools_definitions();
         ?>
         <div class="wrap">
-            <h1><?php esc_html_e('Advanced tools', 'intersoccer-reports-rosters'); ?></h1>
-            <p><?php esc_html_e('Repairs run here so everyday roster screens stay read-only. Preview writes nothing and expires after 30 minutes. Apply stays off until a Preview exists for that tool. Type APPLY to confirm. Shop-wide runs also require GLOBAL. A backup of every changed row is stored before Apply when the change set is within the backup limit. Rollback restores a written row from that pre-Apply snapshot. Upgrade Database and Fix Issues have no rollback. Reconcile order-sync has no rollback.', 'intersoccer-reports-rosters'); ?></p>
+            <h1><?php esc_html_e('InterSoccer Advanced tools: Rosters & reports', 'intersoccer-reports-rosters'); ?></h1>
+            <p><?php esc_html_e('Repairs run here so everyday roster screens stay read-only. Preview writes nothing and expires after 30 minutes. Apply stays off until a Preview exists for that tool. Type APPLY to confirm. Shop-wide runs also require GLOBAL. A backup of every changed row is stored before Apply when the change set is within the backup limit. Rollback restores a written row from that pre-Apply snapshot. Upgrade Database, Fix Issues, Financial Attribution Backfill, and Sync All Placeholders have no rollback. Reconcile order-sync has no rollback.', 'intersoccer-reports-rosters'); ?></p>
+            <?php
+            $products_orders_url = intersoccer_rr_advanced_tools_products_orders_url();
+            if ($products_orders_url !== '') :
+                ?>
+                <p><a href="<?php echo esc_url($products_orders_url); ?>"><?php esc_html_e('InterSoccer Advanced tools: Products & orders', 'intersoccer-reports-rosters'); ?></a></p>
+            <?php endif; ?>
             <?php if (($notice['message'] ?? '') !== '') : ?>
                 <div class="notice notice-<?php echo esc_attr($notice['type'] === 'error' ? 'error' : ($notice['type'] === 'success' ? 'success' : 'info')); ?>"><p><?php echo esc_html($notice['message']); ?></p></div>
             <?php endif; ?>
@@ -1517,7 +1703,7 @@ if (!function_exists('intersoccer_rr_render_repair_run_log')) {
             echo '<td>' . esc_html((string) ($entry['tool'] ?? '')) . '</td>';
             echo '<td>' . esc_html((string) ($entry['mode'] ?? '')) . '</td>';
             echo '<td>' . esc_html((string) ($entry['scope'] ?? '')) . '</td>';
-            echo '<td>' . esc_html((string) wp_json_encode($counts)) . '</td>';
+            echo '<td>' . esc_html(intersoccer_rr_repair_format_counts_for_display($counts)) . '</td>';
             echo '<td>' . esc_html((string) ($entry['backup'] ?? '')) . '</td>';
             echo '<td>' . esc_html((string) ($entry['peak_memory_mb'] ?? '')) . '</td>';
             echo '</tr>';

@@ -6439,11 +6439,11 @@ msgid "Rewrites event columns and linked order-line event metadata that are not 
 msgstr ""
 
 #: includes/advanced-tools-admin.php:49
-msgid "Creates or updates placeholder roster rows for published variations. Shop-wide."
+msgid "Creates or updates placeholder roster rows for published variations. Shop-wide. No rollback. This repair cannot restore the previous placeholder rows."
 msgstr ""
 
 #: includes/advanced-tools-admin.php:54
-msgid "Allocates order-level discounts and refunds onto booking lines. Leave the start date empty only for a shop-wide run (GLOBAL)."
+msgid "Allocates order-level discounts and refunds onto booking lines. Leave the start date empty only for a shop-wide run (GLOBAL). No rollback. This repair cannot restore the previous allocation."
 msgstr ""
 
 #: includes/advanced-tools-admin.php:62
@@ -6598,7 +6598,7 @@ msgstr ""
 
 #: includes/advanced-tools-admin.php:821
 #, php-format
-msgid "fixed_missing_in_rosters: %1$d. fixed_missing_in_woo_meta: %2$d. quarantined_missing_in_woo: %3$d. no rollback."
+msgid "Roster rows to insert: %1$d. Order-line details to fill in: %2$d. Roster rows to set aside: %3$d. This repair has no rollback."
 msgstr ""
 
 #: includes/advanced-tools-admin.php:840
@@ -6611,7 +6611,7 @@ msgstr ""
 
 #: includes/advanced-tools-admin.php:960
 #, php-format
-msgid "Preview: %d selected rows. Nothing was written."
+msgid "Preview: %d roster rows would get a new event signature. Nothing was written."
 msgstr ""
 
 #: includes/advanced-tools-admin.php:986
@@ -6683,11 +6683,11 @@ msgstr ""
 #: includes/advanced-tools-admin.php:1417
 #: classes/Admin/menu-manager.php:406
 #: classes/Admin/menu-manager.php:407
-msgid "Advanced tools"
+msgid "InterSoccer Advanced tools: Rosters & reports"
 msgstr ""
 
 #: includes/advanced-tools-admin.php:1418
-msgid "Repairs run here so everyday roster screens stay read-only. Preview writes nothing and expires after 30 minutes. Apply stays off until a Preview exists for that tool. Type APPLY to confirm. Shop-wide runs also require GLOBAL. A backup of every changed row is stored before Apply when the change set is within the backup limit. Rollback restores a written row from that pre-Apply snapshot. Upgrade Database and Fix Issues have no rollback. Reconcile order-sync has no rollback."
+msgid "Repairs run here so everyday roster screens stay read-only. Preview writes nothing and expires after 30 minutes. Apply stays off until a Preview exists for that tool. Type APPLY to confirm. Shop-wide runs also require GLOBAL. A backup of every changed row is stored before Apply when the change set is within the backup limit. Rollback restores a written row from that pre-Apply snapshot. Upgrade Database, Fix Issues, Financial Attribution Backfill, and Sync All Placeholders have no rollback. Reconcile order-sync has no rollback."
 msgstr ""
 
 #: includes/advanced-tools-admin.php:1430
@@ -6922,4 +6922,36 @@ msgstr ""
 
 #: classes/Admin/menu-manager.php:718
 msgid "Advanced tools are not available."
+msgstr ""
+
+#: includes/advanced-tools-admin.php
+msgid "InterSoccer Advanced tools: Products & orders"
+msgstr ""
+
+#: includes/advanced-tools-admin.php
+msgid "Changed"
+msgstr ""
+
+#: includes/advanced-tools-admin.php
+msgid "Added"
+msgstr ""
+
+#: includes/advanced-tools-admin.php
+msgid "Updated"
+msgstr ""
+
+#: includes/advanced-tools-admin.php
+msgid "Deleted"
+msgstr ""
+
+#: includes/advanced-tools-admin.php
+msgid "Roster rows to insert"
+msgstr ""
+
+#: includes/advanced-tools-admin.php
+msgid "Order-line details to fill in"
+msgstr ""
+
+#: includes/advanced-tools-admin.php
+msgid "Roster rows to set aside"
 msgstr ""

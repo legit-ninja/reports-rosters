@@ -1810,3 +1810,79 @@ msgstr "Alle Veranstaltungen"
 #, php-format
 msgid "Event type: %s"
 msgstr "Veranstaltungstyp: %s"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "InterSoccer Advanced tools: Rosters & reports"
+msgstr "InterSoccer Erweiterte Werkzeuge: Listen und Berichte"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "InterSoccer Advanced tools: Products & orders"
+msgstr "InterSoccer Erweiterte Werkzeuge: Produkte und Bestellungen"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "This repair has no rollback."
+msgstr "Diese Reparatur kann nicht rückgängig gemacht werden."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Creates or updates placeholder roster rows for published variations. Shop-wide. No rollback. This repair cannot restore the previous placeholder rows."
+msgstr "Erstellt oder aktualisiert Platzhalterzeilen für veröffentlichte Varianten. Gesamter Shop. Kein Rollback. Diese Reparatur kann die vorherigen Platzhalterzeilen nicht wiederherstellen."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Allocates order-level discounts and refunds onto booking lines. Leave the start date empty only for a shop-wide run (GLOBAL). No rollback. This repair cannot restore the previous allocation."
+msgstr "Verteilt Bestellrabatte und Rückerstattungen auf die Buchungszeilen. Lassen Sie das Startdatum nur für einen shopweiten Lauf leer (GLOBAL). Kein Rollback. Diese Reparatur kann die vorherige Zuordnung nicht wiederherstellen."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy, php-format
+msgid "Roster rows to insert: %1$d. Order-line details to fill in: %2$d. Roster rows to set aside: %3$d. This repair has no rollback."
+msgstr "Einzufügende Listenzeilen: %1$d. Auszufüllende Bestellpositionsdetails: %2$d. Zurückzustellende Listenzeilen: %3$d. Diese Reparatur kann nicht rückgängig gemacht werden."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy, php-format
+msgid "Preview: %d roster rows would get a new event signature. Nothing was written."
+msgstr "Vorschau: %d Listenzeilen würden eine neue Ereignissignatur erhalten. Es wurde nichts geschrieben."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Repairs run here so everyday roster screens stay read-only. Preview writes nothing and expires after 30 minutes. Apply stays off until a Preview exists for that tool. Type APPLY to confirm. Shop-wide runs also require GLOBAL. A backup of every changed row is stored before Apply when the change set is within the backup limit. Rollback restores a written row from that pre-Apply snapshot. Upgrade Database, Fix Issues, Financial Attribution Backfill, and Sync All Placeholders have no rollback. Reconcile order-sync has no rollback."
+msgstr "Reparaturen laufen hier, damit die täglichen Listenansichten nur lesbar bleiben. Die Vorschau schreibt nichts und läuft nach 30 Minuten ab. Anwenden bleibt aus, bis eine Vorschau für dieses Werkzeug vorliegt. Geben Sie APPLY ein, um zu bestätigen. Shopweite Läufe brauchen zusätzlich GLOBAL. Eine Sicherung jeder geänderten Zeile wird vor dem Anwenden gespeichert, solange die Menge unter der Grenze bleibt. Der Rollback stellt eine geschriebene Zeile aus dieser Sicherung wieder her. Upgrade Database, Fix Issues, Financial Attribution Backfill und Sync All Placeholders haben kein Rollback. Der Bestellabgleich von Reconcile hat kein Rollback."
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Changed"
+msgstr "Geändert"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Added"
+msgstr "Hinzugefügt"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Updated"
+msgstr "Aktualisiert"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Deleted"
+msgstr "Gelöscht"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Roster rows to insert"
+msgstr "Einzufügende Listenzeilen"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Order-line details to fill in"
+msgstr "Auszufüllende Bestellpositionsdetails"
+
+#: includes/advanced-tools-admin.php
+#, fuzzy
+msgid "Roster rows to set aside"
+msgstr "Zurückzustellende Listenzeilen"
+
