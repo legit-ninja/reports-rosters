@@ -65,6 +65,141 @@ final class Intersoccer_Rosters_Wp_Cli {
  */
 final class Intersoccer_Rr_Wp_Cli {
     /**
+     * Scoped roster reconcile for season rename / signature merge.
+     *
+     * Recomputes season + event_signature for roster rows of the given orders
+     * and/or products. Does not run global signature-drift rebuild tools.
+     *
+     * ## OPTIONS
+     *
+     * [--orders=<ids>]
+     * : Comma-separated order ids.
+     *
+     * [--products=<ids>]
+     * : Comma-separated product ids (all roster rows for those products).
+     *
+     * [--all-season-renames]
+     * : Instead of --orders/--products, examine every roster row and re-sign only rows
+     * whose product's current season term has no year (renamed/evergreen seasons).
+     * Season/signature pass only: no order re-sync, no deletes. Other seasons untouched.
+     *
+     * [--dry-run]
+     * : List rows whose season/signature would change; zero writes.
+     *
+     * [--no-product-siblings]
+     * : With --orders, do not also update other roster rows of the same products.
+     *
+     * ## EXAMPLES
+     *
+     *     wp intersoccer-rr reconcile-orders --orders=101,102 --dry-run
+     *     wp intersoccer-rr reconcile-orders --products=4242
+     *     wp intersoccer-rr reconcile-orders --all-season-renames --dry-run
+     *
+     * @subcommand reconcile-orders
+     * @alias reconcile_orders
+     * @when after_wp_load
+     *
+     * @param list<string> $args
+     * @param array<string,mixed> $assoc_args
+     */
+    public function reconcile_orders(array $args, array $assoc_args): void {
+        if (!function_exists('intersoccer_rr_load_reconcile')) {
+            $hook = dirname(__DIR__) . '/order-meta-repair-hook.php';
+            if (is_readable($hook)) {
+                require_once $hook;
+            }
+        }
+        if (!function_exists('intersoccer_rr_load_reconcile') || !intersoccer_rr_load_reconcile()) {
+            \WP_CLI::error('Roster reconcile could not be loaded (includes/db.php).');
+        }
+
+        $order_ids = isset($assoc_args['orders']) ? (string) $assoc_args['orders'] : '';
+        $product_ids = isset($assoc_args['products']) ? (string) $assoc_args['products'] : '';
+        $dry_run = \WP_CLI\Utils\get_flag_value($assoc_args, 'dry-run', false) === true;
+        $no_siblings = \WP_CLI\Utils\get_flag_value($assoc_args, 'no-product-siblings', false) === true;
+
+        $all_renames = \WP_CLI\Utils\get_flag_value($assoc_args, 'all-season-renames', false) === true;
+
+        if ($all_renames && ($order_ids !== '' || $product_ids !== '')) {
+            \WP_CLI::error('Use either --all-season-renames or --orders/--products, not both.');
+        }
+        if (!$all_renames && $order_ids === '' && $product_ids === '') {
+            \WP_CLI::error(
+                "Nothing to reconcile. Usage:\n"
+                . "  wp intersoccer-rr reconcile-orders --orders=<ids> [--dry-run]\n"
+                . "  wp intersoccer-rr reconcile-orders --products=<ids> [--dry-run]\n"
+                . "  wp intersoccer-rr reconcile-orders --all-season-renames [--dry-run]"
+            );
+        }
+
+        if ($all_renames) {
+            $season = intersoccer_reconcile_roster_season_signatures([
+                'scope_all' => true,
+                'dry_run' => $dry_run,
+            ]);
+            $result = ['season_signature' => $season];
+        }
+
+        $options = [
+            'order_ids' => $order_ids,
+            'product_ids' => $product_ids,
+            'include_product_siblings' => $product_ids === '' ? !$no_siblings : false,
+            'delete_obsolete' => false,
+            'dry_run' => $dry_run,
+            'skip_order_sync' => $dry_run,
+        ];
+
+        if (!$all_renames) {
+            $result = intersoccer_reconcile_rosters($options);
+        }
+        $season = is_array($result['season_signature'] ?? null) ? $result['season_signature'] : [];
+        $changes = is_array($season['changes'] ?? null) ? $season['changes'] : [];
+
+        foreach ($changes as $change) {
+            if (!is_array($change)) {
+                continue;
+            }
+            \WP_CLI::log(sprintf(
+                'row %d order %d product %d: %s -> %s | season "%s" -> "%s"',
+                (int) ($change['id'] ?? 0),
+                (int) ($change['order_id'] ?? 0),
+                (int) ($change['product_id'] ?? 0),
+                (string) ($change['old_signature'] ?? ''),
+                (string) ($change['new_signature'] ?? ''),
+                (string) ($change['old_season'] ?? ''),
+                (string) ($change['new_season'] ?? '')
+            ));
+        }
+
+        $before = is_array($season['group_counts_before'] ?? null) ? $season['group_counts_before'] : [];
+        $after = is_array($season['group_counts_after'] ?? null) ? $season['group_counts_after'] : [];
+        $product_keys = array_unique(array_merge(array_keys($before), array_keys($after)));
+        sort($product_keys, SORT_NUMERIC);
+        foreach ($product_keys as $product_id) {
+            $b = is_array($before[$product_id] ?? null) ? $before[$product_id] : [];
+            $a = is_array($after[$product_id] ?? null) ? $after[$product_id] : [];
+            \WP_CLI::log(sprintf(
+                'product %d signature groups before=%d after=%d',
+                (int) $product_id,
+                count($b),
+                count($a)
+            ));
+        }
+
+        \WP_CLI::log(sprintf(
+            '%s examined %d, rows needing rename merge %d, rows changed %d, rows skipped (not evergreen) %d, unchanged %d, synced %d',
+            $dry_run ? 'Dry run' : 'Apply',
+            (int) ($season['examined'] ?? 0),
+            (int) ($season['needing_rename_merge'] ?? 0),
+            (int) ($season['updated'] ?? 0),
+            (int) ($season['skipped_not_evergreen'] ?? 0),
+            (int) ($season['unchanged'] ?? 0),
+            (int) ($result['synced'] ?? 0)
+        ));
+        \WP_CLI::success($dry_run ? 'Dry run complete (no writes).' : 'Reconcile-orders complete.');
+    }
+
+    /**
      * Report or apply financial attribution backfill for orders missing metadata.
      *
      * Default is dry-run (counts and CHF totals only, no writes).

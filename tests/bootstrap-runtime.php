@@ -598,7 +598,28 @@ if (!function_exists('get_post_meta')) {
 
 if (!function_exists('wp_get_post_terms')) {
     function wp_get_post_terms($post_id, $taxonomy, $args = []) {
-        return [];
+        $map = $GLOBALS['intersoccer_test_product_terms'][(int) $post_id][$taxonomy] ?? null;
+        if (!is_array($map)) {
+            return [];
+        }
+        $terms = [];
+        foreach ($map as $row) {
+            $terms[] = is_object($row) ? $row : (object) $row;
+        }
+        return $terms;
+    }
+}
+
+if (!function_exists('get_the_terms')) {
+    function get_the_terms($post_id, $taxonomy) {
+        $terms = wp_get_post_terms($post_id, $taxonomy);
+        return $terms === [] ? false : $terms;
+    }
+}
+
+if (!function_exists('wc_get_product_terms')) {
+    function wc_get_product_terms($product_id, $taxonomy, $args = []) {
+        return wp_get_post_terms($product_id, $taxonomy, $args);
     }
 }
 
