@@ -861,6 +861,23 @@ if (!function_exists('intersoccer_rr_tool_financial')) {
     }
 }
 
+if (!function_exists('intersoccer_rr_tool_fix_issues_year_error')) {
+    /**
+     * Empty when Year is blank (shop-wide) or a 4-digit year in range; otherwise a refusal message.
+     */
+    function intersoccer_rr_tool_fix_issues_year_error(array $scope): string {
+        $year = trim((string) ($scope['year'] ?? ''));
+        if ($year === '' || $year === '0') {
+            return '';
+        }
+        $n = (int) $year;
+        if (!preg_match('/^\d{4}$/', $year) || $n <= 2000 || $n > 2100) {
+            return __('Enter a 4-digit year between 2001 and 2100, or leave Year blank.', 'intersoccer-reports-rosters');
+        }
+        return '';
+    }
+}
+
 if (!function_exists('intersoccer_rr_tool_fix_issues_filters')) {
     /**
      * Filters shared by diagnostics Preview and safe-fix Apply.
@@ -936,6 +953,14 @@ if (!function_exists('intersoccer_rr_tool_fix_issues_summary')) {
 
 if (!function_exists('intersoccer_rr_tool_fix_issues')) {
     function intersoccer_rr_tool_fix_issues(bool $dry_run, array $scope): array {
+        $year_error = intersoccer_rr_tool_fix_issues_year_error($scope);
+        if ($year_error !== '') {
+            return intersoccer_rr_advanced_tools_empty_result(
+                $year_error,
+                false,
+                $year_error
+            );
+        }
         $filters = intersoccer_rr_tool_fix_issues_filters($scope);
         $note = __('no rollback', 'intersoccer-reports-rosters');
         $service = intersoccer_rr_tool_fix_issues_service();
@@ -1331,6 +1356,12 @@ if (!function_exists('intersoccer_rr_advanced_tools_handle_request')) {
             return ['type' => 'error', 'message' => __('Unknown repair.', 'intersoccer-reports-rosters'), 'result' => null];
         }
         $scope = intersoccer_rr_advanced_tools_scope_from_post($tool);
+        if ($tool === 'fix_issues') {
+            $year_error = intersoccer_rr_tool_fix_issues_year_error($scope);
+            if ($year_error !== '') {
+                return ['type' => 'error', 'message' => $year_error, 'result' => null];
+            }
+        }
         if ($mode === 'preview') {
             $result = intersoccer_rr_advanced_tools_execute($tool, true, $scope);
             $preview_scope = intersoccer_rr_advanced_tools_scope_label($scope);

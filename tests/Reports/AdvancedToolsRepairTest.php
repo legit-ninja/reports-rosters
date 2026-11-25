@@ -1155,6 +1155,44 @@ class AdvancedToolsRepairTest extends TestCase {
         $this->assertSame(0, (int) ($GLOBALS['intersoccer_rr_test_writes'] ?? 0));
     }
 
+    public function test_fix_issues_invalid_year_is_refused_and_not_treated_as_blank(): void {
+        foreach (['abc', '2O26', '1999', '3000', '26'] as $year) {
+            $this->assertFalse(
+                intersoccer_rr_scope_is_shop_wide('fix_issues', ['year' => $year, 'order_id' => '']),
+                'invalid year ' . $year . ' must not be treated as blank shop-wide scope'
+            );
+            $this->assertNotSame('', intersoccer_rr_tool_fix_issues_year_error(['year' => $year, 'order_id' => '']));
+        }
+        $this->assertSame('', intersoccer_rr_tool_fix_issues_year_error(['year' => '', 'order_id' => '']));
+        $this->assertSame('', intersoccer_rr_tool_fix_issues_year_error(['year' => '0', 'order_id' => '']));
+        $this->assertSame('', intersoccer_rr_tool_fix_issues_year_error(['year' => '2026', 'order_id' => '']));
+
+        unset($GLOBALS['intersoccer_rr_test_tool_runner']);
+        $GLOBALS['intersoccer_rr_test_writes'] = 0;
+        add_filter('intersoccer_rr_diagnostics_service', 'intersoccer_rr_test_diagnostics_service_filter');
+        foreach (['abc', '2O26', '1999', '3000', '26'] as $year) {
+            $preview = $this->postTool('fix_issues', 'preview', [
+                'year' => $year,
+                'order_id' => '',
+            ]);
+            $this->assertSame('error', $preview['type'], $preview['message']);
+            $this->assertStringContainsString('4-digit year', $preview['message']);
+            $this->assertStringNotContainsString('GLOBAL', $preview['message']);
+            $this->assertSame(0, (int) ($GLOBALS['intersoccer_rr_test_writes'] ?? 0));
+
+            $applied = $this->postTool('fix_issues', 'apply', [
+                'year' => $year,
+                'order_id' => '',
+                'intersoccer_rr_repair_phrase' => 'APPLY',
+                'intersoccer_rr_repair_global' => 'GLOBAL',
+            ]);
+            $this->assertSame('error', $applied['type'], $applied['message']);
+            $this->assertStringContainsString('4-digit year', $applied['message']);
+            $this->assertSame(0, (int) ($GLOBALS['intersoccer_rr_test_writes'] ?? 0));
+        }
+    }
+
+
     public function test_normalize_order_range_stays_under_the_cap_and_rollback_restores_city(): void {
         unset($GLOBALS['intersoccer_rr_test_tool_runner']);
         $db = new AdvancedToolsRepairWpdb();

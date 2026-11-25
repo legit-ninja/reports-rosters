@@ -2570,3 +2570,7 @@ msgstr "apply"
 
 msgid "preview"
 msgstr "preview"
+
+#: includes/advanced-tools-admin.php
+msgid "Enter a 4-digit year between 2001 and 2100, or leave Year blank."
+msgstr "Enter a 4-digit year between 2001 and 2100, or leave Year blank."
